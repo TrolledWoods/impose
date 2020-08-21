@@ -1,4 +1,8 @@
-type CodeLoc = (u32, u32);
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CodeLoc {
+	line: u32, 
+	column: u32,
+}
 
 #[derive(Debug)]
 pub struct Error {	
@@ -14,7 +18,7 @@ macro_rules! make_error {
 		return Err(Error {
 			message: format!($($format_message)+),
 			source_code_location: $lexer.source_code_location,
-			compiler_location: (line!(), column!()),
+			compiler_location: CodeLoc { line: line!(), column: column!() },
 		}.into());
 	}}
 }
@@ -22,6 +26,8 @@ macro_rules! make_error {
 #[derive(Debug)]
 pub enum Token<'a> {
 	Identifier(CodeLoc, &'a str),
+	Keyword(CodeLoc, &'static str),
+	Operator(CodeLoc, &'static str),
 }
 
 struct Lexer<'a> {
@@ -37,21 +43,33 @@ impl Lexer<'_> {
 	fn next(&mut self) -> Option<char> {
 		self.chars.next().map(|(_, c)| c)
 	}
-}
 
-fn move_pos_with_char(pos: &mut CodeLoc, character: char) {
-	pos.1 + 1;
-
-	if character == '\n' {
-		pos.0 += 1;
-		pos.1 = 1;
+	fn skip_if_starts_with(&mut self, text: &str) -> Option<CodeLoc> {
+		let string = self.chars.as_str();
+		if string.starts_with(text) {
+			self.chars = string[text.len()..].char_indices();
+			let old_loc = self.source_code_location;
+			self.source_code_location.column += text.chars().count() as u32;
+			Some(old_loc)
+		} else {
+			None
+		}
 	}
 }
 
-pub fn lex_string(code: &str) -> Result<Vec<Token>, Error> {
+fn move_pos_with_char(pos: &mut CodeLoc, character: char) {
+	pos.column += 1;
+
+	if character == '\n' {
+		pos.line += 1;
+		pos.column = 1;
+	}
+}
+
+pub fn lex_code(code: &str) -> Result<Vec<Token>, Error> {
 	let mut lexer = Lexer {
 		chars: code.char_indices(),
-		source_code_location: (1, 1),
+		source_code_location: CodeLoc { line: 1, column: 1 },
 	};
 
 	let mut tokens = Vec::new();
@@ -62,14 +80,31 @@ pub fn lex_string(code: &str) -> Result<Vec<Token>, Error> {
 			_ if c.is_alphabetic() => {
 				let identifier = lex_identifier(&mut lexer);
 
-				match identifier {
-					_ => {
-						tokens.push(Token::Identifier(lexer.source_code_location, identifier));
+				let mut found_keyword = false;
+				for keyword in KEYWORDS {
+					if let Some(loc) = lexer.skip_if_starts_with(keyword) {
+						tokens.push(Token::Keyword(loc, keyword));
+						found_keyword = true;
 					}
+				}
+
+				if !found_keyword {
+					tokens.push(Token::Identifier(lexer.source_code_location, identifier));
 				}
 			}
 			c => {
-				make_error!(lexer, "Invalid character {}", c);
+				// Might be an operator
+				let mut found_operator = false;
+				for operator in OPERATORS {
+					if let Some(loc) = lexer.skip_if_starts_with(operator) {
+						tokens.push(Token::Keyword(loc, operator));
+						found_operator = true;
+					}
+				}
+
+				if !found_operator {
+					make_error!(lexer, "Invalid character {}", c);
+				}
 			}
 		}
 
@@ -87,8 +122,8 @@ fn skip_whitespace(lexer: &mut Lexer) {
 				if c == '\n' { break; }
 			}
 
-			lexer.source_code_location.0 += 1;
-			lexer.source_code_location.1 = 1;
+			lexer.source_code_location.column += 1;
+			lexer.source_code_location.line    = 1;
 			continue;
 		} 
 
@@ -119,3 +154,6 @@ fn lex_identifier<'a>(lexer: &mut Lexer<'a>) -> &'a str {
 	// presented elsewhere, like in the parser for example.
 	start
 }
+
+const OPERATORS: &[&str] = &["->", ":", "=", "+", "-", "*", "/", "%"];
+const KEYWORDS:  &[&str] = &["if", "loop"];

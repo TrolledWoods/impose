@@ -1,11 +1,8 @@
 mod parser;
 
 fn main() {
-	let thing = parser::lex_string(r#"
-		let x hello # Something is happening here
-		asdlkfj uhib sodifj # Something more is happening here
-		hallåj
-
+	let thing = parser::lex_code(r#"
+		x ====+=+--**//// if loop 
 	"#).unwrap();
 	println!("Success! {:?}", thing);
 }
