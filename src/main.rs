@@ -7,7 +7,11 @@ macro_rules! return_error {
 		return Err(Error {
 			message: format!($($format_message)+),
 			source_code_location: $location.get_location(),
-			compiler_location: CodeLoc { line: line!(), column: column!() },
+			compiler_location: CodeLoc { 
+				line: line!(), 
+				column: column!(), 
+				file: std::rc::Rc::new(String::from(file!())),
+			},
 		}.into());
 	}}
 }
@@ -18,10 +22,7 @@ use std::fmt;
 
 fn main() {
 	let code = r#"
-42(42)(42(42),
-42(42))(42(42(42),
-42(42)),42(4
-2(42),42(42)),42(42(42,),42(42)))
+"Hello world!"("hi",)
 	"#;
 
 	let (last_loc, tokens) = match lexer::lex_code(code) {
@@ -68,19 +69,20 @@ fn print_error(code: &str, error: Error) {
 }
 
 // TODO: Include file location in this.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct CodeLoc {
+	pub file: std::rc::Rc<String>,
 	pub line: u32, 
 	pub column: u32,
 }
 
 impl Location for CodeLoc {
-	fn get_location(&self) -> CodeLoc { *self }
+	fn get_location(&self) -> CodeLoc { self.clone() }
 }
 
 impl fmt::Debug for CodeLoc {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		write!(f, "({}, {})", self.line, self.column)
+		write!(f, "'{}'({}:{})", self.file, self.line, self.column)
 	}
 }
 

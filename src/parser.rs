@@ -67,7 +67,7 @@ struct TokenStream<'a> {
 
 impl Location for TokenStream<'_> {
 	fn get_location(&self) -> CodeLoc {
-		self.peek().map_or(self.last_location, |t| t.loc)
+		self.peek().map_or(self.last_location.clone(), |t| t.loc.clone())
 	}
 }
 
