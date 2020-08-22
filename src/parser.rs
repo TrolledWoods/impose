@@ -84,10 +84,12 @@ impl<'a> TokenStream<'a> {
 		self.tokens.get(self.index).map(|v| &v.kind)
 	}
 
-	fn expect_peek(&mut self) -> Result<&Token<'a>> {
+	fn expect_peek<D: std::fmt::Display>(&mut self, message: impl FnOnce() -> D) 
+		-> Result<&Token<'a>> 
+	{
 		match self.tokens.get(self.index) {
 			Some(value) => Ok(value),
-			None => return_error!(self, "Premature end of file")
+			None => return_error!(self, "{}", message())
 		}
 	}
 	
@@ -96,11 +98,13 @@ impl<'a> TokenStream<'a> {
 		self.tokens.get(self.index - 1)
 	}
 
-	fn expect_next(&mut self) -> Result<&Token<'a>> {
+	fn expect_next<D: std::fmt::Display>(&mut self, message: impl FnOnce() -> D) 
+		-> Result<&Token<'a>> 
+	{
 		self.index += 1;
 		match self.tokens.get(self.index - 1) {
 			Some(value) => Ok(value),
-			None => return_error!(self, "Premature end of file")
+			None => return_error!(self, "{}", message())
 		}
 	}
 }
@@ -120,14 +124,18 @@ fn parse_value<'a>(
 	scope: ScopeId,
 	tokens: &mut TokenStream<'a>,
 ) -> Result<AstNodeId> {
-	let token = tokens.expect_next()?;
+	let token = tokens.expect_next(|| "Expected value")?;
 	let mut id = match token.kind {
 		TokenKind::NumericLiteral(number) => {
 			ast.insert_node(Node::new(token, NodeKind::Number(number)))
 		}
 		TokenKind::StringLiteral(ref string) => {
 			// TODO: Find a way to get rid of the string cloning here!
+			// Possibly by making TokenStream own its data
 			ast.insert_node(Node::new(token, NodeKind::String(string.clone())))
+		}
+		TokenKind::Identifier(name) => {
+			ast.insert_node(Node::new(token, NodeKind::Identifier(scope, name)))
 		}
 		_ => {
 			return_error!(token, "Expected value");
@@ -161,23 +169,26 @@ fn try_parse_list<'a, V>(
 	if Some(start_bracket) != tokens.peek_kind() {
 		return Ok(None);
 	}
-	let location = tokens.get_location();
-	tokens.next();
+	let location = tokens.next().unwrap().loc.clone();
 	
 	let mut contents = Vec::new();
 	loop {
-		if &tokens.expect_peek()?.kind == close_bracket {
+		if match tokens.peek_kind() {
+			Some(kind) => kind,
+			None => return_error!(location, "List is not closed"),
+		} == close_bracket {
 			tokens.next();
 			break;
 		}
 
 		contents.push(parse_value(ast, scopes, scope, tokens)?);
 
-		let next = tokens.expect_next()?;
-		match next.kind {
-			TokenKind::Comma => (),
-			ref something if something == close_bracket => break,
-			_ => return_error!(next, "Expected ',' to separate items in list"),
+		let next = tokens.next();
+		match next.map(|t| &t.kind) {
+			Some(TokenKind::Comma) => (),
+			Some(something) if something == close_bracket => break,
+			Some(_) => return_error!(next.unwrap(), "Expected ',' to separate items in list"),
+			None => return_error!(location, "List is not closed"),
 		}
 	}
 

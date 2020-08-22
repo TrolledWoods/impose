@@ -103,8 +103,8 @@ pub fn lex_code(code: &str) -> Result<(CodeLoc, Vec<Token>)> {
 			}
 			',' => {
 				tokens.push(Token::new(lexer.source_code_location.clone(), TokenKind::Comma));
-				lexer.next();
 				lexer.source_code_location.column += 1;
+				lexer.next();
 			}
 			_ if c.is_alphabetic() || c == '_' => {
 				let (location, identifier) = lex_identifier(&mut lexer);
@@ -183,9 +183,6 @@ fn lex_numeric_literal(lexer: &mut Lexer) -> Result<(CodeLoc, i128)> {
 	while let Some(c) = lexer.peek() {
 		match c.to_digit(base) {
 			Some(digit) => {
-				lexer.next();
-				lexer.source_code_location.column += 1;
-
 				let (num, overflow_a) = number.overflowing_mul(base  as i128);
 				let (num, overflow_b) = num   .overflowing_add(digit as i128);
 
@@ -195,6 +192,9 @@ fn lex_numeric_literal(lexer: &mut Lexer) -> Result<(CodeLoc, i128)> {
 
 				number = num;
 				has_digits = true;
+
+				lexer.next();
+				lexer.source_code_location.column += 1;
 			}
 			None if c == '_' => {
 				lexer.next();

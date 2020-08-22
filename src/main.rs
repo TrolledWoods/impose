@@ -22,7 +22,7 @@ use std::fmt;
 
 fn main() {
 	let code = r#"
-"Hello world!"("hi",)
+	assert_eq(binary_and(0b0100_1011, 0b0101_0111), 0b0100_0011);
 	"#;
 
 	let (last_loc, tokens) = match lexer::lex_code(code) {
@@ -54,12 +54,18 @@ fn print_error(code: &str, error: Error) {
 		println!("      |");
 		println!("{:>5} | {}", error.source_code_location.line, line);
 
-		print!("      |");
-		for c in line[..error.source_code_location.column as usize].chars() {
-			if c.is_whitespace() {
-				print!("{}", c);
+		print!("      | ");
+
+		let mut chars = line.chars();
+		for _ in 1..error.source_code_location.column {
+			if let Some(c) = chars.next() {
+				if c.is_whitespace() {
+					print!("{}", c);
+				} else {
+					print!(" ");
+				}
 			} else {
-				print!(" ");
+				print!("X");
 			}
 		}
 		println!("^--");
