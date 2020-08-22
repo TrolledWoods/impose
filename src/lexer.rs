@@ -35,34 +35,31 @@ macro_rules! return_error {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub enum Token<'a> {
-	Identifier(CodeLoc, &'a str),
-	Keyword(CodeLoc, &'static str),
-	Operator(CodeLoc, &'static str),
-	Semicolon(CodeLoc),
-	Comma(CodeLoc),
-	Bracket(CodeLoc, char),
-	ClosingBracket(CodeLoc, char),
-	NumericLiteral(CodeLoc, i128), // TODO: Make the numeric literal arbitrarily large.
+pub struct Token<'a> {
+	pub loc: CodeLoc,
+	pub kind: TokenKind<'a>,
 }
 
-impl Token<'_> {
-	pub fn loc(self) -> CodeLoc {
-		match self {
-			Token::NumericLiteral(loc, _) => loc,
-			Token::Identifier(loc, _)     => loc,
-			Token::Keyword(loc, _)        => loc,
-			Token::Operator(loc, _)       => loc,
-			Token::Semicolon(loc)         => loc,
-			Token::Comma(loc)             => loc,
-			Token::Bracket(loc, _)        => loc,
-			Token::ClosingBracket(loc, _) => loc,
-		}
+impl<'a> Token<'a> {
+	fn new(loc: CodeLoc, kind: TokenKind<'a>) -> Self { 
+		Token { loc, kind }
 	}
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum TokenKind<'a> {
+	Identifier(&'a str),
+	Keyword(&'static str),
+	Operator(&'static str),
+	Semicolon,
+	Comma,
+	Bracket(char),
+	ClosingBracket(char),
+	NumericLiteral(i128), // TODO: Make the numeric literal arbitrarily large.
+}
+
 impl Location for Token<'_> {
-	fn get_location(&self) -> CodeLoc { self.loc() }
+	fn get_location(&self) -> CodeLoc { self.loc }
 }
 
 struct Lexer<'a> {
@@ -117,22 +114,22 @@ pub fn lex_code(code: &str) -> Result<Vec<Token>> {
 	while let Some(c) = lexer.peek() {
 		match c {
 			'(' | '[' | '{' => {
-				tokens.push(Token::Bracket(lexer.source_code_location, c));
+				tokens.push(Token::new(lexer.source_code_location, TokenKind::Bracket(c)));
 				lexer.next();
 				lexer.source_code_location.column += 1;
 			}
 			')' | ']' | '}' => {
-				tokens.push(Token::ClosingBracket(lexer.source_code_location, c));
+				tokens.push(Token::new(lexer.source_code_location, TokenKind::ClosingBracket(c)));
 				lexer.next();
 				lexer.source_code_location.column += 1;
 			}
 			';' => {
-				tokens.push(Token::Semicolon(lexer.source_code_location));
+				tokens.push(Token::new(lexer.source_code_location, TokenKind::Semicolon));
 				lexer.next();
 				lexer.source_code_location.column += 1;
 			}
 			',' => {
-				tokens.push(Token::Comma(lexer.source_code_location));
+				tokens.push(Token::new(lexer.source_code_location, TokenKind::Comma));
 				lexer.next();
 				lexer.source_code_location.column += 1;
 			}
@@ -143,25 +140,25 @@ pub fn lex_code(code: &str) -> Result<Vec<Token>> {
 				let mut found_keyword = false;
 				for &keyword in KEYWORDS {
 					if identifier == keyword {
-						tokens.push(Token::Keyword(location, keyword));
+						tokens.push(Token::new(location, TokenKind::Keyword(keyword)));
 						found_keyword = true;
 					}
 				}
 
 				if !found_keyword {
-					tokens.push(Token::Identifier(location, identifier));
+					tokens.push(Token::new(location, TokenKind::Identifier(identifier)));
 				}
 			}
 			_ if c.is_digit(10) => {
 				let (loc, number) = lex_numeric_literal(&mut lexer)?;
-				tokens.push(Token::NumericLiteral(loc, number));
+				tokens.push(Token::new(loc, TokenKind::NumericLiteral(number)));
 			}
 			c => {
 				// Might be an operator
 				let mut found_operator = false;
 				for operator in OPERATORS {
 					if let Some(loc) = lexer.skip_if_starts_with(operator) {
-						tokens.push(Token::Operator(loc, operator));
+						tokens.push(Token::new(loc, TokenKind::Operator(operator)));
 						found_operator = true;
 					}
 				}
