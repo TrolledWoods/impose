@@ -134,8 +134,7 @@ pub fn lex_code(code: &str) -> Result<Vec<Token>> {
 				lexer.source_code_location.column += 1;
 			}
 			_ if c.is_alphabetic() => {
-				let location = lexer.source_code_location;
-				let identifier = lex_identifier(&mut lexer);
+				let (location, identifier) = lex_identifier(&mut lexer);
 
 				let mut found_keyword = false;
 				for &keyword in KEYWORDS {
@@ -299,13 +298,14 @@ fn lex_numeric_literal(lexer: &mut Lexer) -> Result<(CodeLoc, i128)> {
 }
 
 // TODO: Make this return the code location too
-fn lex_identifier<'a>(lexer: &mut Lexer<'a>) -> &'a str {
+fn lex_identifier<'a>(lexer: &mut Lexer<'a>) -> (CodeLoc, &'a str) {
+	let location = lexer.source_code_location;
 	let start = lexer.chars.as_str();
 
 	let mut char_indices = start.char_indices();
 	for (i, c) in &mut char_indices {
 		if !c.is_alphabetic() {
-			return &start[..i];
+			return (location, &start[..i]);
 		} else {
 			move_pos_with_char(&mut lexer.source_code_location, c);
 			lexer.next();
@@ -315,7 +315,7 @@ fn lex_identifier<'a>(lexer: &mut Lexer<'a>) -> &'a str {
 	// TODO: Error message here? The end of the file should never be
 	// an identifier in proper code, but the error message might be better
 	// presented elsewhere, like in the parser for example.
-	start
+	(location, start)
 }
 
 const OPERATORS: &[&str] = &["->", ":", "=", "+", "-", "*", "/", "%"];
