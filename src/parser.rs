@@ -47,6 +47,10 @@ pub enum NodeKind<'a> {
 	Number(i128),
 	String(String),
 	Identifier(ScopeId, &'a str),
+	FunctionCall {
+		function_pointer: AstNodeId,
+		arg_list: Vec<AstNodeId>,
+	},
 	// Operator(&'a str),
 	// Declaration { variable_name: &'a str, value: AstNodeId, },
 	// Assignment { l_value: AstNodeId, r_value: AstNodeId, },
@@ -74,6 +78,17 @@ impl<'a> TokenStream<'a> {
 
 	fn peek(&self) -> Option<&Token<'a>> {
 		self.tokens.get(self.index)
+	}
+
+	fn peek_kind(&self) -> Option<&TokenKind<'a>> {
+		self.tokens.get(self.index).map(|v| &v.kind)
+	}
+
+	fn expect_peek(&mut self) -> Result<&Token<'a>> {
+		match self.tokens.get(self.index) {
+			Some(value) => Ok(value),
+			None => return_error!(self, "Premature end of file")
+		}
 	}
 	
 	fn next(&mut self) -> Option<&Token<'a>> {
@@ -106,7 +121,7 @@ fn parse_value<'a>(
 	tokens: &mut TokenStream<'a>,
 ) -> Result<AstNodeId> {
 	let token = tokens.expect_next()?;
-	let id = match token.kind {
+	let mut id = match token.kind {
 		TokenKind::NumericLiteral(number) => {
 			ast.insert_node(Node::new(token, NodeKind::Number(number)))
 		}
@@ -118,7 +133,55 @@ fn parse_value<'a>(
 			return_error!(token, "Expected value");
 		}
 	};
+
+	while let Some((location, arg_list)) = try_parse_list(
+		ast, scopes, scope, tokens, parse_expression, 
+		&TokenKind::Bracket('('), &TokenKind::ClosingBracket(')')
+	)? {
+		id = ast.insert_node(Node::new(&location, NodeKind::FunctionCall {
+			function_pointer: id,
+			arg_list,
+		}));
+	}
+
 	Ok(id)
+}
+
+fn try_parse_list<'a, V>(
+	ast: &mut Ast<'a>,
+	scopes: &mut Scopes,
+	scope: ScopeId,
+	tokens: &mut TokenStream<'a>,
+	mut parse_value: 
+		impl for <'b> FnMut(&'b mut Ast<'a>, &'b mut Scopes, ScopeId, &'b mut TokenStream<'a>
+			) -> Result<V>,
+	start_bracket: &TokenKind,
+	close_bracket: &TokenKind,
+) -> Result<Option<(CodeLoc, Vec<V>)>> {
+	if Some(start_bracket) != tokens.peek_kind() {
+		return Ok(None);
+	}
+	let location = tokens.get_location();
+	tokens.next();
+	
+	let mut contents = Vec::new();
+	loop {
+		if &tokens.expect_peek()?.kind == close_bracket {
+			tokens.next();
+			break;
+		}
+
+		contents.push(parse_value(ast, scopes, scope, tokens)?);
+
+		let next = tokens.expect_next()?;
+		match next.kind {
+			TokenKind::Comma => (),
+			ref something if something == close_bracket => break,
+			_ => return_error!(next, "Expected ',' to separate items in list"),
+		}
+	}
+
+	Ok(Some((location, contents)))
 }
 
 pub fn parse_expression_temporary<'a>(

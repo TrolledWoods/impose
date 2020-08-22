@@ -12,7 +12,7 @@ impl<'a> Token<'a> {
 	}
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind<'a> {
 	Identifier(&'a str),
 	Keyword(&'static str),

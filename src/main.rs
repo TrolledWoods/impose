@@ -17,26 +17,54 @@ mod parser;
 use std::fmt;
 
 fn main() {
-	let code = "\
-42 + 63 - 23 + print(\"Hello world!\\n\")
-	";
+	let code = r#"
+42(42)(42(42),
+42(42))(42(42(42),
+42(42)),42(4
+2(42),42(42)),42(42(42,),42(42)))
+	"#;
 
 	let (last_loc, tokens) = match lexer::lex_code(code) {
 		Ok(value) => value,
 		Err(err) => {
-			println!("ERROR: {}", err.message);
-			println!("{}", code);
-			println!("{}^", "-".repeat(
-				err.source_code_location.column.saturating_sub(1) as usize
-			));
+			print_error(code, err);
 			return;
 		}
 	};
 
 	// TODO: Make parser take source code directly and call lexer in there instead.
-	let ast = parser::parse_expression_temporary(&tokens, last_loc);
+	let ast = match parser::parse_expression_temporary(&tokens, last_loc) {
+		Ok(value) => value,
+		Err(err) => {
+			print_error(code, err);
+			return;
+		}
+	};
 
-	println!("{:?}", ast);
+	for node in ast.nodes {
+		println!("{:?}: {:?}", node.loc, node.kind);
+	}
+}
+
+fn print_error(code: &str, error: Error) {
+	println!("ERROR at {:?}: {}", error.source_code_location, error.message);
+
+	if let Some(line) = code.lines().nth(error.source_code_location.line as usize - 1) {
+		println!("      |");
+		println!("{:>5} | {}", error.source_code_location.line, line);
+
+		print!("      |");
+		for c in line[..error.source_code_location.column as usize].chars() {
+			if c.is_whitespace() {
+				print!("{}", c);
+			} else {
+				print!(" ");
+			}
+		}
+		println!("^--");
+		println!("      |");
+	}
+	println!("Compiler location: {:?}", error.compiler_location);
 }
 
 // TODO: Include file location in this.
