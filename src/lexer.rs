@@ -1,5 +1,7 @@
+use std::fmt;
+
 // TODO: Include file location in this.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct CodeLoc {
 	pub line: u32, 
 	pub column: u32,
@@ -7,6 +9,12 @@ pub struct CodeLoc {
 
 impl Location for CodeLoc {
 	fn get_location(&self) -> CodeLoc { *self }
+}
+
+impl fmt::Debug for CodeLoc {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		write!(f, "({}, {})", self.line, self.column)
+	}
 }
 
 #[derive(Debug)]
@@ -34,7 +42,7 @@ macro_rules! return_error {
 	}}
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Token<'a> {
 	pub loc: CodeLoc,
 	pub kind: TokenKind<'a>,
@@ -46,7 +54,7 @@ impl<'a> Token<'a> {
 	}
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum TokenKind<'a> {
 	Identifier(&'a str),
 	Keyword(&'static str),
@@ -56,6 +64,7 @@ pub enum TokenKind<'a> {
 	Bracket(char),
 	ClosingBracket(char),
 	NumericLiteral(i128), // TODO: Make the numeric literal arbitrarily large.
+	StringLiteral(String),
 }
 
 impl Location for Token<'_> {
@@ -151,6 +160,10 @@ pub fn lex_code(code: &str) -> Result<Vec<Token>> {
 			_ if c.is_digit(10) => {
 				let (loc, number) = lex_numeric_literal(&mut lexer)?;
 				tokens.push(Token::new(loc, TokenKind::NumericLiteral(number)));
+			}
+			'"' => {
+				let (loc, string) = lex_string_literal(&mut lexer)?;
+				tokens.push(Token::new(loc, TokenKind::StringLiteral(string)));
 			}
 			c => {
 				// Might be an operator
@@ -297,7 +310,95 @@ fn lex_numeric_literal(lexer: &mut Lexer) -> Result<(CodeLoc, i128)> {
 	Ok((location, number))
 }
 
-// TODO: Make this return the code location too
+fn lex_string_literal(lexer: &mut Lexer) -> Result<(CodeLoc, String)> {
+	let location = lexer.source_code_location;
+
+	let mut quotes = 0;
+	while lexer.peek() == Some('"') {
+		lexer.next();
+		lexer.source_code_location.column += 1;
+		quotes += 1;
+	}
+	assert!(quotes > 0, "Don't call lex_string_literal without having found a double quote");
+
+	let mut quote_streak = 0;
+	let mut string = String::new();
+	loop {
+		let c = match lexer.next() {
+			Some(c) => c,
+			None => {
+				// TODO: Show a note of where the string literal started.
+				return_error!(lexer, "String literal wasn't closed");
+			}
+		};
+		move_pos_with_char(&mut lexer.source_code_location, c);
+
+		if c == '"' {
+			quote_streak += 1;
+			if quote_streak == quotes {
+				break;
+			}
+			continue;
+		} else if quote_streak > 0 {
+			for _ in 0..quote_streak {
+				string.push('"');
+			}
+			quote_streak = 0;
+		}
+
+		if c == '\\' {
+			// Escaped character
+			let c = match lexer.next() {
+				Some(value) => value,
+				None => return_error!(lexer, "String literal wasn't closed"),
+			};
+			move_pos_with_char(&mut lexer.source_code_location, c);
+
+			match c {
+				'u' => {
+					use std::convert::TryInto;
+
+					// Parse a unicode letter
+					let (num_loc, number) = lex_numeric_literal(lexer)?;
+
+					let number_u32: u32 = match number.try_into() {
+						Ok(n) => n,
+						Err(_) => return_error!(num_loc, "Number {} is invalid unicode", number),
+					};
+					let unicode = match char::from_u32(number_u32) {
+						Some(unicode) => unicode,
+						None => return_error!(num_loc, "Number {} is invalid unicode", number),
+					};
+
+					if let Some('\\') = lexer.next() {
+						lexer.source_code_location.column += 1;
+						string.push(unicode);
+					} else {
+						return_error!(
+							lexer, 
+							"Expected '\\' character after unicode escape character."
+						);
+					}
+				}
+				'\\' => string.push('\\'),
+				'"'  => string.push('"'),
+				'n'  => string.push('\n'),
+				'r'  => string.push('\r'),
+				't'  => string.push('\t'),
+				_ => {
+					return_error!(lexer, "'{}' is not a valid escape character", c);
+				}
+			}
+
+			continue;
+		}
+
+		string.push(c);
+	}
+
+	Ok((location, string))
+}
+
 fn lex_identifier<'a>(lexer: &mut Lexer<'a>) -> (CodeLoc, &'a str) {
 	let location = lexer.source_code_location;
 	let start = lexer.chars.as_str();

@@ -1,10 +1,14 @@
+#![feature(assoc_char_funcs)]
+
 mod lexer;
 
 fn main() {
-	let code = "x := 42;";
+	let code = r#""Strings seem to work just fine now! :D \n""#;
 	match lexer::lex_code(code) {
 		Ok(tokens) => {
-			println!("{:?}", tokens);
+			for token in tokens {
+				println!("{:?}: {:?}", &token.loc, &token.kind);
+			}
 		},
 		Err(err) => {
 			println!("ERROR: {}", err.message);
