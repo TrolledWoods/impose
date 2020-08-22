@@ -1,46 +1,4 @@
-use std::fmt;
-
-// TODO: Include file location in this.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub struct CodeLoc {
-	pub line: u32, 
-	pub column: u32,
-}
-
-impl Location for CodeLoc {
-	fn get_location(&self) -> CodeLoc { *self }
-}
-
-impl fmt::Debug for CodeLoc {
-	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		write!(f, "({}, {})", self.line, self.column)
-	}
-}
-
-#[derive(Debug)]
-pub struct Error {	
-	pub message: String,
-	pub source_code_location: CodeLoc,
-	pub compiler_location: CodeLoc,
-}
-
-type Result<T> = std::result::Result<T, Error>;
-
-trait Location {
-	fn get_location(&self) -> CodeLoc;
-}
-
-/// This is a macro to allow the compiler line and column to ergonomically be passed
-/// inside the errors that are returned(for compiler debugging)
-macro_rules! return_error {
-	($location:expr, $($format_message:tt)+) => {{
-		return Err(Error {
-			message: format!($($format_message)+),
-			source_code_location: $location.get_location(),
-			compiler_location: CodeLoc { line: line!(), column: column!() },
-		}.into());
-	}}
-}
+use crate::{ CodeLoc, Location, Error, Result };
 
 #[derive(Debug, Clone)]
 pub struct Token<'a> {
@@ -111,7 +69,7 @@ fn move_pos_with_char(pos: &mut CodeLoc, character: char) {
 	}
 }
 
-pub fn lex_code(code: &str) -> Result<Vec<Token>> {
+pub fn lex_code(code: &str) -> Result<(CodeLoc, Vec<Token>)> {
 	let mut lexer = Lexer {
 		chars: code.char_indices(),
 		source_code_location: CodeLoc { line: 1, column: 1 },
@@ -142,7 +100,7 @@ pub fn lex_code(code: &str) -> Result<Vec<Token>> {
 				lexer.next();
 				lexer.source_code_location.column += 1;
 			}
-			_ if c.is_alphabetic() => {
+			_ if c.is_alphabetic() || c == '_' => {
 				let (location, identifier) = lex_identifier(&mut lexer);
 
 				let mut found_keyword = false;
@@ -184,7 +142,7 @@ pub fn lex_code(code: &str) -> Result<Vec<Token>> {
 		skip_whitespace(&mut lexer);
 	}
 
-	Ok(tokens)
+	Ok((lexer.source_code_location, tokens))
 }
 
 fn skip_whitespace(lexer: &mut Lexer) {
@@ -405,7 +363,7 @@ fn lex_identifier<'a>(lexer: &mut Lexer<'a>) -> (CodeLoc, &'a str) {
 
 	let mut char_indices = start.char_indices();
 	for (i, c) in &mut char_indices {
-		if !c.is_alphabetic() {
+		if !(c.is_alphabetic() || c == '_' || c.is_digit(10)) {
 			return (location, &start[..i]);
 		} else {
 			move_pos_with_char(&mut lexer.source_code_location, c);
@@ -419,5 +377,5 @@ fn lex_identifier<'a>(lexer: &mut Lexer<'a>) -> (CodeLoc, &'a str) {
 	(location, start)
 }
 
-const OPERATORS: &[&str] = &["->", ":", "=", "+", "-", "*", "/", "%"];
+const OPERATORS: &[&str] = &["||", "->", "+", "-", "*", "==", "<", ">", ":", "="];
 const KEYWORDS:  &[&str] = &["if", "loop"];
