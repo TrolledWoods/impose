@@ -39,12 +39,13 @@ impl Ast {
 #[derive(Debug)]
 pub struct Node {
 	pub loc: CodeLoc,
+	pub scope: ScopeId,
 	pub kind: NodeKind,
 }
 
 impl Node {
-	fn new(location: &impl Location, kind: NodeKind) -> Self {
-		Node { loc: location.get_location(), kind }
+	fn new(location: &impl Location, scope: ScopeId, kind: NodeKind) -> Self {
+		Node { loc: location.get_location(), kind, scope }
 	}
 }
 
@@ -94,6 +95,14 @@ impl<'a> TokenStream<'a> {
 		self.tokens.get(self.index)
 	}
 
+	// fn peek_nth(&self, n: usize) -> Option<&'a Token<'a>> {
+	// 	self.tokens.get(self.index + n)
+	// }
+
+	fn peek_nth_kind(&self, n: usize) -> Option<&'a TokenKind<'a>> {
+		self.tokens.get(self.index + n).map(|v| &v.kind)
+	}
+
 	fn expect_peek<'b, D: std::fmt::Display>(&'b mut self, message: impl FnOnce() -> D) 
 		-> Result<&'a Token<'a>> 
 	{
@@ -132,21 +141,40 @@ fn parse_block(ast: &mut Ast, scopes: &mut Scopes, scope: ScopeId, tokens: &mut 
 		_ => return_error!(loc, "Expected '{{' to start block"),
 	}
 
+	let scope = scopes.create_scope(Some(scope));
+
 	let mut commands = Vec::new();
 	loop {
 		match tokens.peek() {
 			Some(Token { loc, kind: TokenKind::ClosingBracket('}') }) => {
-				commands.push(ast.insert_node(Node::new(loc, NodeKind::EmptyLiteral)));
+				commands.push(ast.insert_node(Node::new(loc, scope, NodeKind::EmptyLiteral)));
 				tokens.next();
 				break;
 			}
 			_ => (),
 		}
 
-		// TODO: Parse more things
+		let mut is_other = false;
+		if let Some(TokenKind::Identifier(name)) = tokens.peek_kind() {
+			if let Some(TokenKind::Operator(Operator::Declare)) = tokens.peek_nth_kind(1) 
+			{
+				let ident_loc   = &tokens.next().unwrap().loc; 
+				let declare_loc = &tokens.next().unwrap().loc;
 
-		let expr = parse_expression(ast, scopes, scope, tokens)?;
-		commands.push(expr);
+				// We have a declaration
+				let variable_name = scopes.declare_member(scope, name.to_string(), ident_loc)?;
+				let value = parse_expression(ast, scopes, scope, tokens)?;
+				commands.push(ast.insert_node(Node::new(declare_loc, scope, NodeKind::Declaration {
+					variable_name, value,
+				})));
+				is_other = true;
+			}
+		}
+
+		if !is_other {
+			let expr = parse_expression(ast, scopes, scope, tokens)?;
+			commands.push(expr);
+		}
 
 		let loc = tokens.get_location();
 		match tokens.next() {
@@ -156,7 +184,7 @@ fn parse_block(ast: &mut Ast, scopes: &mut Scopes, scope: ScopeId, tokens: &mut 
 		}
 	}
 
-	Ok(ast.insert_node(Node::new(&loc, NodeKind::Block { contents: commands } )))
+	Ok(ast.insert_node(Node::new(&loc, scope, NodeKind::Block { contents: commands } )))
 }
 
 #[inline]
@@ -198,6 +226,7 @@ fn parse_expression_rec<'a>(
 			
 			a = ast.insert_node(Node::new(
 				tokens, 
+				scope,
 				NodeKind::BinaryOperator { operator, left: a, right: b }
 			));
 		} else {
@@ -222,25 +251,25 @@ fn parse_value<'a>(
 
 			if let Some(unary_priority) = unary_priority {
 				let operand = parse_expression_rec(ast, scopes, scope, tokens, unary_priority)?;
-				ast.insert_node(Node::new(token, NodeKind::UnaryOperator { operator, operand }))
+				ast.insert_node(Node::new(token, scope, NodeKind::UnaryOperator { operator, operand }))
 			} else {
 				return_error!(token, "Operator is not a unary operator, but it's used as one");
 			}
 		}
 		TokenKind::NumericLiteral(number) => {
 			tokens.next();
-			ast.insert_node(Node::new(token, NodeKind::Number(number)))
+			ast.insert_node(Node::new(token, scope, NodeKind::Number(number)))
 		}
 		TokenKind::StringLiteral(ref string) => {
 			tokens.next();
 			// TODO: Find a way to get rid of the string cloning here!
 			// Possibly by making TokenStream own its data
-			ast.insert_node(Node::new(token, NodeKind::String(string.clone())))
+			ast.insert_node(Node::new(token, scope, NodeKind::String(string.clone())))
 		}
 		TokenKind::Identifier(name) => {
 			tokens.next();
 			match scopes.find_member(scope, name) {
-				Some(member) => ast.insert_node(Node::new(token, NodeKind::Identifier(member))),
+				Some(member) => ast.insert_node(Node::new(token, scope, NodeKind::Identifier(member))),
 				None => return_error!(token, "Unrecognised name"),
 			}
 		}
@@ -267,7 +296,7 @@ fn parse_value<'a>(
 		ast, scopes, scope, tokens, parse_expression, 
 		&TokenKind::Bracket('('), &TokenKind::ClosingBracket(')')
 	)? {
-		id = ast.insert_node(Node::new(&location, NodeKind::FunctionCall {
+		id = ast.insert_node(Node::new(&location, scope, NodeKind::FunctionCall {
 			function_pointer: id,
 			arg_list,
 		}));
@@ -318,23 +347,23 @@ fn try_parse_list<'a, V>(
 
 pub fn parse_code(
 	code: &str,
-) -> Result<Ast> {
+	scopes: &mut Scopes,
+) -> Result<(ScopeId, Ast)> {
 	let (last_loc, tokens) = lexer::lex_code(code)?;
 	let mut ast = Ast::new();
-	let mut scopes = Scopes::new();
 	let scope = scopes.create_scope(None);
 
 	let mut stream = TokenStream::new(&tokens, last_loc);
-	parse_expression(&mut ast, &mut scopes, scope, &mut stream)?;
+	parse_expression(&mut ast, scopes, scope, &mut stream)?;
 
-	Ok(ast)
+	Ok((scope, ast))
 }
 
 // TODO: Maybe make this its own type? And also, make this a NonZeroU32 eventually
 pub type ScopeId = u32;
 pub type ScopeMemberId = (u32, u32);
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct Scopes {
 	pub scopes: HashMap<ScopeId, Scope>,
 	scope_id_counter: u32,
@@ -350,36 +379,49 @@ impl Scopes {
 		id
 	}
 
-	fn member(&self, member: ScopeMemberId) -> &ScopeMember {
+	pub fn member(&self, member: ScopeMemberId) -> &ScopeMember {
 		self.scopes.get(&member.0).unwrap().members.get(&member.1).unwrap()
 	}
 
-	fn find_member(&self, scope_id: ScopeId, name: &str) -> Option<ScopeMemberId> {
-		let mut scope = self.scopes.get(&scope_id).unwrap();
+	pub fn member_mut(&mut self, member: ScopeMemberId) -> &mut ScopeMember {
+		self.scopes.get_mut(&member.0).unwrap().members.get_mut(&member.1).unwrap()
+	}
+
+	pub fn members(&mut self, scope: ScopeId) 
+		-> impl Iterator<Item = &ScopeMember> 
+	{
+		self.scopes.get(&scope).unwrap().members.values()
+	}
+
+	fn find_member(&self, mut scope_id: ScopeId, name: &str) -> Option<ScopeMemberId> {
+		let mut scope;
 
 		loop {
+			scope = self.scopes.get(&scope_id).unwrap();
+
 			for (key, value) in scope.members.iter() {
 				if value.name == name {
 					return Some((scope_id, *key));
 				}
 			}
 
-			scope = self.scopes.get(&scope.parent?).unwrap();
+			scope_id = scope.parent?;
 		}
 	}
 
-	fn declare_member(
+	pub fn declare_member(
 		&mut self, 
 		scope: ScopeId, 
 		name: String, 
 		loc: &CodeLoc,
 	) -> Result<ScopeMemberId> {
-		if let Some(old) = self.find_member(scope, &name) {
-			// TODO: When I add info things, make sure to add some info here!
-			return_error!(
-				self.member(old).declaration_location, 
-				"Scope member already declared here"
-			);
+		for value in self.members(scope) {
+			if value.name == name {
+				return_error!(
+					loc,
+					"Name is already taken in the same scope"
+				);
+			}
 		}
 
 		let member = ScopeMember { 
@@ -388,11 +430,10 @@ impl Scopes {
 			storage_location: None,
 		};
 
-		let scope = self.scopes.get_mut(&scope).unwrap();
-		let id = (self.scope_id_counter, scope.member_ctr);
-		scope.members.insert(id.1, member);
-		self.scope_id_counter += 1;
-		scope.member_ctr += 1;
+		let scope_instance = self.scopes.get_mut(&scope).unwrap();
+		let id = (scope, scope_instance.member_ctr);
+		scope_instance.members.insert(id.1, member);
+		scope_instance.member_ctr += 1;
 		
 		Ok(id)
 	}

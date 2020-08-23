@@ -1,4 +1,5 @@
 use crate::parser;
+use crate::parser::{Scopes, ScopeId};
 use crate::operator::Operator;
 use std::fmt;
 
@@ -11,6 +12,7 @@ pub enum Value {
 	/// An indirect local, with a byte offset.
 	LocalIndirect(LocalId, i64),
 	Constant(i64),
+	Poison,
 }
 
 impl fmt::Debug for Value {
@@ -19,6 +21,7 @@ impl fmt::Debug for Value {
 			Value::Local(local) => write!(f, "({})", local),
 			Value::LocalIndirect(value, offset) => write!(f, "[{}+{}]", value, offset),
 			Value::Constant(value) => write!(f, "{}", value),
+			Value::Poison => write!(f, "Poison"),
 		}
 	}
 }
@@ -45,6 +48,8 @@ pub type LocalId = usize;
 pub fn compile_expression(
 	ast: &parser::Ast, 
 	node: parser::AstNodeId,
+	scopes: &mut Scopes,
+	scope: ScopeId,
 ) -> (Locals, Vec<Instruction>) {
 	let mut locals = Locals::new();
 	let mut node_values: Vec<Value> = Vec::with_capacity(ast.nodes.len());
@@ -52,6 +57,28 @@ pub fn compile_expression(
 
 	for (i, node) in ast.nodes.iter().enumerate() {
 		match node.kind {
+			parser::NodeKind::Identifier(member_id) => {
+				let member = scopes.member(member_id).storage_location
+					.expect("Undeclared variable in code_gen...");
+				// We use the member twice
+				
+				// TODO: Fix in place assignment jankyness
+				let new_loc = locals.clone(&member); // Value::Local(locals.alloc());
+				// instructions.push(Instruction::MoveU64(new_loc, member));
+				node_values.push(new_loc);
+			}
+			parser::NodeKind::Declaration { variable_name, value } => {
+				let location = Value::Local(locals.alloc());
+				scopes.member_mut(variable_name).storage_location 
+					= Some(location);
+				
+				let input = node_values[value as usize];
+				locals.note_usage(&location);
+				locals.note_usage(&input);
+				instructions.push(Instruction::MoveU64(location, input));
+				locals.free_value(input);
+				node_values.push(Value::Poison);
+			}
 			parser::NodeKind::Block { ref contents } => {
 				if contents.len() > 0 {
 					for &content in &contents[..contents.len() - 1] {
@@ -61,6 +88,15 @@ pub fn compile_expression(
 					}
 
 					node_values.push(node_values[*contents.last().unwrap() as usize]);
+				}
+
+				for member in scopes.members(node.scope) {
+					if let Some(location) = member.storage_location {
+						locals.free_value(location);
+					} else {
+						println!("WARNING!!! {:?} Member in scope not declared", 
+							member.declaration_location);
+					}
 				}
 			}
 			parser::NodeKind::Number(num) => {
@@ -77,6 +113,12 @@ pub fn compile_expression(
 				let result = Value::Local(locals.alloc());
 
 				match operator {
+					Operator::Assign => {
+						instructions.push(Instruction::MoveU64(a, b));
+						// TODO: Check if the result is used eventually, we will have a flag for if
+						// the return value of an AstNode is used or not
+						instructions.push(Instruction::MoveU64(result, b));
+					}
 					Operator::Add => 
 						instructions.push(Instruction::AddU64(result, a, b)),
 					Operator::Sub => 
@@ -90,6 +132,9 @@ pub fn compile_expression(
 				// I know what I'm doing, we are not copying these without reason!
 				locals.free_value(node_values[left as usize].clone());
 				locals.free_value(node_values[right as usize].clone());
+			}
+			parser::NodeKind::EmptyLiteral => {
+				node_values.push(Value::Poison);
 			}
 			_ => todo!()
 		}
@@ -150,6 +195,7 @@ impl Locals {
 			Value::Local(local) => local,
 			Value::LocalIndirect(local, offset) => local,
 			Value::Constant(_) => return *value, // Constants do not use locals
+			Value::Poison => return Value::Poison,
 		};
 
 		assert!(self.locals[local].0 > 0);
@@ -163,6 +209,7 @@ impl Locals {
 			Value::Local(local) => local,
 			Value::LocalIndirect(local, offset) => local,
 			Value::Constant(_) => return, // Constants do not use locals
+			Value::Poison => panic!("Tried using poison"),
 		};
 
 		assert!(self.locals[local].0 > 0);
@@ -183,6 +230,7 @@ impl Locals {
 			Value::Local(local) => local,
 			Value::LocalIndirect(local, offset) => local,
 			Value::Constant(_) => return, // Constants do not use locals
+			Value::Poison => return,
 		};
 
 		assert!(self.locals[local ].0 > 0);

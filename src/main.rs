@@ -23,16 +23,11 @@ mod code_gen;
 use std::fmt;
 
 fn main() {
-	let code = r#"{ 
-	20; 
-	50 + 20 - 600;
-	14 - 245;
-	14 - 245;
-	14 - 245;
-	14 - 245;
-	14 - 245;
-	60; 
-	50 - 20 + 10 
+	let code = r#"
+{
+	{ :i_break
+		break :i_break;
+	};
 }"#;
 
 	println!("Source code: ");
@@ -40,7 +35,9 @@ fn main() {
 	println!();
 
 	// TODO: Make parser take source code directly and call lexer in there instead.
-	let ast = match parser::parse_code(code) {
+	let mut scopes = parser::Scopes::new();
+
+	let (scope, ast) = match parser::parse_code(code, &mut scopes) {
 		Ok(value) => value,
 		Err(err) => {
 			print_error(code, err);
@@ -48,8 +45,12 @@ fn main() {
 		}
 	};
 
+	// for node in ast.nodes.iter() {
+	// 	println!("{:?}: {:?} {:?}", node.loc, node.scope, node.kind);
+	// }
+
 	let last = ast.nodes.len() - 1;
-	let (locals, instructions) = code_gen::compile_expression(&ast, last as u32);
+	let (locals, instructions) = code_gen::compile_expression(&ast, last as u32, &mut scopes, scope);
 
 	println!("Locals: ");
 	for (i, &(locks, uses)) in locals.locals.iter().enumerate() {
