@@ -22,7 +22,7 @@ use std::fmt;
 
 fn main() {
 	let code = r#"
-	assert_eq(binary_and(0b0100_1011, 0b0101_0111), 0b0100_0011);
+x := 50 < 20 + 10 && 10 > 5 || 90;
 	"#;
 
 	let (last_loc, tokens) = match lexer::lex_code(code) {

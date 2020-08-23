@@ -1,6 +1,10 @@
 use crate::{ Location, CodeLoc, Error, Result, lexer::{ Token, TokenKind } };
 use std::collections::HashMap;
 
+// TODO: Make a Context type to pass around instead of all the things.
+// We gotta make sure we know what should go into the context first though, and not pass
+// too many things in it.
+
 // TODO: Maybe make this its own type?
 type AstNodeId = u32;
 
@@ -11,9 +15,7 @@ pub struct Ast<'a> {
 
 impl<'a> Ast<'a> {
 	fn new() -> Self {
-		Ast {
-			nodes: Vec::new(),
-		}
+		Ast { nodes: Vec::new() }
 	}
 
 	fn insert_node(&mut self, node: Node<'a>) -> AstNodeId {
@@ -51,7 +53,11 @@ pub enum NodeKind<'a> {
 		function_pointer: AstNodeId,
 		arg_list: Vec<AstNodeId>,
 	},
-	// Operator(&'a str),
+	BinaryOperator {
+		op_code: &'a str,
+		left:  AstNodeId,
+		right: AstNodeId,
+	},
 	// Declaration { variable_name: &'a str, value: AstNodeId, },
 	// Assignment { l_value: AstNodeId, r_value: AstNodeId, },
 	// Block {
@@ -84,15 +90,6 @@ impl<'a> TokenStream<'a> {
 		self.tokens.get(self.index).map(|v| &v.kind)
 	}
 
-	fn expect_peek<D: std::fmt::Display>(&mut self, message: impl FnOnce() -> D) 
-		-> Result<&Token<'a>> 
-	{
-		match self.tokens.get(self.index) {
-			Some(value) => Ok(value),
-			None => return_error!(self, "{}", message())
-		}
-	}
-	
 	fn next(&mut self) -> Option<&Token<'a>> {
 		self.index += 1;
 		self.tokens.get(self.index - 1)
@@ -115,7 +112,44 @@ fn parse_expression<'a>(
 	scope: ScopeId,
 	tokens: &mut TokenStream<'a>,
 ) -> Result<AstNodeId> {
-	parse_value(ast, scopes, scope, tokens)
+	parse_expression_rec(ast, scopes, scope, tokens, 0)
+}
+
+/// Parse an expression recursively
+fn parse_expression_rec<'a>(
+	ast: &mut Ast<'a>,
+	scopes: &mut Scopes,
+	scope: ScopeId,
+	tokens: &mut TokenStream<'a>,
+	min_priority: usize, 
+) -> Result<AstNodeId> {
+	let mut a = parse_value(ast, scopes, scope, tokens)?;
+	
+	while let Some(&TokenKind::Operator(op_code)) = tokens.peek_kind() {
+		let priority = match op_code {
+			"->" | ":" | "=" | ":=" => 1,
+			"||" | "&&" => 2,
+			"==" | "!=" | "<" | ">" | ">=" | "<=" => 3,
+			"+" | "-" => 4,
+			"*" | "/" => 5,
+			_ => unreachable!("Not an op_code"),
+		};
+
+		if priority > min_priority {
+			// Skip the operator
+			tokens.next();
+
+			let b = parse_expression_rec(ast, scopes, scope, tokens, priority)?;
+			a = ast.insert_node(Node::new(
+				tokens, 
+				NodeKind::BinaryOperator { op_code, left: a, right: b }
+			));
+		} else {
+			break;
+		}
+	}
+
+	Ok(a)
 }
 
 fn parse_value<'a>(

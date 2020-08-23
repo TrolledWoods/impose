@@ -383,5 +383,6 @@ fn lex_identifier<'a>(lexer: &mut Lexer<'a>) -> (CodeLoc, &'a str) {
 	(location, start)
 }
 
-const OPERATORS: &[&str] = &["||", "->", "+", "-", "*", "==", "<", ">", ":", "="];
+// TODO: Operator enum instead?
+const OPERATORS: &[&str] = &[":=", "||", "&&", "->", "+", "-", "/", "*", "==", "!=", "<", ">", ":", "="];
 const KEYWORDS:  &[&str] = &["if", "loop"];
