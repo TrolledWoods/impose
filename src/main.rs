@@ -16,13 +16,14 @@ macro_rules! return_error {
 	}}
 }
 
+mod operator;
 mod lexer;
 mod parser;
 use std::fmt;
 
 fn main() {
 	let code = r#"
-x := 50 < 20 + 10 && 10 > 5 || 90;
+x * z + y * h
 	"#;
 
 	let (last_loc, tokens) = match lexer::lex_code(code) {
@@ -42,9 +43,25 @@ x := 50 < 20 + 10 && 10 > 5 || 90;
 		}
 	};
 
-	for node in ast.nodes {
+	for node in &ast.nodes {
 		println!("{:?}: {:?}", node.loc, node.kind);
 	}
+
+	fn recurse(ast: &parser::Ast, node: &parser::Node) {
+		match node.kind {
+			parser::NodeKind::BinaryOperator { operator, left, right } => {
+				print!("(");
+				recurse(ast, ast.get_node(left));
+				print!(" {:?} ", operator);
+				recurse(ast, ast.get_node(right));
+				print!(")");
+			}
+			parser::NodeKind::Identifier(_, name) => print!("{}", name),
+			_ => unimplemented!(),
+		}
+	}
+
+	recurse(&ast, &ast.nodes.last().unwrap());
 }
 
 fn print_error(code: &str, error: Error) {

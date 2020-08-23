@@ -1,4 +1,5 @@
 use crate::{ CodeLoc, Location, Error, Result };
+use crate::operator::{ OPERATORS, Operator };
 
 #[derive(Debug, Clone)]
 pub struct Token<'a> {
@@ -16,7 +17,7 @@ impl<'a> Token<'a> {
 pub enum TokenKind<'a> {
 	Identifier(&'a str),
 	Keyword(&'static str),
-	Operator(&'static str),
+	Operator(Operator),
 	Semicolon,
 	Comma,
 	Bracket(char),
@@ -132,8 +133,8 @@ pub fn lex_code(code: &str) -> Result<(CodeLoc, Vec<Token>)> {
 			c => {
 				// Might be an operator
 				let mut found_operator = false;
-				for operator in OPERATORS {
-					if let Some(loc) = lexer.skip_if_starts_with(operator) {
+				for &(name, operator) in OPERATORS {
+					if let Some(loc) = lexer.skip_if_starts_with(name) {
 						tokens.push(Token::new(loc, TokenKind::Operator(operator)));
 						found_operator = true;
 					}
@@ -383,6 +384,4 @@ fn lex_identifier<'a>(lexer: &mut Lexer<'a>) -> (CodeLoc, &'a str) {
 	(location, start)
 }
 
-// TODO: Operator enum instead?
-const OPERATORS: &[&str] = &[":=", "||", "&&", "->", "+", "-", "/", "*", "==", "!=", "<", ">", ":", "="];
 const KEYWORDS:  &[&str] = &["if", "loop"];

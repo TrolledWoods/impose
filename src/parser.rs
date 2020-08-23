@@ -1,4 +1,5 @@
 use crate::{ Location, CodeLoc, Error, Result, lexer::{ Token, TokenKind } };
+use crate::operator::Operator;
 use std::collections::HashMap;
 
 // TODO: Make a Context type to pass around instead of all the things.
@@ -54,7 +55,7 @@ pub enum NodeKind<'a> {
 		arg_list: Vec<AstNodeId>,
 	},
 	BinaryOperator {
-		op_code: &'a str,
+		operator: Operator,
 		left:  AstNodeId,
 		right: AstNodeId,
 	},
@@ -121,28 +122,22 @@ fn parse_expression_rec<'a>(
 	scopes: &mut Scopes,
 	scope: ScopeId,
 	tokens: &mut TokenStream<'a>,
-	min_priority: usize, 
+	min_priority: u32, 
 ) -> Result<AstNodeId> {
 	let mut a = parse_value(ast, scopes, scope, tokens)?;
 	
-	while let Some(&TokenKind::Operator(op_code)) = tokens.peek_kind() {
-		let priority = match op_code {
-			"->" | ":" | "=" | ":=" => 1,
-			"||" | "&&" => 2,
-			"==" | "!=" | "<" | ">" | ">=" | "<=" => 3,
-			"+" | "-" => 4,
-			"*" | "/" => 5,
-			_ => unreachable!("Not an op_code"),
-		};
+	while let Some(&TokenKind::Operator(operator)) = tokens.peek_kind() {
+		let (priority, left_to_right) = operator.data();
 
-		if priority > min_priority {
+		if (priority + if left_to_right { 0 } else { 1 }) > min_priority {
 			// Skip the operator
 			tokens.next();
 
 			let b = parse_expression_rec(ast, scopes, scope, tokens, priority)?;
+			
 			a = ast.insert_node(Node::new(
 				tokens, 
-				NodeKind::BinaryOperator { op_code, left: a, right: b }
+				NodeKind::BinaryOperator { operator, left: a, right: b }
 			));
 		} else {
 			break;
