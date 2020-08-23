@@ -59,6 +59,10 @@ pub enum NodeKind<'a> {
 		left:  AstNodeId,
 		right: AstNodeId,
 	},
+	UnaryOperator {
+		operator: Operator,
+		operand: AstNodeId,
+	},
 	// Declaration { variable_name: &'a str, value: AstNodeId, },
 	// Assignment { l_value: AstNodeId, r_value: AstNodeId, },
 	// Block {
@@ -126,8 +130,16 @@ fn parse_expression_rec<'a>(
 ) -> Result<AstNodeId> {
 	let mut a = parse_value(ast, scopes, scope, tokens)?;
 	
-	while let Some(&TokenKind::Operator(operator)) = tokens.peek_kind() {
-		let (priority, left_to_right) = operator.data();
+	while let Some(&Token { kind: TokenKind::Operator(operator), ref loc }) = tokens.peek() {
+		let (priority, _, left_to_right) = operator.data();
+
+		let priority = match priority {
+			Some(priority) => priority,
+			None => return_error!(
+				loc, 
+				"Operator is used as a binary operator, but it's not a binary operator"
+			),
+		};
 
 		if (priority + if left_to_right { 0 } else { 1 }) > min_priority {
 			// Skip the operator
@@ -155,6 +167,16 @@ fn parse_value<'a>(
 ) -> Result<AstNodeId> {
 	let token = tokens.expect_next(|| "Expected value")?;
 	let mut id = match token.kind {
+		TokenKind::Operator(operator) => {
+			let (_, unary_priority, _) = operator.data();
+
+			if let Some(unary_priority) = unary_priority {
+				let operand = parse_expression_rec(ast, scopes, scope, tokens, unary_priority)?;
+				ast.insert_node(Node::new(token, NodeKind::UnaryOperator { operator, operand }))
+			} else {
+				return_error!(token, "Operator is not a unary operator, but it's used as one");
+			}
+		}
 		TokenKind::NumericLiteral(number) => {
 			ast.insert_node(Node::new(token, NodeKind::Number(number)))
 		}

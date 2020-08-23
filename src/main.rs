@@ -23,7 +23,7 @@ use std::fmt;
 
 fn main() {
 	let code = r#"
-(x == y) + z
+x = p = x + *y.z
 	"#;
 
 	let (last_loc, tokens) = match lexer::lex_code(code) {
@@ -49,6 +49,10 @@ fn main() {
 
 	fn recurse(ast: &parser::Ast, node: &parser::Node) {
 		match node.kind {
+			parser::NodeKind::UnaryOperator  { operator, operand } => {
+				print!("{:?} ", operator);
+				recurse(ast, ast.get_node(operand));
+			}
 			parser::NodeKind::BinaryOperator { operator, left, right } => {
 				print!("(");
 				recurse(ast, ast.get_node(left));
