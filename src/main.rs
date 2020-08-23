@@ -29,46 +29,14 @@ fn main() {
 	println!("{}", code);
 	println!();
 
-	let (last_loc, tokens) = match lexer::lex_code(code) {
-		Ok(value) => value,
-		Err(err) => {
-			print_error(code, err);
-			return;
-		}
-	};
-
 	// TODO: Make parser take source code directly and call lexer in there instead.
-	let ast = match parser::parse_expression_temporary(&tokens, last_loc) {
+	let ast = match parser::parse_code(code) {
 		Ok(value) => value,
 		Err(err) => {
 			print_error(code, err);
 			return;
 		}
 	};
-
-	fn recurse(ast: &parser::Ast, node: &parser::Node) {
-		match node.kind {
-			parser::NodeKind::Number(num) => print!("{}", num),
-			parser::NodeKind::UnaryOperator  { operator, operand } => {
-				print!("{:?} ", operator);
-				recurse(ast, ast.get_node(operand));
-			}
-			parser::NodeKind::BinaryOperator { operator, left, right } => {
-				print!("(");
-				recurse(ast, ast.get_node(left));
-				print!(" {:?} ", operator);
-				recurse(ast, ast.get_node(right));
-				print!(")");
-			}
-			parser::NodeKind::Identifier(_, name) => print!("{}", name),
-			_ => unimplemented!(),
-		}
-	}
-
-	println!("Abstract syntax tree: ");
-	recurse(&ast, &ast.nodes.last().unwrap());
-	println!();
-	println!();
 
 	let last = ast.nodes.len() - 1;
 	let (locals, instructions) = code_gen::compile_expression(&ast, last as u32);

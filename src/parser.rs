@@ -1,4 +1,4 @@
-use crate::{ Location, CodeLoc, Error, Result, lexer::{ Token, TokenKind } };
+use crate::{ Location, CodeLoc, Error, Result, lexer::{ self, Token, TokenKind } };
 use crate::operator::Operator;
 use std::collections::HashMap;
 
@@ -10,16 +10,19 @@ use std::collections::HashMap;
 pub type AstNodeId = u32;
 
 #[derive(Debug)]
-pub struct Ast<'a> {
-	pub nodes: Vec<Node<'a>>,
+// TODO: Remove lifetime here, i.e. make the abstract syntax tree completely
+// independent of any borrowed strings from the source code. Force loading all the files to compile
+// feels like a bad idea.
+pub struct Ast {
+	pub nodes: Vec<Node>,
 }
 
-impl<'a> Ast<'a> {
+impl Ast {
 	fn new() -> Self {
 		Ast { nodes: Vec::new() }
 	}
 
-	fn insert_node(&mut self, node: Node<'a>) -> AstNodeId {
+	fn insert_node(&mut self, node: Node) -> AstNodeId {
 		self.nodes.push(node);
 		self.nodes.len() as u32 - 1
 	}
@@ -28,28 +31,28 @@ impl<'a> Ast<'a> {
 		&self.nodes[index as usize]
 	}
 
-	pub fn get_node_mut(&mut self, index: u32) -> &mut Node<'a> {
+	pub fn get_node_mut(&mut self, index: u32) -> &mut Node {
 		&mut self.nodes[index as usize]
 	}
 }
 
 #[derive(Debug)]
-pub struct Node<'a> {
+pub struct Node {
 	pub loc: CodeLoc,
-	pub kind: NodeKind<'a>,
+	pub kind: NodeKind,
 }
 
-impl<'a> Node<'a> {
-	fn new(location: &impl Location, kind: NodeKind<'a>) -> Self {
+impl Node {
+	fn new(location: &impl Location, kind: NodeKind) -> Self {
 		Node { loc: location.get_location(), kind }
 	}
 }
 
 #[derive(Debug)]
-pub enum NodeKind<'a> {
+pub enum NodeKind {
 	Number(i128),
 	String(String),
-	Identifier(ScopeId, &'a str),
+	Identifier(ScopeMemberId),
 	FunctionCall {
 		function_pointer: AstNodeId,
 		arg_list: Vec<AstNodeId>,
@@ -63,11 +66,11 @@ pub enum NodeKind<'a> {
 		operator: Operator,
 		operand: AstNodeId,
 	},
-	// Declaration { variable_name: &'a str, value: AstNodeId, },
+	Declaration { variable_name: ScopeMemberId, value: AstNodeId, },
 	// Assignment { l_value: AstNodeId, r_value: AstNodeId, },
-	// Block {
-	// 	contents: Vec<AstNodeId>,
-	// }
+	Block {
+		contents: Vec<AstNodeId>,
+	}
 }
 
 struct TokenStream<'a> {
@@ -112,7 +115,7 @@ impl<'a> TokenStream<'a> {
 }
 
 fn parse_expression<'a>(
-	ast: &mut Ast<'a>,
+	ast: &mut Ast,
 	scopes: &mut Scopes,
 	scope: ScopeId,
 	tokens: &mut TokenStream<'a>,
@@ -122,7 +125,7 @@ fn parse_expression<'a>(
 
 /// Parse an expression recursively
 fn parse_expression_rec<'a>(
-	ast: &mut Ast<'a>,
+	ast: &mut Ast,
 	scopes: &mut Scopes,
 	scope: ScopeId,
 	tokens: &mut TokenStream<'a>,
@@ -160,7 +163,7 @@ fn parse_expression_rec<'a>(
 }
 
 fn parse_value<'a>(
-	ast: &mut Ast<'a>,
+	ast: &mut Ast,
 	scopes: &mut Scopes,
 	scope: ScopeId,
 	tokens: &mut TokenStream<'a>,
@@ -186,7 +189,10 @@ fn parse_value<'a>(
 			ast.insert_node(Node::new(token, NodeKind::String(string.clone())))
 		}
 		TokenKind::Identifier(name) => {
-			ast.insert_node(Node::new(token, NodeKind::Identifier(scope, name)))
+			match scopes.find_member(scope, name) {
+				Some(member) => ast.insert_node(Node::new(token, NodeKind::Identifier(member))),
+				None => return_error!(token, "Unrecognised name"),
+			}
 		}
 		TokenKind::Bracket('(') => {
 			let value = parse_expression(ast, scopes, scope, tokens)?;
@@ -217,12 +223,12 @@ fn parse_value<'a>(
 }
 
 fn try_parse_list<'a, V>(
-	ast: &mut Ast<'a>,
+	ast: &mut Ast,
 	scopes: &mut Scopes,
 	scope: ScopeId,
 	tokens: &mut TokenStream<'a>,
 	mut parse_value: 
-		impl for <'b> FnMut(&'b mut Ast<'a>, &'b mut Scopes, ScopeId, &'b mut TokenStream<'a>
+		impl for <'b> FnMut(&'b mut Ast, &'b mut Scopes, ScopeId, &'b mut TokenStream<'a>
 			) -> Result<V>,
 	start_bracket: &TokenKind,
 	close_bracket: &TokenKind,
@@ -256,15 +262,15 @@ fn try_parse_list<'a, V>(
 	Ok(Some((location, contents)))
 }
 
-pub fn parse_expression_temporary<'a>(
-	tokens: &'a [Token<'a>], 
-	last_loc: CodeLoc,
-) -> Result<Ast<'a>> {
+pub fn parse_code(
+	code: &str,
+) -> Result<Ast> {
+	let (last_loc, tokens) = lexer::lex_code(code)?;
 	let mut ast = Ast::new();
 	let mut scopes = Scopes::new();
-	let scope = scopes.create_scope();
+	let scope = scopes.create_scope(None);
 
-	let mut stream = TokenStream::new(tokens, last_loc);
+	let mut stream = TokenStream::new(&tokens, last_loc);
 	parse_expression(&mut ast, &mut scopes, scope, &mut stream)?;
 
 	Ok(ast)
@@ -272,6 +278,7 @@ pub fn parse_expression_temporary<'a>(
 
 // TODO: Maybe make this its own type? And also, make this a NonZeroU32 eventually
 pub type ScopeId = u32;
+pub type ScopeMemberId = (u32, u32);
 
 #[derive(Default)]
 pub struct Scopes {
@@ -282,25 +289,75 @@ pub struct Scopes {
 impl Scopes {
 	pub fn new() -> Self { Default::default() }
 
-	pub fn create_scope(&mut self) -> ScopeId {
+	pub fn create_scope(&mut self, parent: Option<ScopeId>) -> ScopeId {
 		let id = self.scope_id_counter;
 		self.scope_id_counter += 1;
-		self.scopes.insert(id, Default::default());
+		self.scopes.insert(id, Scope { parent, .. Default::default() });
 		id
+	}
+
+	fn member(&self, member: ScopeMemberId) -> &ScopeMember {
+		self.scopes.get(&member.0).unwrap().members.get(&member.1).unwrap()
+	}
+
+	fn find_member(&self, scope_id: ScopeId, name: &str) -> Option<ScopeMemberId> {
+		let mut scope = self.scopes.get(&scope_id).unwrap();
+
+		loop {
+			for (key, value) in scope.members.iter() {
+				if value.name == name {
+					return Some((scope_id, *key));
+				}
+			}
+
+			scope = self.scopes.get(&scope.parent?).unwrap();
+		}
+	}
+
+	fn declare_member(
+		&mut self, 
+		scope: ScopeId, 
+		name: String, 
+		loc: &CodeLoc,
+	) -> Result<ScopeMemberId> {
+		if let Some(old) = self.find_member(scope, &name) {
+			// TODO: When I add info things, make sure to add some info here!
+			return_error!(
+				self.member(old).declaration_location, 
+				"Scope member already declared here"
+			);
+		}
+
+		let member = ScopeMember { 
+			declaration_location: loc.clone(), 
+			name,
+			storage_location: None,
+		};
+
+		let scope = self.scopes.get_mut(&scope).unwrap();
+		let id = (self.scope_id_counter, scope.member_ctr);
+		scope.members.insert(id.1, member);
+		self.scope_id_counter += 1;
+		scope.member_ctr += 1;
+		
+		Ok(id)
 	}
 }
 
 #[derive(Debug, Default)]
 pub struct Scope {
-	pub parent_scope: ScopeId,
+	pub parent: Option<ScopeId>,
 	pub has_locals: bool,
-	pub members: HashMap<u32, ScopeMember>,
+	// TODO: Maybe just make members a Vec?
+	members: HashMap<u32, ScopeMember>,
+	member_ctr: u32,
 }
 
 #[derive(Debug)]
 pub struct ScopeMember {
 	pub declaration_location: CodeLoc,
 	pub name: String,
+	pub storage_location: Option<crate::code_gen::Value>,
 	// pub type_: Option<Type>,
 	// pub is_constant: bool,
 }
