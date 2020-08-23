@@ -71,6 +71,11 @@ pub enum NodeKind {
 	Declaration { variable_name: ScopeMemberId, value: AstNodeId, },
 	Block {
 		contents: Vec<AstNodeId>,
+		label: Option<ScopeMemberId>,
+	},
+	Skip {
+		label: ScopeMemberId,
+		value: Option<AstNodeId>,
 	}
 }
 
@@ -121,6 +126,11 @@ impl<'a> TokenStream<'a> {
 		self.tokens.get(self.index - 1)
 	}
 
+	fn next_kind(&mut self) -> Option<&'a TokenKind<'a>> {
+		self.index += 1;
+		self.tokens.get(self.index - 1).map(|v| &v.kind)
+	}
+
 	fn expect_next<'b, D: std::fmt::Display>(&'b mut self, message: impl FnOnce() -> D) 
 		-> Result<&'a Token<'a>> 
 	{
@@ -129,6 +139,66 @@ impl<'a> TokenStream<'a> {
 			Some(value) => Ok(value),
 			None => return_error!(self, "{}", message())
 		}
+	}
+}
+
+fn try_parse_create_label(
+	ast: &mut Ast, 
+	scopes: &mut Scopes, 
+	scope: ScopeId, 
+	tokens: &mut TokenStream,
+) -> Result<Option<ScopeMemberId>> {
+	if let Some(TokenKind::Colon) = tokens.peek_kind() {
+		tokens.next();
+		let loc = tokens.get_location();
+		match tokens.next_kind() {
+			Some(TokenKind::Identifier(name)) => {
+				let id = scopes.declare_member(
+					scope, 
+					name.to_string(),
+					&loc,
+					ScopeMemberKind::Label,
+				)?;
+				Ok(Some(id))
+			}
+			_ => return_error!(loc, "Expected label name"),
+		}
+	} else {
+		Ok(None)
+	}
+}
+
+fn try_parse_label(
+	ast: &mut Ast, 
+	scopes: &mut Scopes, 
+	scope: ScopeId, 
+	tokens: &mut TokenStream,
+) -> Result<Option<ScopeMemberId>> {
+	if let Some(TokenKind::Colon) = tokens.peek_kind() {
+		tokens.next();
+		let loc = tokens.get_location();
+		match tokens.next_kind() {
+			Some(TokenKind::Identifier(name)) => {
+				let id = match scopes.find_member(
+					scope, 
+					name,
+				) {
+					Some(id) => id,
+					None => return_error!(loc, "Unknown label"),
+				};
+				if scopes.member(id).kind != ScopeMemberKind::Label {
+					return_error!(
+						loc, 
+						"Expected label, got variable or constant"
+					);
+				}
+
+				Ok(Some(id))
+			}
+			_ => return_error!(loc, "Expected label name"),
+		}
+	} else {
+		Ok(None)
 	}
 }
 
@@ -142,6 +212,8 @@ fn parse_block(ast: &mut Ast, scopes: &mut Scopes, scope: ScopeId, tokens: &mut 
 	}
 
 	let scope = scopes.create_scope(Some(scope));
+
+	let label = try_parse_create_label(ast, scopes, scope, tokens)?;
 
 	let mut commands = Vec::new();
 	loop {
@@ -162,7 +234,7 @@ fn parse_block(ast: &mut Ast, scopes: &mut Scopes, scope: ScopeId, tokens: &mut 
 				let declare_loc = &tokens.next().unwrap().loc;
 
 				// We have a declaration
-				let variable_name = scopes.declare_member(scope, name.to_string(), ident_loc)?;
+				let variable_name = scopes.declare_member(scope, name.to_string(), ident_loc, ScopeMemberKind::LocalVariable)?;
 				let value = parse_expression(ast, scopes, scope, tokens)?;
 				commands.push(ast.insert_node(Node::new(declare_loc, scope, NodeKind::Declaration {
 					variable_name, value,
@@ -184,7 +256,7 @@ fn parse_block(ast: &mut Ast, scopes: &mut Scopes, scope: ScopeId, tokens: &mut 
 		}
 	}
 
-	Ok(ast.insert_node(Node::new(&loc, scope, NodeKind::Block { contents: commands } )))
+	Ok(ast.insert_node(Node::new(&loc, scope, NodeKind::Block { contents: commands, label } )))
 }
 
 #[inline]
@@ -269,7 +341,12 @@ fn parse_value<'a>(
 		TokenKind::Identifier(name) => {
 			tokens.next();
 			match scopes.find_member(scope, name) {
-				Some(member) => ast.insert_node(Node::new(token, scope, NodeKind::Identifier(member))),
+				Some(member) => {
+					if scopes.member(member).kind == ScopeMemberKind::Label {
+						return_error!(token, "Tried using label as a variable or a constant");
+					}
+					ast.insert_node(Node::new(token, scope, NodeKind::Identifier(member)))
+				}
 				None => return_error!(token, "Unrecognised name"),
 			}
 		}
@@ -286,6 +363,33 @@ fn parse_value<'a>(
 			}
 
 			value
+		}
+		TokenKind::Keyword("skip") => {
+			tokens.next();
+
+			let loc = tokens.get_location();
+			let label = match try_parse_label(ast, scopes, scope, tokens)? {
+				Some(label) => label,
+				None => return_error!(loc, "Expected label ':label_name'"),
+			};
+
+			// There may be some argument to the break
+			let value = if let Some(TokenKind::Bracket('(')) = tokens.peek_kind() {
+				tokens.next();
+				let value = parse_value(ast, scopes, scope, tokens)?;
+
+				let loc = tokens.get_location();
+				match tokens.next_kind() {
+					Some(TokenKind::ClosingBracket(')')) => (),
+					_ => return_error!(loc, "Expected closing ')'"),
+				}
+
+				Some(value)
+			} else {
+				None
+			};
+
+			ast.insert_node(Node::new(token, scope, NodeKind::Skip { label, value }))
 		}
 		_ => {
 			return_error!(token, "Expected value");
@@ -414,6 +518,7 @@ impl Scopes {
 		scope: ScopeId, 
 		name: String, 
 		loc: &CodeLoc,
+		kind: ScopeMemberKind,
 	) -> Result<ScopeMemberId> {
 		for value in self.members(scope) {
 			if value.name == name {
@@ -428,6 +533,7 @@ impl Scopes {
 			declaration_location: loc.clone(), 
 			name,
 			storage_location: None,
+			kind,
 		};
 
 		let scope_instance = self.scopes.get_mut(&scope).unwrap();
@@ -448,10 +554,17 @@ pub struct Scope {
 	member_ctr: u32,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum ScopeMemberKind {
+	LocalVariable,
+	Label,
+}
+
 #[derive(Debug)]
 pub struct ScopeMember {
 	pub declaration_location: CodeLoc,
 	pub name: String,
+	pub kind: ScopeMemberKind,
 	pub storage_location: Option<crate::code_gen::Value>,
 	// pub type_: Option<Type>,
 	// pub is_constant: bool,

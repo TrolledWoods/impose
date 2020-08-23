@@ -1,4 +1,5 @@
 #![feature(assoc_char_funcs)]
+#![feature(drain_filter)]
 
 /// This is a macro to allow the compiler line and column to ergonomically be passed
 /// inside the errors that are returned(for compiler debugging)
@@ -23,12 +24,7 @@ mod code_gen;
 use std::fmt;
 
 fn main() {
-	let code = r#"
-{
-	{ :i_break
-		break :i_break;
-	};
-}"#;
+	let code = include_str!("../test.im");
 
 	println!("Source code: ");
 	println!("{}", code);

@@ -1,0 +1,17 @@
+{
+	read_input_from_user := 42;
+
+	input := 50;
+
+	result := {:main
+		{
+			x := read_input_from_user();
+			input = x;
+
+			skip :main(x);
+			z := 60;
+		};
+
+		input
+	};
+}

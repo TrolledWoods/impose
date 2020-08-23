@@ -30,6 +30,7 @@ pub enum Instruction {
 	AddU64(Value, Value, Value),
 	SubU64(Value, Value, Value),
 	MoveU64(Value, Value),
+	JumpRel(i64),
 }
 
 impl fmt::Debug for Instruction {
@@ -38,6 +39,7 @@ impl fmt::Debug for Instruction {
 			Instruction::AddU64(a, b, c) => write!(f, "add {:?}, {:?}, {:?}", a, b, c),
 			Instruction::SubU64(a, b, c) => write!(f, "sub {:?}, {:?}, {:?}", a, b, c),
 			Instruction::MoveU64(a, b) => write!(f, "mov {:?}, {:?}", a, b),
+			Instruction::JumpRel(a) => write!(f, "jump {:?}", a),
 		}
 	}
 }
@@ -54,6 +56,8 @@ pub fn compile_expression(
 	let mut locals = Locals::new();
 	let mut node_values: Vec<Value> = Vec::with_capacity(ast.nodes.len());
 	let mut instructions = Vec::new();
+
+	let mut temporary_labels = Vec::new();
 
 	for (i, node) in ast.nodes.iter().enumerate() {
 		match node.kind {
@@ -79,16 +83,30 @@ pub fn compile_expression(
 				locals.free_value(input);
 				node_values.push(Value::Poison);
 			}
-			parser::NodeKind::Block { ref contents } => {
-				if contents.len() > 0 {
-					for &content in &contents[..contents.len() - 1] {
-						locals.free_value(
-							node_values[content as usize]
-						);
-					}
-
-					node_values.push(node_values[*contents.last().unwrap() as usize]);
+			parser::NodeKind::Skip { label, value } => {
+				let instruction_loc = instructions.len();
+				if let Some(value) = value {
+					let input = node_values[value as usize];
+					locals.note_usage(&input);
+					instructions.push(Instruction::MoveU64(Value::Local(9999), input));
+					locals.free_value(input);
+				}else {
+					instructions.push(Instruction::MoveU64(Value::Poison, Value::Constant(9999)));
 				}
+				instructions.push(Instruction::JumpRel(-42069));
+
+				temporary_labels.push((label, instruction_loc));
+				node_values.push(Value::Poison);
+			}
+			parser::NodeKind::Block { ref contents, label } => {
+				for &content in &contents[..contents.len() - 1] {
+					locals.free_value(
+						node_values[content as usize]
+					);
+				}
+
+				let result = node_values[*contents.last().unwrap() as usize];
+				node_values.push(result);
 
 				for member in scopes.members(node.scope) {
 					if let Some(location) = member.storage_location {
@@ -96,6 +114,22 @@ pub fn compile_expression(
 					} else {
 						println!("WARNING!!! {:?} Member in scope not declared", 
 							member.declaration_location);
+					}
+				}
+
+				if let Some(label) = label {
+					for (temp_label, instruction_loc) in 
+						temporary_labels.drain_filter(|(l, _)| l == &label) 
+					{
+						if let Instruction::MoveU64(a, _) = &mut instructions[instruction_loc] {
+							locals.note_usage(&result);
+							// TODO: Stability, 
+							// check if this is a constant
+							*a = result;
+						}
+
+						instructions[instruction_loc + 1] = 
+							Instruction::JumpRel((instructions.len() - instruction_loc) as i64 - 2);
 					}
 				}
 			}
@@ -214,15 +248,6 @@ impl Locals {
 
 		assert!(self.locals[local].0 > 0);
 		self.locals[local ].1 += 1;
-	}
-
-	fn free(&mut self, local: LocalId) {
-		assert!(self.locals[local ].0 > 0);
-		self.locals[local ].0 -= 1;
-
-		if self.locals[local ].0 == 0 {
-			self.free_locals.push((local, self.locals[local ].1));
-		}
 	}
 
 	fn free_value(&mut self, value: Value) {

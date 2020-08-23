@@ -20,6 +20,7 @@ pub enum TokenKind<'a> {
 	Operator(Operator),
 	Semicolon,
 	Comma,
+	Colon,
 	Bracket(char),
 	ClosingBracket(char),
 	NumericLiteral(i128), // TODO: Make the numeric literal arbitrarily large.
@@ -138,6 +139,14 @@ pub fn lex_code(code: &str) -> Result<(CodeLoc, Vec<Token>)> {
 						tokens.push(Token::new(loc, TokenKind::Operator(operator)));
 						found_operator = true;
 					}
+				}
+
+				if !found_operator && c == ':' {
+					tokens.push(Token::new(lexer.source_code_location.clone(), TokenKind::Colon));
+					lexer.source_code_location.column += 1;
+					lexer.next();
+					
+					found_operator = true;
 				}
 
 				if !found_operator {
@@ -384,4 +393,4 @@ fn lex_identifier<'a>(lexer: &mut Lexer<'a>) -> (CodeLoc, &'a str) {
 	(location, start)
 }
 
-const KEYWORDS:  &[&str] = &["if", "loop"];
+const KEYWORDS:  &[&str] = &["if", "loop", "skip"];
