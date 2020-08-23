@@ -7,7 +7,7 @@ use std::collections::HashMap;
 // too many things in it.
 
 // TODO: Maybe make this its own type?
-type AstNodeId = u32;
+pub type AstNodeId = u32;
 
 #[derive(Debug)]
 pub struct Ast<'a> {

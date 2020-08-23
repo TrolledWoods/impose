@@ -19,12 +19,15 @@ macro_rules! return_error {
 mod operator;
 mod lexer;
 mod parser;
+mod code_gen;
 use std::fmt;
 
 fn main() {
-	let code = r#"
-x = p = x + *y.z
-	"#;
+	let code = r#"50 - 20 + 10"#;
+
+	println!("Source code: ");
+	println!("{}", code);
+	println!();
 
 	let (last_loc, tokens) = match lexer::lex_code(code) {
 		Ok(value) => value,
@@ -43,12 +46,9 @@ x = p = x + *y.z
 		}
 	};
 
-	for node in &ast.nodes {
-		println!("{:?}: {:?}", node.loc, node.kind);
-	}
-
 	fn recurse(ast: &parser::Ast, node: &parser::Node) {
 		match node.kind {
+			parser::NodeKind::Number(num) => print!("{}", num),
 			parser::NodeKind::UnaryOperator  { operator, operand } => {
 				print!("{:?} ", operator);
 				recurse(ast, ast.get_node(operand));
@@ -65,7 +65,24 @@ x = p = x + *y.z
 		}
 	}
 
+	println!("Abstract syntax tree: ");
 	recurse(&ast, &ast.nodes.last().unwrap());
+	println!();
+	println!();
+
+	let last = ast.nodes.len() - 1;
+	let (locals, instructions) = code_gen::compile_expression(&ast, last as u32);
+
+	println!("Locals: ");
+	for (i, &(locks, uses)) in locals.locals.iter().enumerate() {
+		println!("{}: locks {}, uses {}", i, locks, uses);
+	}
+
+	println!();
+	println!("Instructions: ");
+	for instruction in &instructions {
+		println!("{:?}", instruction);
+	}
 }
 
 fn print_error(code: &str, error: Error) {
