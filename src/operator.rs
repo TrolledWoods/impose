@@ -21,6 +21,14 @@ macro_rules! create_operators {
 
 // Name; Token, LeftToRight, Priority
 create_operators! {
+	// Boolean comparisons
+	Equ ;       "==", true, 5,
+	NEqu;       "!=", true, 5,
+	LessEqu;    "<=" , true, 5,
+	GreaterEqu; ">=" , true, 5,
+	Less;       "<" , true, 5,
+	Greater;    ">" , true, 5,
+
 	// Assignment and declaration
 	Declare; ":=", false, 3,
 	Assign;  "=", false, 3,
@@ -28,14 +36,6 @@ create_operators! {
 	// Boolean operators
 	And; "&&", true, 4,
 	Or ; "||", true, 4,
-
-	// Boolean comparisons
-	Equ ;       "==", true, 5,
-	NEqu;       "!=", true, 5,
-	Less;       "<" , true, 5,
-	Greater;    ">" , true, 5,
-	LessEqu;    "<=" , true, 5,
-	GreaterEqu; ">=" , true, 5,
 
 	Add; "+", true, 6,
 	Sub; "-", true, 6,

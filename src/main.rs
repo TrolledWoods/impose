@@ -23,7 +23,7 @@ use std::fmt;
 
 fn main() {
 	let code = r#"
-x * z + y * h
+(x == y) + z
 	"#;
 
 	let (last_loc, tokens) = match lexer::lex_code(code) {

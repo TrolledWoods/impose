@@ -83,21 +83,21 @@ impl<'a> TokenStream<'a> {
 		TokenStream { tokens, index: 0, last_location } 
 	}
 
-	fn peek(&self) -> Option<&Token<'a>> {
+	fn peek(&self) -> Option<&'a Token<'a>> {
 		self.tokens.get(self.index)
 	}
 
-	fn peek_kind(&self) -> Option<&TokenKind<'a>> {
+	fn peek_kind(&self) -> Option<&'a TokenKind<'a>> {
 		self.tokens.get(self.index).map(|v| &v.kind)
 	}
 
-	fn next(&mut self) -> Option<&Token<'a>> {
+	fn next(&mut self) -> Option<&'a Token<'a>> {
 		self.index += 1;
 		self.tokens.get(self.index - 1)
 	}
 
-	fn expect_next<D: std::fmt::Display>(&mut self, message: impl FnOnce() -> D) 
-		-> Result<&Token<'a>> 
+	fn expect_next<'b, D: std::fmt::Display>(&'b mut self, message: impl FnOnce() -> D) 
+		-> Result<&'a Token<'a>> 
 	{
 		self.index += 1;
 		match self.tokens.get(self.index - 1) {
@@ -165,6 +165,16 @@ fn parse_value<'a>(
 		}
 		TokenKind::Identifier(name) => {
 			ast.insert_node(Node::new(token, NodeKind::Identifier(scope, name)))
+		}
+		TokenKind::Bracket('(') => {
+			let value = parse_expression(ast, scopes, scope, tokens)?;
+			
+			match tokens.next() {
+				Some(Token { kind: TokenKind::ClosingBracket(')'), .. }) => (),
+				_ => return_error!(&token, "Parenthesis is not closed properly"),
+			}
+
+			value
 		}
 		_ => {
 			return_error!(token, "Expected value");
