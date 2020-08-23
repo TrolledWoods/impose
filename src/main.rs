@@ -23,7 +23,17 @@ mod code_gen;
 use std::fmt;
 
 fn main() {
-	let code = r#"50 - 20 + 10"#;
+	let code = r#"{ 
+	20; 
+	50 + 20 - 600;
+	14 - 245;
+	14 - 245;
+	14 - 245;
+	14 - 245;
+	14 - 245;
+	60; 
+	50 - 20 + 10 
+}"#;
 
 	println!("Source code: ");
 	println!("{}", code);

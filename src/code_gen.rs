@@ -47,11 +47,22 @@ pub fn compile_expression(
 	node: parser::AstNodeId,
 ) -> (Locals, Vec<Instruction>) {
 	let mut locals = Locals::new();
-	let mut node_values = Vec::with_capacity(ast.nodes.len());
+	let mut node_values: Vec<Value> = Vec::with_capacity(ast.nodes.len());
 	let mut instructions = Vec::new();
 
 	for (i, node) in ast.nodes.iter().enumerate() {
 		match node.kind {
+			parser::NodeKind::Block { ref contents } => {
+				if contents.len() > 0 {
+					for &content in &contents[..contents.len() - 1] {
+						locals.free_value(
+							node_values[content as usize]
+						);
+					}
+
+					node_values.push(node_values[*contents.last().unwrap() as usize]);
+				}
+			}
 			parser::NodeKind::Number(num) => {
 				// TODO: Check that the number fits, although I guess this should
 				// be down further up in the pipeline
@@ -132,6 +143,19 @@ impl Locals {
 			self.locals.push((1, 0));
 			id 
 		}
+	}
+
+	fn clone(&mut self, value: &Value) -> Value {
+		let local = match *value {
+			Value::Local(local) => local,
+			Value::LocalIndirect(local, offset) => local,
+			Value::Constant(_) => return *value, // Constants do not use locals
+		};
+
+		assert!(self.locals[local].0 > 0);
+		self.locals[local].0 += 1;
+
+		value.clone()
 	}
 
 	fn note_usage(&mut self, value: &Value) {

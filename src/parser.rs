@@ -52,6 +52,7 @@ impl Node {
 pub enum NodeKind {
 	Number(i128),
 	String(String),
+	EmptyLiteral,
 	Identifier(ScopeMemberId),
 	FunctionCall {
 		function_pointer: AstNodeId,
@@ -67,7 +68,6 @@ pub enum NodeKind {
 		operand: AstNodeId,
 	},
 	Declaration { variable_name: ScopeMemberId, value: AstNodeId, },
-	// Assignment { l_value: AstNodeId, r_value: AstNodeId, },
 	Block {
 		contents: Vec<AstNodeId>,
 	}
@@ -94,6 +94,15 @@ impl<'a> TokenStream<'a> {
 		self.tokens.get(self.index)
 	}
 
+	fn expect_peek<'b, D: std::fmt::Display>(&'b mut self, message: impl FnOnce() -> D) 
+		-> Result<&'a Token<'a>> 
+	{
+		match self.tokens.get(self.index) {
+			Some(value) => Ok(value),
+			None => return_error!(self, "{}", message())
+		}
+	}
+
 	fn peek_kind(&self) -> Option<&'a TokenKind<'a>> {
 		self.tokens.get(self.index).map(|v| &v.kind)
 	}
@@ -114,6 +123,43 @@ impl<'a> TokenStream<'a> {
 	}
 }
 
+fn parse_block(ast: &mut Ast, scopes: &mut Scopes, scope: ScopeId, tokens: &mut TokenStream) 
+	-> Result<AstNodeId>
+{
+	let loc = tokens.get_location();
+	match tokens.next() {
+		Some(Token { kind: TokenKind::Bracket('{'), .. }) => (),
+		_ => return_error!(loc, "Expected '{{' to start block"),
+	}
+
+	let mut commands = Vec::new();
+	loop {
+		match tokens.peek() {
+			Some(Token { loc, kind: TokenKind::ClosingBracket('}') }) => {
+				commands.push(ast.insert_node(Node::new(loc, NodeKind::EmptyLiteral)));
+				tokens.next();
+				break;
+			}
+			_ => (),
+		}
+
+		// TODO: Parse more things
+
+		let expr = parse_expression(ast, scopes, scope, tokens)?;
+		commands.push(expr);
+
+		let loc = tokens.get_location();
+		match tokens.next() {
+			Some(Token { kind: TokenKind::ClosingBracket('}'), .. }) => break,
+			Some(Token { kind: TokenKind::Semicolon, .. }) => (),
+			_ => return_error!(loc, "Expected ';' or '}}'"),
+		}
+	}
+
+	Ok(ast.insert_node(Node::new(&loc, NodeKind::Block { contents: commands } )))
+}
+
+#[inline]
 fn parse_expression<'a>(
 	ast: &mut Ast,
 	scopes: &mut Scopes,
@@ -168,9 +214,10 @@ fn parse_value<'a>(
 	scope: ScopeId,
 	tokens: &mut TokenStream<'a>,
 ) -> Result<AstNodeId> {
-	let token = tokens.expect_next(|| "Expected value")?;
+	let token = tokens.expect_peek(|| "Expected value")?;
 	let mut id = match token.kind {
 		TokenKind::Operator(operator) => {
+			tokens.next();
 			let (_, unary_priority, _) = operator.data();
 
 			if let Some(unary_priority) = unary_priority {
@@ -181,20 +228,27 @@ fn parse_value<'a>(
 			}
 		}
 		TokenKind::NumericLiteral(number) => {
+			tokens.next();
 			ast.insert_node(Node::new(token, NodeKind::Number(number)))
 		}
 		TokenKind::StringLiteral(ref string) => {
+			tokens.next();
 			// TODO: Find a way to get rid of the string cloning here!
 			// Possibly by making TokenStream own its data
 			ast.insert_node(Node::new(token, NodeKind::String(string.clone())))
 		}
 		TokenKind::Identifier(name) => {
+			tokens.next();
 			match scopes.find_member(scope, name) {
 				Some(member) => ast.insert_node(Node::new(token, NodeKind::Identifier(member))),
 				None => return_error!(token, "Unrecognised name"),
 			}
 		}
+		TokenKind::Bracket('{') => {
+			parse_block(ast, scopes, scope, tokens)?
+		}
 		TokenKind::Bracket('(') => {
+			tokens.next();
 			let value = parse_expression(ast, scopes, scope, tokens)?;
 			
 			match tokens.next() {
