@@ -1,6 +1,5 @@
 use crate::{ Location, CodeLoc, Error, Result, lexer::{ self, Token, TokenKind } };
 use crate::operator::Operator;
-use std::collections::HashMap;
 
 struct Context<'a, 't> {
 	ast: &'a mut Ast, 
@@ -470,43 +469,41 @@ pub type ScopeMemberId = (u32, u32);
 
 #[derive(Default, Debug)]
 pub struct Scopes {
-	pub scopes: HashMap<ScopeId, Scope>,
-	scope_id_counter: u32,
+	scopes: Vec<Scope>,
 }
 
 impl Scopes {
 	pub fn new() -> Self { Default::default() }
 
 	pub fn create_scope(&mut self, parent: Option<ScopeId>) -> ScopeId {
-		let id = self.scope_id_counter;
-		self.scope_id_counter += 1;
-		self.scopes.insert(id, Scope { parent, .. Default::default() });
+		let id = self.scopes.len() as u32;
+		self.scopes.push(Scope { parent, .. Default::default() });
 		id
 	}
 
 	pub fn member(&self, member: ScopeMemberId) -> &ScopeMember {
-		self.scopes.get(&member.0).unwrap().members.get(&member.1).unwrap()
+		&self.scopes[member.0 as usize].members[member.1 as usize]
 	}
 
 	pub fn member_mut(&mut self, member: ScopeMemberId) -> &mut ScopeMember {
-		self.scopes.get_mut(&member.0).unwrap().members.get_mut(&member.1).unwrap()
+		&mut self.scopes[member.0 as usize].members[member.1 as usize]
 	}
 
 	pub fn members(&mut self, scope: ScopeId) 
 		-> impl Iterator<Item = &ScopeMember> 
 	{
-		self.scopes.get(&scope).unwrap().members.values()
+		self.scopes[scope as usize].members.iter()
 	}
 
 	fn find_member(&self, mut scope_id: ScopeId, name: &str) -> Option<ScopeMemberId> {
 		let mut scope;
 
 		loop {
-			scope = self.scopes.get(&scope_id).unwrap();
+			scope = &self.scopes[scope_id as usize];
 
-			for (key, value) in scope.members.iter() {
+			for (i, value) in scope.members.iter().enumerate() {
 				if value.name == name {
-					return Some((scope_id, *key));
+					return Some((scope_id, i as u32));
 				}
 			}
 
@@ -537,10 +534,9 @@ impl Scopes {
 			kind,
 		};
 
-		let scope_instance = self.scopes.get_mut(&scope).unwrap();
-		let id = (scope, scope_instance.member_ctr);
-		scope_instance.members.insert(id.1, member);
-		scope_instance.member_ctr += 1;
+		let scope_instance = &mut self.scopes[scope as usize];
+		let id = (scope, scope_instance.members.len() as u32);
+		scope_instance.members.push(member);
 		
 		Ok(id)
 	}
@@ -550,9 +546,7 @@ impl Scopes {
 pub struct Scope {
 	pub parent: Option<ScopeId>,
 	pub has_locals: bool,
-	// TODO: Maybe just make members a Vec?
-	members: HashMap<u32, ScopeMember>,
-	member_ctr: u32,
+	members: Vec<ScopeMember>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
