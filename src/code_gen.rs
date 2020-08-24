@@ -1,6 +1,4 @@
-use crate::parser;
-use crate::parser::{Scopes, ScopeId};
-use crate::operator::Operator;
+use crate::{ parser::{self, Scopes}, operator::Operator };
 use std::fmt;
 
 /// A 'Local' is the equivalent of a register, but there is an arbitrary amount
@@ -9,8 +7,6 @@ use std::fmt;
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Value {
 	Local(LocalId),
-	/// An indirect local, with a byte offset.
-	LocalIndirect(LocalId, i64),
 	Constant(i64),
 	Poison,
 }
@@ -19,7 +15,6 @@ impl fmt::Debug for Value {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match self {
 			Value::Local(local) => write!(f, "({})", local),
-			Value::LocalIndirect(value, offset) => write!(f, "[{}+{}]", value, offset),
 			Value::Constant(value) => write!(f, "{}", value),
 			Value::Poison => write!(f, "Poison"),
 		}
@@ -49,9 +44,7 @@ pub type LocalId = usize;
 
 pub fn compile_expression(
 	ast: &parser::Ast, 
-	node: parser::AstNodeId,
 	scopes: &mut Scopes,
-	scope: ScopeId,
 ) -> (Locals, Vec<Instruction>) {
 	let mut locals = Locals::new();
 	let mut node_values: Vec<Value> = Vec::with_capacity(ast.nodes.len());
@@ -59,7 +52,7 @@ pub fn compile_expression(
 
 	let mut temporary_labels = Vec::new();
 
-	for (i, node) in ast.nodes.iter().enumerate() {
+	for node in ast.nodes.iter() {
 		match node.kind {
 			parser::NodeKind::Identifier(member_id) => {
 				let member = scopes.member(member_id).storage_location
@@ -118,7 +111,7 @@ pub fn compile_expression(
 				}
 
 				if let Some(label) = label {
-					for (temp_label, instruction_loc) in 
+					for (_, instruction_loc) in 
 						temporary_labels.drain_filter(|(l, _)| l == &label) 
 					{
 						if let Instruction::MoveU64(a, _) = &mut instructions[instruction_loc] {
@@ -211,6 +204,7 @@ impl Locals {
 			for (i, &(_, uses)) in self.free_locals.iter().enumerate() {
 				if uses >= most_uses {
 					best_local = i;
+					most_uses = uses;
 				}
 			}
 			let local = self.free_locals[best_local].0;
@@ -227,7 +221,6 @@ impl Locals {
 	fn clone(&mut self, value: &Value) -> Value {
 		let local = match *value {
 			Value::Local(local) => local,
-			Value::LocalIndirect(local, offset) => local,
 			Value::Constant(_) => return *value, // Constants do not use locals
 			Value::Poison => return Value::Poison,
 		};
@@ -241,7 +234,6 @@ impl Locals {
 	fn note_usage(&mut self, value: &Value) {
 		let local = match *value {
 			Value::Local(local) => local,
-			Value::LocalIndirect(local, offset) => local,
 			Value::Constant(_) => return, // Constants do not use locals
 			Value::Poison => panic!("Tried using poison"),
 		};
@@ -253,7 +245,6 @@ impl Locals {
 	fn free_value(&mut self, value: Value) {
 		let local = match value {
 			Value::Local(local) => local,
-			Value::LocalIndirect(local, offset) => local,
 			Value::Constant(_) => return, // Constants do not use locals
 			Value::Poison => return,
 		};

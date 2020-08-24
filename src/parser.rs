@@ -51,10 +51,14 @@ impl Ast {
 		self.nodes.len() as u32 - 1
 	}
 
+	// TODO: Remove this
+	#[allow(unused)]
 	pub fn get_node(&self, index: u32) -> &Node {
 		&self.nodes[index as usize]
 	}
 
+	// TODO: Remove this
+	#[allow(unused)]
 	pub fn get_node_mut(&mut self, index: u32) -> &mut Node {
 		&mut self.nodes[index as usize]
 	}
@@ -155,6 +159,8 @@ impl<'a> TokenStream<'a> {
 		self.tokens.get(self.index - 1).map(|v| &v.kind)
 	}
 
+	// TODO: Remove the function or use it somewhere
+	#[allow(unused)]
 	fn expect_next<'b, D: std::fmt::Display>(&'b mut self, message: impl FnOnce() -> D) 
 		-> Result<&'a Token<'a>> 
 	{
@@ -167,7 +173,7 @@ impl<'a> TokenStream<'a> {
 }
 
 fn try_parse_create_label(
-	mut context: Context,
+	context: Context,
 ) -> Result<Option<ScopeMemberId>> {
 	if let Some(TokenKind::Colon) = context.tokens.peek_kind() {
 		context.tokens.next();
@@ -190,7 +196,7 @@ fn try_parse_create_label(
 }
 
 fn try_parse_label(
-	mut context: Context,
+	context: Context,
 ) -> Result<Option<ScopeMemberId>> {
 	if let Some(TokenKind::Colon) = context.tokens.peek_kind() {
 		context.tokens.next();
@@ -279,7 +285,7 @@ fn parse_block(mut context: Context)
 
 #[inline]
 fn parse_expression(
-	mut context: Context,
+	context: Context,
 ) -> Result<AstNodeId> {
 	parse_expression_rec(context, 0)
 }
