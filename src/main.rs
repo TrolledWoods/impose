@@ -17,6 +17,20 @@ macro_rules! return_error {
 	}}
 }
 
+macro_rules! error {
+	($location:expr, $($format_message:tt)+) => {{
+		Error {
+			message: format!($($format_message)+),
+			source_code_location: $location.get_location(),
+			compiler_location: CodeLoc { 
+				line: line!(), 
+				column: column!(), 
+				file: std::rc::Rc::new(String::from(file!())),
+			},
+		}
+	}}
+}
+
 mod operator;
 mod lexer;
 mod parser;

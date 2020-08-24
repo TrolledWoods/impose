@@ -139,10 +139,7 @@ impl<'a> TokenStream<'a> {
 	fn expect_peek<'b, D: std::fmt::Display>(&'b mut self, message: impl FnOnce() -> D) 
 		-> Result<&'a Token<'a>> 
 	{
-		match self.tokens.get(self.index) {
-			Some(value) => Ok(value),
-			None => return_error!(self, "{}", message())
-		}
+		self.tokens.get(self.index).ok_or_else(|| error!(self, "{}", message()))
 	}
 
 	fn peek_kind(&self) -> Option<&'a TokenKind<'a>> {
@@ -165,10 +162,8 @@ impl<'a> TokenStream<'a> {
 		-> Result<&'a Token<'a>> 
 	{
 		self.index += 1;
-		match self.tokens.get(self.index - 1) {
-			Some(value) => Ok(value),
-			None => return_error!(self, "{}", message())
-		}
+		self.tokens.get(self.index - 1)
+			.ok_or_else(|| error!(self, "{}", message()))
 	}
 }
 
@@ -203,13 +198,11 @@ fn try_parse_label(
 		let loc = context.tokens.get_location();
 		match context.tokens.next_kind() {
 			Some(TokenKind::Identifier(name)) => {
-				let id = match context.scopes.find_member(
+				let id = context.scopes.find_member(
 					context.scope, 
 					name,
-				) {
-					Some(id) => id,
-					None => return_error!(loc, "Unknown label"),
-				};
+				).ok_or_else(|| error!(loc, "Unknown label"))?;
+
 				if context.scopes.member(id).kind != ScopeMemberKind::Label {
 					return_error!(
 						loc, 
@@ -300,18 +293,12 @@ fn parse_expression_rec(
 	while let Some(&Token { kind: TokenKind::Operator(operator), ref loc }) = context.tokens.peek() {
 		let (priority, _, left_to_right) = operator.data();
 
-		let priority = match priority {
-			Some(priority) => priority,
-			None => return_error!(
-				loc, 
-				"Operator is used as a binary operator, but it's not a binary operator"
-			),
-		};
+		let priority = priority.ok_or_else(
+			|| error!(loc, "Operator is used as a binary operator, but it's not a binary operator")
+		)?;
 
 		if (priority + if left_to_right { 0 } else { 1 }) > min_priority {
-			// Skip the operator
 			context.tokens.next();
-
 			let b = parse_expression_rec(context.borrow(), priority)?;
 			
 			a = context.ast.insert_node(Node::new(
@@ -336,12 +323,12 @@ fn parse_value(
 			context.tokens.next();
 			let (_, unary_priority, _) = operator.data();
 
-			if let Some(unary_priority) = unary_priority {
-				let operand = parse_expression_rec(context.borrow(), unary_priority)?;
-				context.ast.insert_node(Node::new(token, context.scope, NodeKind::UnaryOperator { operator, operand }))
-			} else {
-				return_error!(token, "Operator is not a unary operator, but it's used as one");
-			}
+			let unary_priority = unary_priority.ok_or_else(
+				|| error!(token, "Operator is not a unary operator, but it's used as one")
+			)?;
+
+			let operand = parse_expression_rec(context.borrow(), unary_priority)?;
+			context.ast.insert_node(Node::new(token, context.scope, NodeKind::UnaryOperator { operator, operand }))
 		}
 		TokenKind::NumericLiteral(number) => {
 			context.tokens.next();
@@ -383,10 +370,9 @@ fn parse_value(
 			context.tokens.next();
 
 			let loc = context.tokens.get_location();
-			let label = match try_parse_label(context.borrow())? {
-				Some(label) => label,
-				None => return_error!(loc, "Expected label ':label_name'"),
-			};
+			let label = try_parse_label(context.borrow())?.ok_or_else(
+				|| error!(loc, "Expected label ':label_name'")
+			)?;
 
 			// There may be some argument to the break
 			let value = if let Some(TokenKind::Bracket('(')) = context.tokens.peek_kind() {
@@ -438,10 +424,7 @@ fn try_parse_list<'t, V>(
 	
 	let mut contents = Vec::new();
 	loop {
-		if match context.tokens.peek_kind() {
-			Some(kind) => kind,
-			None => return_error!(location, "List is not closed"),
-		} == close_bracket {
+		if &context.tokens.expect_peek(|| "List is not closed")?.kind == close_bracket {
 			context.tokens.next();
 			break;
 		}
