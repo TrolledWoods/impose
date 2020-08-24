@@ -5,7 +5,7 @@
 
 	result := {:main
 		{
-			x := read_input_from_user();
+			x := 5;
 			input = x;
 
 			skip :main(x);

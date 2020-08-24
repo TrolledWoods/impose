@@ -24,7 +24,7 @@ mod code_gen;
 use std::fmt;
 
 fn main() {
-	let code = include_str!("../test.im");
+	let code = std::fs::read_to_string("test.im").unwrap();
 
 	println!("Source code: ");
 	println!("{}", code);
@@ -33,10 +33,10 @@ fn main() {
 	// TODO: Make parser take source code directly and call lexer in there instead.
 	let mut scopes = parser::Scopes::new();
 
-	let (scope, ast) = match parser::parse_code(code, &mut scopes) {
+	let (scope, ast) = match parser::parse_code(&code, &mut scopes) {
 		Ok(value) => value,
 		Err(err) => {
-			print_error(code, err);
+			print_error(&code, err);
 			return;
 		}
 	};

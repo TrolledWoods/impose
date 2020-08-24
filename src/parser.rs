@@ -2,9 +2,33 @@ use crate::{ Location, CodeLoc, Error, Result, lexer::{ self, Token, TokenKind }
 use crate::operator::Operator;
 use std::collections::HashMap;
 
-// TODO: Make a Context type to pass around instead of all the things.
-// We gotta make sure we know what should go into the context first though, and not pass
-// too many things in it.
+struct Context<'a, 't> {
+	ast: &'a mut Ast, 
+	scopes: &'a mut Scopes, 
+	scope: ScopeId, 
+	tokens: &'a mut TokenStream<'t>,
+}
+
+impl<'a, 't> Context<'a, 't> {
+	fn borrow<'b>(&'b mut self) -> Context<'b, 't> {
+		Context {
+			ast: self.ast,
+			scopes: self.scopes,
+			scope: self.scope,
+			tokens: self.tokens,
+		}
+	}
+
+	fn sub_scope<'b>(&'b mut self) -> Context<'b, 't> {
+		let sub_scope = self.scopes.create_scope(Some(self.scope));
+		Context {
+			ast: self.ast,
+			scopes: self.scopes,
+			scope: sub_scope,
+			tokens: self.tokens,
+		}
+	}
+}
 
 // TODO: Maybe make this its own type?
 pub type AstNodeId = u32;
@@ -143,18 +167,15 @@ impl<'a> TokenStream<'a> {
 }
 
 fn try_parse_create_label(
-	ast: &mut Ast, 
-	scopes: &mut Scopes, 
-	scope: ScopeId, 
-	tokens: &mut TokenStream,
+	mut context: Context,
 ) -> Result<Option<ScopeMemberId>> {
-	if let Some(TokenKind::Colon) = tokens.peek_kind() {
-		tokens.next();
-		let loc = tokens.get_location();
-		match tokens.next_kind() {
+	if let Some(TokenKind::Colon) = context.tokens.peek_kind() {
+		context.tokens.next();
+		let loc = context.tokens.get_location();
+		match context.tokens.next_kind() {
 			Some(TokenKind::Identifier(name)) => {
-				let id = scopes.declare_member(
-					scope, 
+				let id = context.scopes.declare_member(
+					context.scope, 
 					name.to_string(),
 					&loc,
 					ScopeMemberKind::Label,
@@ -169,24 +190,21 @@ fn try_parse_create_label(
 }
 
 fn try_parse_label(
-	ast: &mut Ast, 
-	scopes: &mut Scopes, 
-	scope: ScopeId, 
-	tokens: &mut TokenStream,
+	mut context: Context,
 ) -> Result<Option<ScopeMemberId>> {
-	if let Some(TokenKind::Colon) = tokens.peek_kind() {
-		tokens.next();
-		let loc = tokens.get_location();
-		match tokens.next_kind() {
+	if let Some(TokenKind::Colon) = context.tokens.peek_kind() {
+		context.tokens.next();
+		let loc = context.tokens.get_location();
+		match context.tokens.next_kind() {
 			Some(TokenKind::Identifier(name)) => {
-				let id = match scopes.find_member(
-					scope, 
+				let id = match context.scopes.find_member(
+					context.scope, 
 					name,
 				) {
 					Some(id) => id,
 					None => return_error!(loc, "Unknown label"),
 				};
-				if scopes.member(id).kind != ScopeMemberKind::Label {
+				if context.scopes.member(id).kind != ScopeMemberKind::Label {
 					return_error!(
 						loc, 
 						"Expected label, got variable or constant"
@@ -202,41 +220,41 @@ fn try_parse_label(
 	}
 }
 
-fn parse_block(ast: &mut Ast, scopes: &mut Scopes, scope: ScopeId, tokens: &mut TokenStream) 
+fn parse_block(mut context: Context) 
 	-> Result<AstNodeId>
 {
-	let loc = tokens.get_location();
-	match tokens.next() {
+	let loc = context.tokens.get_location();
+	match context.tokens.next() {
 		Some(Token { kind: TokenKind::Bracket('{'), .. }) => (),
 		_ => return_error!(loc, "Expected '{{' to start block"),
 	}
 
-	let scope = scopes.create_scope(Some(scope));
+	let mut context = context.sub_scope();
 
-	let label = try_parse_create_label(ast, scopes, scope, tokens)?;
+	let label = try_parse_create_label(context.borrow())?;
 
 	let mut commands = Vec::new();
 	loop {
-		match tokens.peek() {
+		match context.tokens.peek() {
 			Some(Token { loc, kind: TokenKind::ClosingBracket('}') }) => {
-				commands.push(ast.insert_node(Node::new(loc, scope, NodeKind::EmptyLiteral)));
-				tokens.next();
+				commands.push(context.ast.insert_node(Node::new(loc, context.scope, NodeKind::EmptyLiteral)));
+				context.tokens.next();
 				break;
 			}
 			_ => (),
 		}
 
 		let mut is_other = false;
-		if let Some(TokenKind::Identifier(name)) = tokens.peek_kind() {
-			if let Some(TokenKind::Operator(Operator::Declare)) = tokens.peek_nth_kind(1) 
+		if let Some(TokenKind::Identifier(name)) = context.tokens.peek_kind() {
+			if let Some(TokenKind::Operator(Operator::Declare)) = context.tokens.peek_nth_kind(1) 
 			{
-				let ident_loc   = &tokens.next().unwrap().loc; 
-				let declare_loc = &tokens.next().unwrap().loc;
+				let ident_loc   = &context.tokens.next().unwrap().loc; 
+				let declare_loc = &context.tokens.next().unwrap().loc;
 
 				// We have a declaration
-				let variable_name = scopes.declare_member(scope, name.to_string(), ident_loc, ScopeMemberKind::LocalVariable)?;
-				let value = parse_expression(ast, scopes, scope, tokens)?;
-				commands.push(ast.insert_node(Node::new(declare_loc, scope, NodeKind::Declaration {
+				let variable_name = context.scopes.declare_member(context.scope, name.to_string(), ident_loc, ScopeMemberKind::LocalVariable)?;
+				let value = parse_expression(context.borrow())?;
+				commands.push(context.ast.insert_node(Node::new(declare_loc, context.scope, NodeKind::Declaration {
 					variable_name, value,
 				})));
 				is_other = true;
@@ -244,42 +262,36 @@ fn parse_block(ast: &mut Ast, scopes: &mut Scopes, scope: ScopeId, tokens: &mut 
 		}
 
 		if !is_other {
-			let expr = parse_expression(ast, scopes, scope, tokens)?;
+			let expr = parse_expression(context.borrow())?;
 			commands.push(expr);
 		}
 
-		let loc = tokens.get_location();
-		match tokens.next() {
+		let loc = context.tokens.get_location();
+		match context.tokens.next() {
 			Some(Token { kind: TokenKind::ClosingBracket('}'), .. }) => break,
 			Some(Token { kind: TokenKind::Semicolon, .. }) => (),
 			_ => return_error!(loc, "Expected ';' or '}}'"),
 		}
 	}
 
-	Ok(ast.insert_node(Node::new(&loc, scope, NodeKind::Block { contents: commands, label } )))
+	Ok(context.ast.insert_node(Node::new(&loc, context.scope, NodeKind::Block { contents: commands, label } )))
 }
 
 #[inline]
-fn parse_expression<'a>(
-	ast: &mut Ast,
-	scopes: &mut Scopes,
-	scope: ScopeId,
-	tokens: &mut TokenStream<'a>,
+fn parse_expression(
+	mut context: Context,
 ) -> Result<AstNodeId> {
-	parse_expression_rec(ast, scopes, scope, tokens, 0)
+	parse_expression_rec(context, 0)
 }
 
 /// Parse an expression recursively
-fn parse_expression_rec<'a>(
-	ast: &mut Ast,
-	scopes: &mut Scopes,
-	scope: ScopeId,
-	tokens: &mut TokenStream<'a>,
+fn parse_expression_rec(
+	mut context: Context,
 	min_priority: u32, 
 ) -> Result<AstNodeId> {
-	let mut a = parse_value(ast, scopes, scope, tokens)?;
+	let mut a = parse_value(context.borrow())?;
 	
-	while let Some(&Token { kind: TokenKind::Operator(operator), ref loc }) = tokens.peek() {
+	while let Some(&Token { kind: TokenKind::Operator(operator), ref loc }) = context.tokens.peek() {
 		let (priority, _, left_to_right) = operator.data();
 
 		let priority = match priority {
@@ -292,13 +304,13 @@ fn parse_expression_rec<'a>(
 
 		if (priority + if left_to_right { 0 } else { 1 }) > min_priority {
 			// Skip the operator
-			tokens.next();
+			context.tokens.next();
 
-			let b = parse_expression_rec(ast, scopes, scope, tokens, priority)?;
+			let b = parse_expression_rec(context.borrow(), priority)?;
 			
-			a = ast.insert_node(Node::new(
-				tokens, 
-				scope,
+			a = context.ast.insert_node(Node::new(
+				context.tokens, 
+				context.scope,
 				NodeKind::BinaryOperator { operator, left: a, right: b }
 			));
 		} else {
@@ -309,55 +321,52 @@ fn parse_expression_rec<'a>(
 	Ok(a)
 }
 
-fn parse_value<'a>(
-	ast: &mut Ast,
-	scopes: &mut Scopes,
-	scope: ScopeId,
-	tokens: &mut TokenStream<'a>,
+fn parse_value(
+	mut context: Context,
 ) -> Result<AstNodeId> {
-	let token = tokens.expect_peek(|| "Expected value")?;
+	let token = context.tokens.expect_peek(|| "Expected value")?;
 	let mut id = match token.kind {
 		TokenKind::Operator(operator) => {
-			tokens.next();
+			context.tokens.next();
 			let (_, unary_priority, _) = operator.data();
 
 			if let Some(unary_priority) = unary_priority {
-				let operand = parse_expression_rec(ast, scopes, scope, tokens, unary_priority)?;
-				ast.insert_node(Node::new(token, scope, NodeKind::UnaryOperator { operator, operand }))
+				let operand = parse_expression_rec(context.borrow(), unary_priority)?;
+				context.ast.insert_node(Node::new(token, context.scope, NodeKind::UnaryOperator { operator, operand }))
 			} else {
 				return_error!(token, "Operator is not a unary operator, but it's used as one");
 			}
 		}
 		TokenKind::NumericLiteral(number) => {
-			tokens.next();
-			ast.insert_node(Node::new(token, scope, NodeKind::Number(number)))
+			context.tokens.next();
+			context.ast.insert_node(Node::new(token, context.scope, NodeKind::Number(number)))
 		}
 		TokenKind::StringLiteral(ref string) => {
-			tokens.next();
+			context.tokens.next();
 			// TODO: Find a way to get rid of the string cloning here!
 			// Possibly by making TokenStream own its data
-			ast.insert_node(Node::new(token, scope, NodeKind::String(string.clone())))
+			context.ast.insert_node(Node::new(token, context.scope, NodeKind::String(string.clone())))
 		}
 		TokenKind::Identifier(name) => {
-			tokens.next();
-			match scopes.find_member(scope, name) {
+			context.tokens.next();
+			match context.scopes.find_member(context.scope, name) {
 				Some(member) => {
-					if scopes.member(member).kind == ScopeMemberKind::Label {
+					if context.scopes.member(member).kind == ScopeMemberKind::Label {
 						return_error!(token, "Tried using label as a variable or a constant");
 					}
-					ast.insert_node(Node::new(token, scope, NodeKind::Identifier(member)))
+					context.ast.insert_node(Node::new(token, context.scope, NodeKind::Identifier(member)))
 				}
 				None => return_error!(token, "Unrecognised name"),
 			}
 		}
 		TokenKind::Bracket('{') => {
-			parse_block(ast, scopes, scope, tokens)?
+			parse_block(context.borrow())?
 		}
 		TokenKind::Bracket('(') => {
-			tokens.next();
-			let value = parse_expression(ast, scopes, scope, tokens)?;
+			context.tokens.next();
+			let value = parse_expression(context.borrow())?;
 			
-			match tokens.next() {
+			match context.tokens.next() {
 				Some(Token { kind: TokenKind::ClosingBracket(')'), .. }) => (),
 				_ => return_error!(&token, "Parenthesis is not closed properly"),
 			}
@@ -365,21 +374,21 @@ fn parse_value<'a>(
 			value
 		}
 		TokenKind::Keyword("skip") => {
-			tokens.next();
+			context.tokens.next();
 
-			let loc = tokens.get_location();
-			let label = match try_parse_label(ast, scopes, scope, tokens)? {
+			let loc = context.tokens.get_location();
+			let label = match try_parse_label(context.borrow())? {
 				Some(label) => label,
 				None => return_error!(loc, "Expected label ':label_name'"),
 			};
 
 			// There may be some argument to the break
-			let value = if let Some(TokenKind::Bracket('(')) = tokens.peek_kind() {
-				tokens.next();
-				let value = parse_value(ast, scopes, scope, tokens)?;
+			let value = if let Some(TokenKind::Bracket('(')) = context.tokens.peek_kind() {
+				context.tokens.next();
+				let value = parse_value(context.borrow())?;
 
-				let loc = tokens.get_location();
-				match tokens.next_kind() {
+				let loc = context.tokens.get_location();
+				match context.tokens.next_kind() {
 					Some(TokenKind::ClosingBracket(')')) => (),
 					_ => return_error!(loc, "Expected closing ')'"),
 				}
@@ -389,7 +398,7 @@ fn parse_value<'a>(
 				None
 			};
 
-			ast.insert_node(Node::new(token, scope, NodeKind::Skip { label, value }))
+			context.ast.insert_node(Node::new(token, context.scope, NodeKind::Skip { label, value }))
 		}
 		_ => {
 			return_error!(token, "Expected value");
@@ -397,10 +406,10 @@ fn parse_value<'a>(
 	};
 
 	while let Some((location, arg_list)) = try_parse_list(
-		ast, scopes, scope, tokens, parse_expression, 
+		context.borrow(), parse_expression, 
 		&TokenKind::Bracket('('), &TokenKind::ClosingBracket(')')
 	)? {
-		id = ast.insert_node(Node::new(&location, scope, NodeKind::FunctionCall {
+		id = context.ast.insert_node(Node::new(&location, context.scope, NodeKind::FunctionCall {
 			function_pointer: id,
 			arg_list,
 		}));
@@ -409,35 +418,31 @@ fn parse_value<'a>(
 	Ok(id)
 }
 
-fn try_parse_list<'a, V>(
-	ast: &mut Ast,
-	scopes: &mut Scopes,
-	scope: ScopeId,
-	tokens: &mut TokenStream<'a>,
+fn try_parse_list<'t, V>(
+	mut context: Context<'_, 't>,
 	mut parse_value: 
-		impl for <'b> FnMut(&'b mut Ast, &'b mut Scopes, ScopeId, &'b mut TokenStream<'a>
-			) -> Result<V>,
+		impl for <'b> FnMut(Context<'b, 't>) -> Result<V>,
 	start_bracket: &TokenKind,
 	close_bracket: &TokenKind,
 ) -> Result<Option<(CodeLoc, Vec<V>)>> {
-	if Some(start_bracket) != tokens.peek_kind() {
+	if Some(start_bracket) != context.tokens.peek_kind() {
 		return Ok(None);
 	}
-	let location = tokens.next().unwrap().loc.clone();
+	let location = context.tokens.next().unwrap().loc.clone();
 	
 	let mut contents = Vec::new();
 	loop {
-		if match tokens.peek_kind() {
+		if match context.tokens.peek_kind() {
 			Some(kind) => kind,
 			None => return_error!(location, "List is not closed"),
 		} == close_bracket {
-			tokens.next();
+			context.tokens.next();
 			break;
 		}
 
-		contents.push(parse_value(ast, scopes, scope, tokens)?);
+		contents.push(parse_value(context.borrow())?);
 
-		let next = tokens.next();
+		let next = context.tokens.next();
 		match next.map(|t| &t.kind) {
 			Some(TokenKind::Comma) => (),
 			Some(something) if something == close_bracket => break,
@@ -458,7 +463,14 @@ pub fn parse_code(
 	let scope = scopes.create_scope(None);
 
 	let mut stream = TokenStream::new(&tokens, last_loc);
-	parse_expression(&mut ast, scopes, scope, &mut stream)?;
+
+	let context = Context {
+		scopes,
+		ast: &mut ast,
+		scope,
+		tokens: &mut stream,
+	};
+	parse_expression(context)?;
 
 	Ok((scope, ast))
 }
