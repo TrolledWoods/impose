@@ -33,9 +33,6 @@ impl<'a, 't> Context<'a, 't> {
 pub type AstNodeId = u32;
 
 #[derive(Debug)]
-// TODO: Remove lifetime here, i.e. make the abstract syntax tree completely
-// independent of any borrowed strings from the source code. Force loading all the files to compile
-// feels like a bad idea.
 pub struct Ast {
 	pub nodes: Vec<Node>,
 }
@@ -68,11 +65,17 @@ pub struct Node {
 	pub loc: CodeLoc,
 	pub scope: ScopeId,
 	pub kind: NodeKind,
+	pub is_lvalue: bool,
 }
 
 impl Node {
 	fn new(location: &impl Location, scope: ScopeId, kind: NodeKind) -> Self {
-		Node { loc: location.get_location(), kind, scope }
+		Node { 
+			loc: location.get_location(), 
+			kind, 
+			scope, 
+			is_lvalue: false, 
+		}
 	}
 }
 
@@ -153,16 +156,6 @@ impl<'a> TokenStream<'a> {
 	fn next_kind(&mut self) -> Option<&'a TokenKind<'a>> {
 		self.index += 1;
 		self.tokens.get(self.index - 1).map(|v| &v.kind)
-	}
-
-	// TODO: Remove the function or use it somewhere
-	#[allow(unused)]
-	fn expect_next<'b, D: std::fmt::Display>(&'b mut self, message: impl FnOnce() -> D) 
-		-> Result<&'a Token<'a>> 
-	{
-		self.index += 1;
-		self.tokens.get(self.index - 1)
-			.ok_or_else(|| error!(self, "{}", message()))
 	}
 }
 
@@ -287,6 +280,7 @@ fn parse_expression_rec(
 	mut context: Context,
 	min_priority: u32, 
 ) -> Result<AstNodeId> {
+	let lvalue_starting_node = context.ast.nodes.len();
 	let mut a = parse_value(context.borrow())?;
 	
 	while let Some(&Token { kind: TokenKind::Operator(operator), ref loc }) = context.tokens.peek() {
@@ -296,8 +290,16 @@ fn parse_expression_rec(
 			|| error!(loc, "Operator is used as a binary operator, but it's not a binary operator")
 		)?;
 
+		if operator == Operator::Assign {
+			// The left side of the assignment is an lvalue
+			for node in &mut context.ast.nodes[lvalue_starting_node..] {
+				node.is_lvalue = true;
+			}
+		}
+
 		if (priority + if left_to_right { 0 } else { 1 }) > min_priority {
 			context.tokens.next();
+
 			let b = parse_expression_rec(context.borrow(), priority)?;
 			
 			a = context.ast.insert_node(Node::new(
