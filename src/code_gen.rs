@@ -1,6 +1,13 @@
 use crate::{ parser::{self, Scopes, ScopeMemberId}, operator::Operator };
 use std::fmt;
 
+macro_rules! push_instr {
+	($instrs:expr, $instr:expr) => {{
+		// println!("{} {}", line!(), column!());
+		$instrs.push($instr);
+	}}
+}
+
 /// A 'Local' is the equivalent of a register, but there is an arbitrary amount
 /// of locals possible.
 /// All locals are u64(for now).
@@ -50,7 +57,7 @@ pub fn compile_expression(
 	let mut node_values: Vec<Value> = Vec::with_capacity(ast.nodes.len());
 	let mut instructions = Vec::new();
 
-	let mut temporary_labels = Vec::new();
+	let mut temporary_labels: Vec<(_, _, Option<Value>)> = Vec::new();
 
 	for node in ast.nodes.iter() {
 		match node.kind {
@@ -60,8 +67,6 @@ pub fn compile_expression(
 					None => panic!("Invalid thing, \nLocals: {:?}, \nScopes: {:?}, \nInstructions: {:?}", locals, scopes, instructions),
 				};
 				
-				// TODO: Fix in place assignment jankyness(probably by differentiating
-				// between lvalues and rvalues).
 				node_values.push(member);
 			}
 			parser::NodeKind::Declaration { variable_name, value } => {
@@ -75,55 +80,66 @@ pub fn compile_expression(
 				let input = node_values[value as usize];
 				locals.note_usage(&location);
 				locals.note_usage(&input);
-				instructions.push(Instruction::MoveU64(location, input));
+				push_instr!(instructions, Instruction::MoveU64(location, input));
 				node_values.push(Value::Poison);
 			}
 			parser::NodeKind::Skip { label, value } => {
-				let instruction_loc = instructions.len();
+				let mut instruction_loc = instructions.len();
+
+				let mut return_value_local = None;
 				if let Some(value) = value {
+					for (name, _, return_value) in &temporary_labels {
+						if name == &label {
+							// If we have a value, the type checker has to make sure that the
+							// other skip also has a value
+							return_value_local = Some(return_value.unwrap());
+						}
+					}
+
+					if return_value_local.is_none() {
+						return_value_local = Some(Value::Local(locals.alloc()));
+					}
+
 					let input = node_values[value as usize];
 					locals.note_usage(&input);
-					instructions.push(Instruction::MoveU64(Value::Local(9999), input));
-				}else {
-					instructions.push(Instruction::MoveU64(Value::Poison, Value::Constant(9999)));
-				}
-				instructions.push(Instruction::JumpRel(-42069));
+					locals.note_usage(return_value_local.as_ref().unwrap());
 
-				temporary_labels.push((label, instruction_loc));
+					instruction_loc += 1;
+					push_instr!(instructions, Instruction::MoveU64(return_value_local.unwrap(), input));
+				}
+
+				push_instr!(instructions, Instruction::JumpRel(-42069));
+
+				temporary_labels.push((label, instruction_loc, return_value_local));
 				node_values.push(Value::Poison);
 			}
 			parser::NodeKind::Block { ref contents, label } => {
-				/*for &content in &contents[..contents.len() - 1] {
-					locals.free_value(
-						node_values[content as usize]
-					);
-				}*/
-
-				let result = node_values[*contents.last().unwrap() as usize];
-				node_values.push(result);
-
-				/*for member in scopes.members(node.scope) {
-					if let Some(location) = member.storage_location {
-						locals.free_value(location);
-					} else {
-						println!("WARNING!!! {:?} Member in scope not declared", 
-							member.declaration_location);
-					}
-				}*/
+				let mut return_value_loc = None;
 
 				if let Some(label) = label {
-					for (_, instruction_loc) in 
-						temporary_labels.drain_filter(|(l, _)| l == &label) 
+					for (_, instruction_loc, return_value) in 
+						temporary_labels.drain_filter(|(l, _, _)| l == &label) 
 					{
-						if let Instruction::MoveU64(a, _) = &mut instructions[instruction_loc] {
-							locals.note_usage(&result);
-							// TODO: Stability, 
-							// check if this is a constant
-							*a = result;
+						if return_value.is_none() {
+							instructions[instruction_loc] = 
+								Instruction::JumpRel((instructions.len() - instruction_loc - 1) as i64);
+						} else {
+							instructions[instruction_loc] = 
+								Instruction::JumpRel((instructions.len() - instruction_loc) as i64);
 						}
 
-						instructions[instruction_loc + 1] = 
-							Instruction::JumpRel((instructions.len() - instruction_loc) as i64 - 2);
+						return_value_loc = return_value;
+					}
+				}
+
+				let result = node_values[*contents.last().unwrap() as usize];
+				match return_value_loc {
+					Some(location) => {
+						push_instr!(instructions, Instruction::MoveU64(location, result));
+						node_values.push(location);
+					}
+					None => {
+						node_values.push(result);
 					}
 				}
 			}
@@ -142,17 +158,17 @@ pub fn compile_expression(
 
 				match operator {
 					Operator::Assign => {
-						instructions.push(Instruction::MoveU64(a, b));
+						push_instr!(instructions, Instruction::MoveU64(a, b));
 
 						locals.note_usage(&b);
 						// TODO: Check if the result is used eventually, we will have a flag for if
 						// the return value of an AstNode is used or not
-						instructions.push(Instruction::MoveU64(result, b));
+						push_instr!(instructions, Instruction::MoveU64(result, b));
 					}
 					Operator::Add => 
-						instructions.push(Instruction::AddU64(result, a, b)),
+						push_instr!(instructions, Instruction::AddU64(result, a, b)),
 					Operator::Sub => 
-						instructions.push(Instruction::SubU64(result, a, b)),
+						push_instr!(instructions, Instruction::SubU64(result, a, b)),
 					_ => todo!()
 				}
 

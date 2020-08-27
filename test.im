@@ -1,14 +1,16 @@
-{ 
-	x := {:a
-		{:b
-			skip :a ({
-				y := 25;
-				y = 5;
-				y = 2;
-				y
-			});
+{
+	x := {:self
+		y := {:zepic
+			skip :zepic(20);
 
-			50
+			skip :self(69);
+			20
 		};
+
+		skip :self (2 + 5 - (y + 20));
+
+		10
 	};
+
+	x = x + 5;
 }
