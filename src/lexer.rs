@@ -41,6 +41,10 @@ impl Lexer<'_> {
 		self.chars.clone().next().map(|(_, c)| c)
 	}
 
+	fn n_peek(&self, n: usize) -> Option<char> {
+		self.chars.clone().nth(n).map(|(_, c)| c)
+	}
+
 	fn next(&mut self) -> Option<char> {
 		self.chars.next().map(|(_, c)| c)
 	}
@@ -163,15 +167,17 @@ pub fn lex_code(code: &str) -> Result<(CodeLoc, Vec<Token>)> {
 
 fn skip_whitespace(lexer: &mut Lexer) {
 	while let Some(c) = lexer.peek() {
-		if c == '#' {
-			// Skip comment lines
-			while let Some(c) = lexer.next() {
-				if c == '\n' { break; }
-			}
+		if c == '/' {
+			if let Some('/') = lexer.n_peek(1) {
+				// Skip comment lines
+				while let Some(c) = lexer.next() {
+					if c == '\n' { break; }
+				}
 
-			lexer.source_code_location.column  = 1;
-			lexer.source_code_location.line   += 1;
-			continue;
+				lexer.source_code_location.column  = 1;
+				lexer.source_code_location.line   += 1;
+				continue;
+			}
 		} 
 
 		if !c.is_whitespace() {

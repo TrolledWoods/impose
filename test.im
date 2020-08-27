@@ -1,11 +1,11 @@
 {
 	x := {:read_file
-		# TODO: open_file("test.im", FILE_READ);
+		// TODO: open_file("test.im", FILE_READ);
 		file_handle := 0; 
 		
-		#if file_handle != 0 {
-		#	skip :read_file(0);
-		#}
+		// if file_handle != 0 {
+		// 	skip :read_file(0);
+		// }
 
 		file_handle
 	};
