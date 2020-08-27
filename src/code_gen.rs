@@ -55,9 +55,10 @@ pub fn compile_expression(
 	for node in ast.nodes.iter() {
 		match node.kind {
 			parser::NodeKind::Identifier(member_id) => {
-				let member = scopes.member(member_id).storage_location
-					.expect("Undeclared variable in code_gen...");
-				// We use the member twice
+				let member = match scopes.member(member_id).storage_location {
+					Some(value) => value,
+					None => panic!("Invalid thing, \nLocals: {:?}, \nScopes: {:?}, \nInstructions: {:?}", locals, scopes, instructions),
+				};
 				
 				// TODO: Fix in place assignment jankyness(probably by differentiating
 				// between lvalues and rvalues).
@@ -194,6 +195,7 @@ pub struct Local {
 /// that are used a lot to be in registers, and those are going to be used
 /// a lot.
 ///
+#[derive(Debug)]
 pub struct Locals {
 	pub locals: Vec<Local>,
 }

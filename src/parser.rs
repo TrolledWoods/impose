@@ -250,8 +250,8 @@ fn parse_block(mut context: Context)
 				let declare_loc = &context.tokens.next().unwrap().loc;
 
 				// We have a declaration
-				let variable_name = context.scopes.declare_member(context.scope, name.to_string(), ident_loc, ScopeMemberKind::LocalVariable)?;
 				let value = parse_expression(context.borrow())?;
+				let variable_name = context.scopes.declare_member(context.scope, name.to_string(), ident_loc, ScopeMemberKind::LocalVariable)?;
 				commands.push(context.ast.insert_node(Node::new(declare_loc, context.scope, NodeKind::Declaration {
 					variable_name, value,
 				})));
@@ -376,7 +376,7 @@ fn parse_value(
 			// There may be some argument to the break
 			let value = if let Some(TokenKind::Bracket('(')) = context.tokens.peek_kind() {
 				context.tokens.next();
-				let value = parse_value(context.borrow())?;
+				let value = parse_expression(context.borrow())?;
 
 				let loc = context.tokens.get_location();
 				match context.tokens.next_kind() {

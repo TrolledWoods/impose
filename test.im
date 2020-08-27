@@ -1,19 +1,12 @@
-{
-	x := {:read_file
-		// TODO: open_file("test.im", FILE_READ);
-		file_handle := 0; 
-		
-		// if file_handle != 0 {
-		// 	skip :read_file(0);
-		// }
+{ 
+	x := {:a
+		{:b
+			skip :a ({
+				y := 25;
+				y
+			});
 
-		file_handle
+			50
+		};
 	};
-
-	x + 5;
-	x - 2;
-	x + 500;
-	x + 50;
-	x - 10;
-	x + 90;
 }
