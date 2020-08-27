@@ -62,14 +62,43 @@ fn main() {
 	let (locals, instructions) = code_gen::compile_expression(&ast, &mut scopes);
 
 	println!("Locals: ");
-	for (i, &(locks, uses)) in locals.locals.iter().enumerate() {
-		println!("{}: locks {}, uses {}", i, locks, uses);
+	for (i, local) in locals.locals.iter().enumerate() {
+		println!("{}: {:?}", i, local);
+		if let Some(member) = local.scope_member {
+			print_location(&code, &scopes.member(member).declaration_location, "Declared here");
+		}
 	}
 
 	println!();
 	println!("Instructions: ");
 	for instruction in &instructions {
 		println!("{:?}", instruction);
+	}
+}
+
+fn print_location(code: &str, loc: &CodeLoc, message: &str) {
+	if let Some(line) = code.lines().nth(loc.line as usize - 1) {
+		println!("      |");
+		println!("{:>5} | {}", loc.line, line);
+
+		print!("      | ");
+
+		let mut chars = line.chars();
+		for _ in 1..loc.column {
+			if let Some(c) = chars.next() {
+				if c.is_whitespace() {
+					print!("{}", c);
+				} else {
+					print!(" ");
+				}
+			} else {
+				print!("X");
+			}
+		}
+		println!("^-- {}", message);
+		println!("      |");
+	} else {
+		println!("After code: {}", message);
 	}
 }
 

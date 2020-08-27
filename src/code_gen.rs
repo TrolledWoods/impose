@@ -1,4 +1,4 @@
-use crate::{ parser::{self, Scopes}, operator::Operator };
+use crate::{ parser::{self, Scopes, ScopeMemberId}, operator::Operator };
 use std::fmt;
 
 /// A 'Local' is the equivalent of a register, but there is an arbitrary amount
@@ -59,13 +59,15 @@ pub fn compile_expression(
 					.expect("Undeclared variable in code_gen...");
 				// We use the member twice
 				
-				// TODO: Fix in place assignment jankyness
-				let new_loc = locals.clone(&member); // Value::Local(locals.alloc());
-				// instructions.push(Instruction::MoveU64(new_loc, member));
-				node_values.push(new_loc);
+				// TODO: Fix in place assignment jankyness(probably by differentiating
+				// between lvalues and rvalues).
+				node_values.push(member);
 			}
 			parser::NodeKind::Declaration { variable_name, value } => {
-				let location = Value::Local(locals.alloc());
+				let location = Value::Local(locals.alloc_custom(Local {
+					n_uses: 0,
+					scope_member: Some(variable_name),
+				}));
 				scopes.member_mut(variable_name).storage_location 
 					= Some(location);
 				
@@ -73,7 +75,6 @@ pub fn compile_expression(
 				locals.note_usage(&location);
 				locals.note_usage(&input);
 				instructions.push(Instruction::MoveU64(location, input));
-				locals.free_value(input);
 				node_values.push(Value::Poison);
 			}
 			parser::NodeKind::Skip { label, value } => {
@@ -82,7 +83,6 @@ pub fn compile_expression(
 					let input = node_values[value as usize];
 					locals.note_usage(&input);
 					instructions.push(Instruction::MoveU64(Value::Local(9999), input));
-					locals.free_value(input);
 				}else {
 					instructions.push(Instruction::MoveU64(Value::Poison, Value::Constant(9999)));
 				}
@@ -92,23 +92,23 @@ pub fn compile_expression(
 				node_values.push(Value::Poison);
 			}
 			parser::NodeKind::Block { ref contents, label } => {
-				for &content in &contents[..contents.len() - 1] {
+				/*for &content in &contents[..contents.len() - 1] {
 					locals.free_value(
 						node_values[content as usize]
 					);
-				}
+				}*/
 
 				let result = node_values[*contents.last().unwrap() as usize];
 				node_values.push(result);
 
-				for member in scopes.members(node.scope) {
+				/*for member in scopes.members(node.scope) {
 					if let Some(location) = member.storage_location {
 						locals.free_value(location);
 					} else {
 						println!("WARNING!!! {:?} Member in scope not declared", 
 							member.declaration_location);
 					}
-				}
+				}*/
 
 				if let Some(label) = label {
 					for (_, instruction_loc) in 
@@ -142,6 +142,8 @@ pub fn compile_expression(
 				match operator {
 					Operator::Assign => {
 						instructions.push(Instruction::MoveU64(a, b));
+
+						locals.note_usage(&b);
 						// TODO: Check if the result is used eventually, we will have a flag for if
 						// the return value of an AstNode is used or not
 						instructions.push(Instruction::MoveU64(result, b));
@@ -157,8 +159,8 @@ pub fn compile_expression(
 				node_values.push(result);
 				
 				// I know what I'm doing, we are not copying these without reason!
-				locals.free_value(node_values[left as usize].clone());
-				locals.free_value(node_values[right as usize].clone());
+				// locals.free_value(node_values[left as usize].clone());
+				// locals.free_value(node_values[right as usize].clone());
 			}
 			parser::NodeKind::EmptyLiteral => {
 				node_values.push(Value::Poison);
@@ -174,6 +176,13 @@ pub fn compile_expression(
 // We're just going to assume all return types are i64:s for now, when typing is done 
 // this will not be the case!
 
+#[derive(Debug, Clone)]
+pub struct Local {
+	// type_: PrimitiveType,
+	n_uses: u32,
+	pub scope_member: Option<ScopeMemberId>,
+}
+
 ///
 /// Allocates locals,
 /// keeps track of which ones are used and unused,
@@ -186,74 +195,37 @@ pub fn compile_expression(
 /// a lot.
 ///
 pub struct Locals {
-	// (number of locks, total number of reads / writes)
-	pub locals: Vec<(u32, u32)>,
-
-	free_locals: Vec<(LocalId, u32)>,
+	pub locals: Vec<Local>,
 }
 
 impl Locals {
 	fn new() -> Self {
-		Locals { locals: Vec::new(), free_locals: Vec::new() }
+		Locals { locals: Vec::new() }
 	}
 
 	fn alloc(&mut self) -> LocalId {
-		if self.free_locals.len() > 0 {
-			let mut best_local = 0;
-			let mut most_uses = 0;
-			for (i, &(_, uses)) in self.free_locals.iter().enumerate() {
-				if uses >= most_uses {
-					best_local = i;
-					most_uses = uses;
-				}
-			}
-			let local = self.free_locals[best_local].0;
-			self.locals[local].0 += 1;
-			self.free_locals.remove(best_local);
-			local
-		} else {
-			let id = self.locals.len();
-			self.locals.push((1, 0));
-			id 
-		}
+		let id = self.locals.len();
+		self.locals.push(Local {
+			n_uses: 0,
+			scope_member: None,
+		});
+		id
 	}
 
-	fn clone(&mut self, value: &Value) -> Value {
-		let local = match *value {
-			Value::Local(local) => local,
-			Value::Constant(_) => return *value, // Constants do not use locals
-			Value::Poison => return Value::Poison,
-		};
-
-		assert!(self.locals[local].0 > 0);
-		self.locals[local].0 += 1;
-
-		value.clone()
+	fn alloc_custom(&mut self, local: Local) -> LocalId {
+		assert_eq!(local.n_uses, 0);
+		let id = self.locals.len();
+		self.locals.push(local);
+		id
 	}
 
 	fn note_usage(&mut self, value: &Value) {
-		let local = match *value {
-			Value::Local(local) => local,
-			Value::Constant(_) => return, // Constants do not use locals
-			Value::Poison => panic!("Tried using poison"),
-		};
-
-		assert!(self.locals[local].0 > 0);
-		self.locals[local ].1 += 1;
-	}
-
-	fn free_value(&mut self, value: Value) {
-		let local = match value {
-			Value::Local(local) => local,
-			Value::Constant(_) => return, // Constants do not use locals
-			Value::Poison => return,
-		};
-
-		assert!(self.locals[local ].0 > 0);
-		self.locals[local ].0 -= 1;
-
-		if self.locals[local ].0 == 0 {
-			self.free_locals.push((local, self.locals[local ].1));
+		match *value {
+			Value::Local(local) => {
+				self.locals[local].n_uses += 1;
+			}
+			Value::Constant(_) => (),
+			Value::Poison => (),
 		}
 	}
 }

@@ -1,17 +1,19 @@
 {
-	read_input_from_user := 42;
+	x := {:read_file
+		# TODO: open_file("test.im", FILE_READ);
+		file_handle := 0; 
+		
+		#if file_handle != 0 {
+		#	skip :read_file(0);
+		#}
 
-	input := 50;
-
-	result := {:main
-		{
-			x := 5;
-			input = x;
-
-			skip :main(x);
-			z := 60;
-		};
-
-		input
+		file_handle
 	};
+
+	x + 5;
+	x - 2;
+	x + 500;
+	x + 50;
+	x - 10;
+	x + 90;
 }
