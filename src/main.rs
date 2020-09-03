@@ -35,7 +35,15 @@ mod operator;
 mod lexer;
 mod parser;
 mod code_gen;
+mod run;
 use std::fmt;
+
+pub struct Routine {
+	declaration: CodeLoc,
+	arguments: Vec<parser::ScopeMemberId>,
+	code: parser::Ast,
+	instructions: Option<(code_gen::Locals, Vec<code_gen::Instruction>)>,
+}
 
 fn main() {
 	let code = std::fs::read_to_string("test.im").unwrap();
@@ -44,10 +52,10 @@ fn main() {
 	println!("{}", code);
 	println!();
 
-	// TODO: Make parser take source code directly and call lexer in there instead.
 	let mut scopes = parser::Scopes::new();
 
-	let (_, ast) = match parser::parse_code(&code, &mut scopes) {
+	let mut routines = Vec::new();
+	let (_, ast) = match parser::parse_code(&code, &mut scopes, &mut routines) {
 		Ok(value) => value,
 		Err(err) => {
 			print_error(&code, err);
@@ -55,11 +63,11 @@ fn main() {
 		}
 	};
 
-	// for node in ast.nodes.iter() {
-	// 	println!("{:?}: {:?} {:?}", node.loc, node.scope, node.kind);
-	// }
+	for node in ast.nodes.iter() {
+		println!("{:?}: {:?} {:?}", node.loc, node.scope, node.kind);
+	}
 
-	let (locals, instructions) = code_gen::compile_expression(&ast, &mut scopes);
+	let (locals, instructions, returns) = code_gen::compile_expression(&ast, &mut scopes);
 
 	println!("Locals: ");
 	for (i, local) in locals.locals.iter().enumerate() {
@@ -74,6 +82,8 @@ fn main() {
 	for instruction in &instructions {
 		println!("{:?}", instruction);
 	}
+
+	println!("\nResult: {}", run::run_instructions(&locals, &instructions, returns));
 }
 
 fn print_location(code: &str, loc: &CodeLoc, message: &str) {

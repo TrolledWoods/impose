@@ -1,16 +1,7 @@
 {
-	x := {:self
-		y := {:zepic
-			skip :zepic(20);
+	list := 5;
 
-			skip :self(69);
-			20
-		};
+	|x| x;
 
-		skip :self (2 + 5 - (y + 20));
-
-		10
-	};
-
-	x = x + 5;
+	list
 }

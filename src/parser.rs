@@ -1,4 +1,4 @@
-use crate::{ Location, CodeLoc, Error, Result, lexer::{ self, Token, TokenKind } };
+use crate::{ Location, CodeLoc, Error, Result, lexer::{ self, Token, TokenKind }, Routine };
 use crate::operator::Operator;
 
 struct Context<'a, 't> {
@@ -6,6 +6,7 @@ struct Context<'a, 't> {
 	scopes: &'a mut Scopes, 
 	scope: ScopeId, 
 	tokens: &'a mut TokenStream<'t>,
+	routines: &'a mut Vec<Routine>,
 }
 
 impl<'a, 't> Context<'a, 't> {
@@ -15,6 +16,7 @@ impl<'a, 't> Context<'a, 't> {
 			scopes: self.scopes,
 			scope: self.scope,
 			tokens: self.tokens,
+			routines: self.routines,
 		}
 	}
 
@@ -25,6 +27,7 @@ impl<'a, 't> Context<'a, 't> {
 			scopes: self.scopes,
 			scope: sub_scope,
 			tokens: self.tokens,
+			routines: self.routines,
 		}
 	}
 }
@@ -85,6 +88,9 @@ pub enum NodeKind {
 	String(String),
 	EmptyLiteral,
 	Identifier(ScopeMemberId),
+	FunctionDeclaration {
+		routine_id: usize,
+	},
 	FunctionCall {
 		function_pointer: AstNodeId,
 		arg_list: Vec<AstNodeId>,
@@ -151,6 +157,13 @@ impl<'a> TokenStream<'a> {
 	fn next(&mut self) -> Option<&'a Token<'a>> {
 		self.index += 1;
 		self.tokens.get(self.index - 1)
+	}
+
+	fn expect_next<'b, D: std::fmt::Display>(&mut self, message: impl FnOnce() -> D) 
+		-> Result<&'a Token<'a>> 
+	{
+		self.index += 1;
+		self.tokens.get(self.index - 1).ok_or_else(|| error!(self, "{}", message()))
 	}
 
 	fn next_kind(&mut self) -> Option<&'a TokenKind<'a>> {
@@ -280,6 +293,61 @@ fn parse_expression_rec(
 	mut context: Context,
 	min_priority: u32, 
 ) -> Result<AstNodeId> {
+	let token = context.tokens.expect_peek(|| "Expected expression")?;
+	if let TokenKind::Operator(Operator::BitwiseOrOrLambda) = token.kind {
+		if min_priority != 0 {
+			return_error!(token, "You cannot have other operators in an expression with a function declaration");
+		}
+
+		// Lambda definition
+		let sub_scope = context.scopes.create_scope(Some(context.scope));
+		let mut args = Vec::new();
+		try_parse_list(
+			context.borrow(), 
+			|context| {
+				let value = context.tokens.expect_next(|| "Expected function argument name")?;
+				if let Token { loc, kind: TokenKind::Identifier(name) } = value {
+					args.push(context.scopes.declare_member(
+						sub_scope, 
+						name.to_string(), 
+						&loc,
+						ScopeMemberKind::FunctionArgument,
+					)?);
+					Ok(())
+				} else {
+					Err(error!(value, "Expected function argument name"))
+				}
+			},
+			&TokenKind::Operator(Operator::BitwiseOrOrLambda),
+			&TokenKind::Operator(Operator::BitwiseOrOrLambda),
+		)?;
+		let mut ast = Ast::new();
+		let mut sub_context = Context {
+			scopes: context.scopes,
+			ast: &mut ast,
+			scope: sub_scope,
+			tokens: context.tokens,
+			routines: context.routines,
+		};
+
+		// Parse the function body.
+		parse_expression(sub_context.borrow())?;
+
+		let id = context.routines.len();
+		context.routines.push(Routine {
+			declaration: token.loc.clone(),
+			arguments: args,
+			code: ast,
+			instructions: None,
+		});
+
+		return Ok(context.ast.insert_node(Node::new(
+			token, 
+			context.scope, 
+			NodeKind::FunctionDeclaration { routine_id: id }
+		)));
+	}
+
 	let lvalue_starting_node = context.ast.nodes.len();
 	let mut a = parse_value(context.borrow())?;
 	
@@ -320,6 +388,9 @@ fn parse_value(
 ) -> Result<AstNodeId> {
 	let token = context.tokens.expect_peek(|| "Expected value")?;
 	let mut id = match token.kind {
+		TokenKind::Operator(Operator::BitwiseOrOrLambda) => {
+			return_error!(token, "Function declarations can only be the first thing in an expression");
+		}
 		TokenKind::Operator(operator) => {
 			context.tokens.next();
 			let (_, unary_priority, _) = operator.data();
@@ -447,6 +518,7 @@ fn try_parse_list<'t, V>(
 pub fn parse_code(
 	code: &str,
 	scopes: &mut Scopes,
+	routines: &mut Vec<Routine>,
 ) -> Result<(ScopeId, Ast)> {
 	let (last_loc, tokens) = lexer::lex_code(code)?;
 	let mut ast = Ast::new();
@@ -459,6 +531,7 @@ pub fn parse_code(
 		ast: &mut ast,
 		scope,
 		tokens: &mut stream,
+		routines,
 	};
 	parse_expression(context)?;
 
@@ -554,6 +627,7 @@ pub struct Scope {
 #[derive(Debug, PartialEq, Eq)]
 pub enum ScopeMemberKind {
 	LocalVariable,
+	FunctionArgument,
 	Label,
 }
 

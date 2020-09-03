@@ -52,7 +52,7 @@ pub type LocalId = usize;
 pub fn compile_expression(
 	ast: &parser::Ast, 
 	scopes: &mut Scopes,
-) -> (Locals, Vec<Instruction>) {
+) -> (Locals, Vec<Instruction>, Value) {
 	let mut locals = Locals::new();
 	let mut node_values: Vec<Value> = Vec::with_capacity(ast.nodes.len());
 	let mut instructions = Vec::new();
@@ -186,7 +186,7 @@ pub fn compile_expression(
 		}
 	}
 
-	(locals, instructions)
+	(locals, instructions, node_values.last().copied().unwrap_or(Value::Poison))
 }
 
 // TODO!!!

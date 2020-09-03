@@ -41,9 +41,13 @@ create_operators! {
 	Function;   "->",  false,  2, 0,
 	Assign;     "=",   false,  3, 0,
 
-	// Boolean operators
+	// Boolean operators 
+	// TODO: Make these different priorities, people are probably used to and having a lower priority
 	And;        "&&",  true,   4, 0,
 	Or ;        "||",  true,   4, 0,
+
+	// Bitwise operators
+	BitwiseOrOrLambda; "|", true, 5, 0,
 
 	// Standard math operators
 	Add;        "+",   true,   6, 0,
