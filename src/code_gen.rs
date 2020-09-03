@@ -51,20 +51,20 @@ pub type LocalId = usize;
 
 pub fn compile_expression(
 	ast: &parser::Ast, 
-	scopes: &mut Scopes,
 ) -> (Locals, Vec<Instruction>, Value) {
 	let mut locals = Locals::new();
 	let mut node_values: Vec<Value> = Vec::with_capacity(ast.nodes.len());
 	let mut instructions = Vec::new();
 
 	let mut temporary_labels: Vec<(_, _, Option<Value>)> = Vec::new();
+	let mut storage_locations = ast.scopes.create_buffer(|| None);
 
 	for node in ast.nodes.iter() {
 		match node.kind {
 			parser::NodeKind::Identifier(member_id) => {
-				let member = match scopes.member(member_id).storage_location {
-					Some(value) => value,
-					None => panic!("Invalid thing, \nLocals: {:?}, \nScopes: {:?}, \nInstructions: {:?}", locals, scopes, instructions),
+				let member = match storage_locations.member(member_id) {
+					Some(value) => *value,
+					None => panic!("Invalid thing, \nLocals: {:?}, \nScopes: {:?}, \nInstructions: {:?}", locals, ast.scopes, instructions),
 				};
 				
 				node_values.push(member);
@@ -74,8 +74,7 @@ pub fn compile_expression(
 					n_uses: 0,
 					scope_member: Some(variable_name),
 				}));
-				scopes.member_mut(variable_name).storage_location 
-					= Some(location);
+				*storage_locations.member_mut(variable_name) = Some(location);
 				
 				let input = node_values[value as usize];
 				locals.note_usage(&location);

@@ -1,6 +1,14 @@
 #![feature(assoc_char_funcs)]
 #![feature(drain_filter)]
 
+mod prelude {
+	pub(crate) use crate::{ 
+		Location, CodeLoc, Error, Result, Routine, RoutineId, 
+		lexer::{ self, Token, TokenKind }, 
+		parser::{ NodeKind, Ast, Node, Scopes, ScopeBuffer },
+	};
+}
+
 /// This is a macro to allow the compiler line and column to ergonomically be passed
 /// inside the errors that are returned(for compiler debugging)
 macro_rules! return_error {
@@ -34,16 +42,21 @@ macro_rules! error {
 mod operator;
 mod lexer;
 mod parser;
+mod types;
 mod code_gen;
 mod run;
+
 use std::fmt;
 
+// TODO: Move this into another file
 pub struct Routine {
 	declaration: CodeLoc,
 	arguments: Vec<parser::ScopeMemberId>,
 	code: parser::Ast,
 	instructions: Option<(code_gen::Locals, Vec<code_gen::Instruction>)>,
 }
+
+pub type RoutineId = usize;
 
 fn main() {
 	let code = std::fs::read_to_string("test.im").unwrap();
@@ -52,10 +65,8 @@ fn main() {
 	println!("{}", code);
 	println!();
 
-	let mut scopes = parser::Scopes::new();
-
 	let mut routines = Vec::new();
-	let (_, ast) = match parser::parse_code(&code, &mut scopes, &mut routines) {
+	let (ast) = match parser::parse_code(&code, &mut routines) {
 		Ok(value) => value,
 		Err(err) => {
 			print_error(&code, err);
@@ -63,17 +74,27 @@ fn main() {
 		}
 	};
 
-	for node in ast.nodes.iter() {
+	let mut typer = types::AstTyper::new(&ast);
+	let mut types = types::Types::new();
+	typer.try_type_ast(&mut types, &ast).unwrap();
+
+	for (node, type_) in ast.nodes.iter().zip(&typer.types) {
+		if let Some(type_) = type_ {
+			types.print(*type_);
+			print!(": ");
+		} else {
+			print!("No type: ");
+		}
 		println!("{:?}: {:?} {:?}", node.loc, node.scope, node.kind);
 	}
 
-	let (locals, instructions, returns) = code_gen::compile_expression(&ast, &mut scopes);
+	let (locals, instructions, returns) = code_gen::compile_expression(&ast);
 
 	println!("Locals: ");
 	for (i, local) in locals.locals.iter().enumerate() {
 		println!("{}: {:?}", i, local);
 		if let Some(member) = local.scope_member {
-			print_location(&code, &scopes.member(member).declaration_location, "Declared here");
+			print_location(&code, &ast.scopes.member(member).declaration_location, "Declared here");
 		}
 	}
 
@@ -166,7 +187,7 @@ pub struct Error {
 
 type Result<T> = std::result::Result<T, Error>;
 
-trait Location {
+pub trait Location {
 	fn get_location(&self) -> CodeLoc;
 }
 
