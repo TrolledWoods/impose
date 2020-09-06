@@ -1,5 +1,6 @@
 use crate::{ Location, CodeLoc, Error, Result, lexer::{ self, Token, TokenKind }, Routine };
 use crate::operator::Operator;
+use std::num::NonZeroU32;
 
 struct Context<'a, 't> {
 	ast: &'a mut Ast, 
@@ -290,25 +291,14 @@ fn parse_block(mut context: Context)
 
 #[inline]
 fn parse_expression(
-	context: Context,
-) -> Result<AstNodeId> {
-	parse_expression_rec(context, 0)
-}
-
-/// Parse an expression recursively
-fn parse_expression_rec(
 	mut context: Context,
-	min_priority: u32, 
 ) -> Result<AstNodeId> {
 	let token = context.tokens.expect_peek(|| "Expected expression")?;
 	if let TokenKind::Operator(Operator::BitwiseOrOrLambda) = token.kind {
-		if min_priority != 0 {
-			return_error!(token, "You cannot have other operators in an expression with a function declaration");
-		}
-
 		// Lambda definition
-		let sub_scope = context.ast.scopes.create_scope(Some(context.scope));
+		let mut ast = Ast::new();
 		let mut args = Vec::new();
+		let sub_scope = ast.scopes.create_scope(None);
 		try_parse_list(
 			context.borrow(), 
 			|context| {
@@ -328,7 +318,6 @@ fn parse_expression_rec(
 			&TokenKind::Operator(Operator::BitwiseOrOrLambda),
 			&TokenKind::Operator(Operator::BitwiseOrOrLambda),
 		)?;
-		let mut ast = Ast::new();
 		let mut sub_context = Context {
 			ast: &mut ast,
 			scope: sub_scope,
@@ -354,6 +343,14 @@ fn parse_expression_rec(
 		)));
 	}
 
+	parse_expression_rec(context, 0)
+}
+
+/// Parse an expression recursively
+fn parse_expression_rec(
+	mut context: Context,
+	min_priority: u32, 
+) -> Result<AstNodeId> {
 	let lvalue_starting_node = context.ast.nodes.len();
 	let mut a = parse_value(context.borrow())?;
 	
@@ -542,9 +539,32 @@ pub fn parse_code(
 	Ok(ast)
 }
 
-// TODO: Maybe make this its own type? And also, make this a NonZeroU32 eventually
-pub type ScopeId = u32;
-pub type ScopeMemberId = u32;
+// TODO: Make a macro to auto-generate these kinds of id:s
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ScopeId(NonZeroU32);
+
+impl ScopeId {
+	fn new(id: usize) -> Self {
+		Self(NonZeroU32::new(id as u32 + 1).unwrap())
+	}
+
+	fn get(self) -> usize {
+		self.0.get() as usize - 1
+	}
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ScopeMemberId(NonZeroU32);
+
+impl ScopeMemberId {
+	fn new(id: usize) -> Self {
+		Self(NonZeroU32::new(id as u32 + 1).unwrap())
+	}
+
+	fn get(self) -> usize {
+		self.0.get() as usize - 1
+	}
+}
 
 /// A buffer that stores some data 'T' for every member in the
 /// scope.
@@ -554,11 +574,11 @@ pub struct ScopeBuffer<T> {
 
 impl<T> ScopeBuffer<T> {
 	pub fn member(&self, member_id: ScopeMemberId) -> &T {
-		&self.data[member_id as usize]
+		&self.data[member_id.get()]
 	}
 
 	pub fn member_mut(&mut self, member_id: ScopeMemberId) -> &mut T {
-		&mut self.data[member_id as usize]
+		&mut self.data[member_id.get()]
 	}
 }
 
@@ -586,17 +606,17 @@ impl Scopes {
 	}
 
 	pub fn create_scope(&mut self, parent: Option<ScopeId>) -> ScopeId {
-		let id = self.scopes.len() as u32;
+		let id = self.scopes.len();
 		self.scopes.push(Scope { parent, .. Default::default() });
-		id
+		ScopeId::new(id)
 	}
 
 	pub fn member(&self, member: ScopeMemberId) -> &ScopeMember {
-		&self.members[member as usize]
+		&self.members[member.get()]
 	}
 
 	pub fn member_mut(&mut self, member: ScopeMemberId) -> &mut ScopeMember {
-		&mut self.members[member as usize]
+		&mut self.members[member.get()]
 	}
 
 	pub fn members(&mut self, scope: ScopeId) 
@@ -609,11 +629,11 @@ impl Scopes {
 		let mut scope;
 
 		loop {
-			scope = &self.scopes[scope_id as usize];
+			scope = &self.scopes[scope_id.get()];
 
 			for (i, value) in scope.members.iter().enumerate() {
 				if self.member(*value).name == name {
-					return Some(i as u32);
+					return Some(ScopeMemberId::new(i));
 				}
 			}
 
@@ -643,8 +663,8 @@ impl Scopes {
 			kind,
 		};
 
-		let scope_instance = &mut self.scopes[scope as usize];
-		let id = scope_instance.members.len() as u32;
+		let scope_instance = &mut self.scopes[scope.get()];
+		let id = ScopeMemberId::new(scope_instance.members.len());
 		self.members.push(member);
 		scope_instance.members.push(id);
 		

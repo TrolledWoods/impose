@@ -66,7 +66,7 @@ fn main() {
 	println!();
 
 	let mut routines = Vec::new();
-	let (ast) = match parser::parse_code(&code, &mut routines) {
+	let ast = match parser::parse_code(&code, &mut routines) {
 		Ok(value) => value,
 		Err(err) => {
 			print_error(&code, err);
