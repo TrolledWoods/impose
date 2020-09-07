@@ -1,5 +1,5 @@
 {:main
-	skip :main (2);
+	skip :main (2 + 60);
 
 	6
 }

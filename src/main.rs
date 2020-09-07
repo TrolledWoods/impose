@@ -3,11 +3,15 @@
 
 mod prelude {
 	pub(crate) use crate::{ 
-		Location, CodeLoc, Error, Result, Routine, RoutineId, 
+		Location, CodeLoc, Error, Result, Routine, RoutineId,
+		operator::Operator,
 		lexer::{ self, Token, TokenKind }, 
-		parser::{ NodeKind, Ast, Node, Scopes, ScopeBuffer },
+		parser::{ NodeKind, Ast, Node, Scopes, ScopeBuffer, ScopeId, ScopeMemberId, ScopeMemberKind },
+		types::{ TypeId },
 	};
 }
+
+use prelude::*;
 
 /// This is a macro to allow the compiler line and column to ergonomically be passed
 /// inside the errors that are returned(for compiler debugging)
@@ -65,8 +69,9 @@ fn main() {
 	println!("{}", code);
 	println!();
 
+	let mut scopes = Scopes::new();
 	let mut routines = Vec::new();
-	let ast = match parser::parse_code(&code, &mut routines) {
+	let ast = match parser::parse_code(&code, &mut routines, &mut scopes) {
 		Ok(value) => value,
 		Err(err) => {
 			print_error(&code, err);
@@ -76,7 +81,7 @@ fn main() {
 
 	let mut typer = types::AstTyper::new(&ast);
 	let mut types = types::Types::new();
-	match typer.try_type_ast(&mut types, &ast) {
+	match typer.try_type_ast(&mut types, &ast, &mut scopes) {
 		Ok(()) => (),
 		Err(err) => {
 			print_error(&code, err);
@@ -94,13 +99,13 @@ fn main() {
 		println!("{:?}: {:?} {:?}", node.loc, node.scope, node.kind);
 	}
 
-	let (locals, instructions, returns) = code_gen::compile_expression(&ast);
+	let (locals, instructions, returns) = code_gen::compile_expression(&ast, &scopes);
 
 	println!("Locals: ");
 	for (i, local) in locals.locals.iter().enumerate() {
 		println!("{}: {:?}", i, local);
 		if let Some(member) = local.scope_member {
-			print_location(&code, &ast.scopes.member(member).declaration_location, "Declared here");
+			print_location(&code, &scopes.member(member).declaration_location, "Declared here");
 		}
 	}
 

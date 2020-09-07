@@ -1,9 +1,10 @@
-use crate::{ Location, CodeLoc, Error, Result, lexer::{ self, Token, TokenKind }, Routine };
+use crate::prelude::*;
 use crate::operator::Operator;
 use std::num::NonZeroU32;
 
 struct Context<'a, 't> {
 	ast: &'a mut Ast, 
+	scopes: &'a mut Scopes,
 	scope: ScopeId, 
 	tokens: &'a mut TokenStream<'t>,
 	routines: &'a mut Vec<Routine>,
@@ -13,6 +14,7 @@ impl<'a, 't> Context<'a, 't> {
 	fn borrow<'b>(&'b mut self) -> Context<'b, 't> {
 		Context {
 			ast: self.ast,
+			scopes: self.scopes,
 			scope: self.scope,
 			tokens: self.tokens,
 			routines: self.routines,
@@ -20,9 +22,10 @@ impl<'a, 't> Context<'a, 't> {
 	}
 
 	fn sub_scope<'b>(&'b mut self) -> Context<'b, 't> {
-		let sub_scope = self.ast.scopes.create_scope(Some(self.scope));
+		let sub_scope = self.scopes.create_scope(Some(self.scope));
 		Context {
 			ast: self.ast,
+			scopes: self.scopes,
 			scope: sub_scope,
 			tokens: self.tokens,
 			routines: self.routines,
@@ -35,7 +38,6 @@ pub type AstNodeId = u32;
 
 #[derive(Debug)]
 pub struct Ast {
-	pub scopes: Scopes,
 	pub nodes: Vec<Node>,
 }
 
@@ -43,7 +45,6 @@ impl Ast {
 	fn new() -> Self {
 		Ast { 
 			nodes: Vec::new(),
-			scopes: Scopes::new(),
 		}
 	}
 
@@ -188,7 +189,7 @@ fn try_parse_create_label(
 		let loc = context.tokens.get_location();
 		match context.tokens.next_kind() {
 			Some(TokenKind::Identifier(name)) => {
-				let id = context.ast.scopes.declare_member(
+				let id = context.scopes.declare_member(
 					context.scope, 
 					name.to_string(),
 					&loc,
@@ -211,12 +212,12 @@ fn try_parse_label(
 		let loc = context.tokens.get_location();
 		match context.tokens.next_kind() {
 			Some(TokenKind::Identifier(name)) => {
-				let id = context.ast.scopes.find_member(
+				let id = context.scopes.find_member(
 					context.scope, 
 					name,
 				).ok_or_else(|| error!(loc, "Unknown label"))?;
 
-				if context.ast.scopes.member(id).kind != ScopeMemberKind::Label {
+				if context.scopes.member(id).kind != ScopeMemberKind::Label {
 					return_error!(
 						loc, 
 						"Expected label, got variable or constant"
@@ -265,7 +266,7 @@ fn parse_block(mut context: Context)
 
 				// We have a declaration
 				let value = parse_expression(context.borrow())?;
-				let variable_name = context.ast.scopes.declare_member(context.scope, name.to_string(), ident_loc, ScopeMemberKind::LocalVariable)?;
+				let variable_name = context.scopes.declare_member(context.scope, name.to_string(), ident_loc, ScopeMemberKind::LocalVariable)?;
 				commands.push(context.ast.insert_node(Node::new(declare_loc, context.scope, NodeKind::Declaration {
 					variable_name, value,
 				})));
@@ -298,13 +299,13 @@ fn parse_expression(
 		// Lambda definition
 		let mut ast = Ast::new();
 		let mut args = Vec::new();
-		let sub_scope = ast.scopes.create_scope(None);
+		let sub_scope = context.scopes.create_scope(None);
 		try_parse_list(
 			context.borrow(), 
 			|context| {
 				let value = context.tokens.expect_next(|| "Expected function argument name")?;
 				if let Token { loc, kind: TokenKind::Identifier(name) } = value {
-					args.push(context.ast.scopes.declare_member(
+					args.push(context.scopes.declare_member(
 						sub_scope, 
 						name.to_string(), 
 						&loc,
@@ -320,6 +321,7 @@ fn parse_expression(
 		)?;
 		let mut sub_context = Context {
 			ast: &mut ast,
+			scopes: context.scopes,
 			scope: sub_scope,
 			tokens: context.tokens,
 			routines: context.routines,
@@ -417,9 +419,9 @@ fn parse_value(
 		}
 		TokenKind::Identifier(name) => {
 			context.tokens.next();
-			match context.ast.scopes.find_member(context.scope, name) {
+			match context.scopes.find_member(context.scope, name) {
 				Some(member) => {
-					if context.ast.scopes.member(member).kind == ScopeMemberKind::Label {
+					if context.scopes.member(member).kind == ScopeMemberKind::Label {
 						return_error!(token, "Tried using label as a variable or a constant");
 					}
 					context.ast.insert_node(Node::new(token, context.scope, NodeKind::Identifier(member)))
@@ -521,15 +523,17 @@ fn try_parse_list<'t, V>(
 pub fn parse_code(
 	code: &str,
 	routines: &mut Vec<Routine>,
+	scopes: &mut Scopes,
 ) -> Result<Ast> {
 	let (last_loc, tokens) = lexer::lex_code(code)?;
 	let mut ast = Ast::new();
-	let scope = ast.scopes.create_scope(None);
+	let scope = scopes.create_scope(None);
 
 	let mut stream = TokenStream::new(&tokens, last_loc);
 
 	let context = Context {
 		ast: &mut ast,
+		scopes,
 		scope,
 		tokens: &mut stream,
 		routines,
@@ -661,6 +665,7 @@ impl Scopes {
 			declaration_location: loc.clone(), 
 			name,
 			kind,
+			type_: None,
 		};
 
 		let scope_instance = &mut self.scopes[scope.get()];
@@ -675,6 +680,7 @@ impl Scopes {
 #[derive(Debug, Default)]
 pub struct Scope {
 	pub parent: Option<ScopeId>,
+	// TODO: Make this better
 	pub has_locals: bool,
 	members: Vec<ScopeMemberId>,
 }
@@ -691,4 +697,5 @@ pub struct ScopeMember {
 	pub name: String,
 	pub kind: ScopeMemberKind,
 	pub declaration_location: CodeLoc,
+	pub type_: Option<TypeId>,
 }

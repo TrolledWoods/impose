@@ -97,8 +97,6 @@ pub struct AstTyper {
 	/// Once done, this list should be the same length as the ast.
 	pub types: Vec<Option<TypeId>>,
 	node_id: usize,
-
-	pub scope_variables: ScopeBuffer<Option<TypeId>>,
 	label_types: HashMap<ScopeMemberId, Option<TypeId>>,
 }
 
@@ -107,12 +105,11 @@ impl AstTyper {
 		AstTyper {
 			types: Vec::with_capacity(ast.nodes.len()),
 			node_id: 0,
-			scope_variables: ast.scopes.create_buffer(|| None),
 			label_types: HashMap::new(),
 		}
 	}
 
-	pub fn try_type_ast(&mut self, types: &mut Types, ast: &Ast) -> Result<()> {
+	pub fn try_type_ast(&mut self, types: &mut Types, ast: &Ast, scopes: &mut Scopes) -> Result<()> {
 		while self.node_id < ast.nodes.len() {
 			debug_assert_eq!(self.types.len(), self.node_id);
 			let node = &ast.nodes[self.node_id];
@@ -128,7 +125,16 @@ impl AstTyper {
 					None
 				}
 				NodeKind::Identifier(id) => {
-					*self.scope_variables.member(id)
+					let member = scopes.member(id);
+					if member.kind == ScopeMemberKind::LocalVariable {
+						if let Some(type_) = member.type_ {
+							Some(type_)
+						} else {
+							return_error!(node, "Type is not assigned, is the variable not declared? (This is probably a compiler problem)");
+						}
+					} else {
+						return_error!(node, "Typing can only handle local variables for now");
+					}
 				}
 				NodeKind::FunctionDeclaration { routine_id } => {
 					None
@@ -153,17 +159,22 @@ impl AstTyper {
 
 						self.types[*returns as usize]
 					} else {
-						return_error!(&node.loc, "This is not a function pointer, yet a function call was attemted on it");
+						return_error!(node, "This is not a function pointer, yet a function call was attemted on it");
 					}
 				}
 				NodeKind::BinaryOperator { operator, left, right } => {
+					// TODO: Make a better operator system
 					self.types[right as usize]
 				},
 				NodeKind::UnaryOperator { operator, operand, } => {
 					self.types[operand as usize]
 				},
 				NodeKind::Declaration { variable_name, value } => {
-					*self.scope_variables.member_mut(variable_name) = self.types[value as usize];
+					if let Some(type_) = self.types[value as usize] {
+						scopes.member_mut(variable_name).type_ = Some(type_);
+					} else {
+						return_error!(node, "Cannot assign nothing to a variable");
+					}
 					None
 				}
 				NodeKind::Block { ref contents, label } => {

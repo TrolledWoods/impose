@@ -1,4 +1,4 @@
-use crate::{ parser::{self, Scopes, ScopeMemberId}, operator::Operator };
+use crate::prelude::*;
 use std::fmt;
 
 macro_rules! push_instr {
@@ -50,26 +50,27 @@ impl fmt::Debug for Instruction {
 pub type LocalId = usize;
 
 pub fn compile_expression(
-	ast: &parser::Ast, 
+	ast: &Ast, 
+	scopes: &Scopes,
 ) -> (Locals, Vec<Instruction>, Value) {
 	let mut locals = Locals::new();
 	let mut node_values: Vec<Value> = Vec::with_capacity(ast.nodes.len());
 	let mut instructions = Vec::new();
 
 	let mut temporary_labels: Vec<(_, _, Option<Value>)> = Vec::new();
-	let mut storage_locations = ast.scopes.create_buffer(|| None);
+	let mut storage_locations = scopes.create_buffer(|| None);
 
 	for node in ast.nodes.iter() {
 		match node.kind {
-			parser::NodeKind::Identifier(member_id) => {
+			NodeKind::Identifier(member_id) => {
 				let member = match storage_locations.member(member_id) {
 					Some(value) => *value,
-					None => panic!("Invalid thing, \nLocals: {:?}, \nScopes: {:?}, \nInstructions: {:?}", locals, ast.scopes, instructions),
+					None => panic!("Invalid thing, \nLocals: {:?}, \nScopes: {:?}, \nInstructions: {:?}", locals, scopes, instructions),
 				};
 				
 				node_values.push(member);
 			}
-			parser::NodeKind::Declaration { variable_name, value } => {
+			NodeKind::Declaration { variable_name, value } => {
 				let location = Value::Local(locals.alloc_custom(Local {
 					n_uses: 0,
 					scope_member: Some(variable_name),
@@ -82,7 +83,7 @@ pub fn compile_expression(
 				push_instr!(instructions, Instruction::MoveU64(location, input));
 				node_values.push(Value::Poison);
 			}
-			parser::NodeKind::Skip { label, value } => {
+			NodeKind::Skip { label, value } => {
 				let mut instruction_loc = instructions.len();
 
 				let mut return_value_local = None;
@@ -112,7 +113,7 @@ pub fn compile_expression(
 				temporary_labels.push((label, instruction_loc, return_value_local));
 				node_values.push(Value::Poison);
 			}
-			parser::NodeKind::Block { ref contents, label } => {
+			NodeKind::Block { ref contents, label } => {
 				let mut return_value_loc = None;
 
 				if let Some(label) = label {
@@ -142,12 +143,12 @@ pub fn compile_expression(
 					}
 				}
 			}
-			parser::NodeKind::Number(num) => {
+			NodeKind::Number(num) => {
 				// TODO: Check that the number fits, although I guess this should
 				// be down further up in the pipeline
 				node_values.push(Value::Constant(num as i64));
 			}
-			parser::NodeKind::BinaryOperator { operator, left, right } => {
+			NodeKind::BinaryOperator { operator, left, right } => {
 				let a = node_values[left as usize];
 				let b = node_values[right as usize];
 				locals.note_usage(&a);
@@ -178,7 +179,7 @@ pub fn compile_expression(
 				// locals.free_value(node_values[left as usize].clone());
 				// locals.free_value(node_values[right as usize].clone());
 			}
-			parser::NodeKind::EmptyLiteral => {
+			NodeKind::EmptyLiteral => {
 				node_values.push(Value::Poison);
 			}
 			_ => todo!()
