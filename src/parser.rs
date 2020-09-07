@@ -295,30 +295,39 @@ fn parse_expression(
 	mut context: Context,
 ) -> Result<AstNodeId> {
 	let token = context.tokens.expect_peek(|| "Expected expression")?;
-	if let TokenKind::Operator(Operator::BitwiseOrOrLambda) = token.kind {
+	if let TokenKind::Operator(Operator::BitwiseOrOrLambda) 
+		| TokenKind::Operator(Operator::Or) = token.kind 
+	{
 		// Lambda definition
 		let mut ast = Ast::new();
 		let mut args = Vec::new();
 		let sub_scope = context.scopes.create_scope(None);
-		try_parse_list(
-			context.borrow(), 
-			|context| {
-				let value = context.tokens.expect_next(|| "Expected function argument name")?;
-				if let Token { loc, kind: TokenKind::Identifier(name) } = value {
-					args.push(context.scopes.declare_member(
-						sub_scope, 
-						name.to_string(), 
-						&loc,
-						ScopeMemberKind::FunctionArgument,
-					)?);
-					Ok(())
-				} else {
-					Err(error!(value, "Expected function argument name"))
-				}
-			},
-			&TokenKind::Operator(Operator::BitwiseOrOrLambda),
-			&TokenKind::Operator(Operator::BitwiseOrOrLambda),
-		)?;
+		
+		if let TokenKind::Operator(Operator::BitwiseOrOrLambda) = token.kind {
+			try_parse_list(
+				context.borrow(), 
+				|context| {
+					let value = context.tokens.expect_next(|| "Expected function argument name")?;
+					if let Token { loc, kind: TokenKind::Identifier(name) } = value {
+						println!("Declared variable '{}' in scope {:?}", name, sub_scope);
+						args.push(context.scopes.declare_member(
+							sub_scope,
+							name.to_string(),
+							&loc,
+							ScopeMemberKind::LocalVariable,
+						)?);
+						Ok(())
+					} else {
+						Err(error!(value, "Expected function argument name"))
+					}
+				},
+				&TokenKind::Operator(Operator::BitwiseOrOrLambda),
+				&TokenKind::Operator(Operator::BitwiseOrOrLambda),
+			)?;
+		} else {
+			context.tokens.next();
+		}
+
 		let mut sub_context = Context {
 			ast: &mut ast,
 			scopes: context.scopes,
@@ -419,6 +428,7 @@ fn parse_value(
 		}
 		TokenKind::Identifier(name) => {
 			context.tokens.next();
+			println!("Finding variable '{}' in {:?}", name, context.scope);
 			match context.scopes.find_member(context.scope, name) {
 				Some(member) => {
 					if context.scopes.member(member).kind == ScopeMemberKind::Label {
@@ -623,25 +633,21 @@ impl Scopes {
 		&mut self.members[member.get()]
 	}
 
-	pub fn members(&mut self, scope: ScopeId) 
+	pub fn members(&self, scope: ScopeId) 
 		-> impl Iterator<Item = &ScopeMember> 
 	{
-		self.members.iter()
+		self.scopes[scope.get()].members.iter().map(move |v| self.member(*v))
 	}
 
 	fn find_member(&self, mut scope_id: ScopeId, name: &str) -> Option<ScopeMemberId> {
-		let mut scope;
-
 		loop {
-			scope = &self.scopes[scope_id.get()];
-
-			for (i, value) in scope.members.iter().enumerate() {
-				if self.member(*value).name == name {
-					return Some(ScopeMemberId::new(i));
+			for member_id in self.scopes[scope_id.get()].members.iter() {
+				if self.members[member_id.get()].name == name {
+					return Some(*member_id);
 				}
 			}
 
-			scope_id = scope.parent?;
+			scope_id = self.scopes[scope_id.get()].parent?;
 		}
 	}
 
@@ -669,7 +675,7 @@ impl Scopes {
 		};
 
 		let scope_instance = &mut self.scopes[scope.get()];
-		let id = ScopeMemberId::new(scope_instance.members.len());
+		let id = ScopeMemberId::new(self.members.len());
 		self.members.push(member);
 		scope_instance.members.push(id);
 		
