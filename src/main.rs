@@ -76,7 +76,13 @@ fn main() {
 
 	let mut typer = types::AstTyper::new(&ast);
 	let mut types = types::Types::new();
-	typer.try_type_ast(&mut types, &ast).unwrap();
+	match typer.try_type_ast(&mut types, &ast) {
+		Ok(()) => (),
+		Err(err) => {
+			print_error(&code, err);
+			return;
+		}
+	}
 
 	for (node, type_) in ast.nodes.iter().zip(&typer.types) {
 		if let Some(type_) = type_ {

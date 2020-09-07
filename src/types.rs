@@ -1,4 +1,6 @@
 use crate::prelude::*;
+use crate::parser::ScopeMemberId;
+use std::collections::HashMap;
 use std::fmt;
 
 pub type TypeId = usize;
@@ -13,6 +15,13 @@ impl Types {
 	}
 
 	pub fn insert(&mut self, type_: Type) -> TypeId {
+		// Try to find a type that is already the same.
+		for (i, self_type) in self.types.iter().enumerate() {
+			if *self_type == type_ {
+				return i as TypeId;
+			}
+		}
+
 		let id = self.types.len();
 		self.types.push(type_);
 		id
@@ -45,33 +54,26 @@ impl Types {
 
 #[derive(Debug, PartialEq)]
 pub struct Type {
-	pub loc: CodeLoc,
+	pub loc: Option<CodeLoc>,
 	pub kind: TypeKind,
 	pub representation: Vec<PrimitiveKind>,
 }
 
 impl Type {
-	pub fn new(loc: &impl Location, kind: TypeKind) -> Self {
+	pub fn new(kind: TypeKind) -> Self {
 		Type {
-			loc: loc.get_location(),
+			loc: None,
 			kind,
 			representation: Vec::new(), // TODO: Make good representation
 		}
 	}
-}
 
-impl fmt::Display for Type {
-	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		use fmt::Write;
-
-
-		Ok(())
-	}
-}
-
-impl Location for Type {
-	fn get_location(&self) -> CodeLoc {
-		self.loc.clone()
+	pub fn new_loc(loc: &impl Location, kind: TypeKind) -> Self {
+		Type {
+			loc: Some(loc.get_location()),
+			kind,
+			representation: Vec::new(), // TODO: Make good representation
+		}
 	}
 }
 
@@ -97,6 +99,7 @@ pub struct AstTyper {
 	node_id: usize,
 
 	pub scope_variables: ScopeBuffer<Option<TypeId>>,
+	label_types: HashMap<ScopeMemberId, Option<TypeId>>,
 }
 
 impl AstTyper {
@@ -105,6 +108,7 @@ impl AstTyper {
 			types: Vec::with_capacity(ast.nodes.len()),
 			node_id: 0,
 			scope_variables: ast.scopes.create_buffer(|| None),
+			label_types: HashMap::new(),
 		}
 	}
 
@@ -115,7 +119,7 @@ impl AstTyper {
 
 			let type_kind = match node.kind {
 				NodeKind::Number(i128) => {
-					Some(types.insert(Type::new(node, TypeKind::Primitive(PrimitiveKind::U64))))
+					Some(types.insert(Type::new(TypeKind::Primitive(PrimitiveKind::U64))))
 				}
 				NodeKind::String(ref string) => {
 					todo!();
@@ -162,10 +166,38 @@ impl AstTyper {
 					*self.scope_variables.member_mut(variable_name) = self.types[value as usize];
 					None
 				}
-				NodeKind::Block { ref contents, .. } => {
-					self.types[*contents.last().unwrap() as usize]
+				NodeKind::Block { ref contents, label } => {
+					let type_ = self.types[*contents.last().unwrap() as usize];
+
+					if let Some(label) = label {
+						if let Some(label_type) = self.label_types.get(&label) {
+							if type_ != *label_type {
+								return_error!(
+									ast.nodes[*contents.last().unwrap() as usize], 
+									"Incompatible types, block doesn't return this type"
+								);
+							}
+						} else {
+							// TODO: Make unused label?
+						}
+					}
+
+					type_
 				}
-				NodeKind::Skip { label, value } => todo!(),
+				NodeKind::Skip { label, value } => {
+					if let Some(label_type) = self.label_types.get(&label) {
+						if value.map(|value| self.types[value as usize]).flatten() != *label_type {
+							return_error!(node, "Incompatible types, block doesn't return this type");
+						}
+					} else {
+						self.label_types.insert(
+							label, 
+							value.map(|value| self.types[value as usize]).flatten()
+						);
+					}
+
+					None
+				},
 			};
 
 			self.types.push(type_kind);
