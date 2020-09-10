@@ -213,7 +213,7 @@ pub fn compile_expression(
 				// locals.free_value(node_values[right as usize].clone());
 			}
 			NodeKind::EmptyLiteral => {
-				node_values.push(Value::Poison);
+				node_values.push(Value::Constant(0));
 			}
 			NodeKind::FunctionCall { function_pointer, ref arg_list } => {
 				let returns = locals.alloc();

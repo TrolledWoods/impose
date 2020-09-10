@@ -206,7 +206,7 @@ fn try_parse_create_label(
 				let id = context.scopes.declare_member(
 					context.scope, 
 					name.to_string(),
-					&loc,
+					Some(&loc),
 					ScopeMemberKind::Label,
 				)?;
 				Ok(Some(id))
@@ -247,13 +247,15 @@ fn try_parse_label(
 	}
 }
 
-fn parse_block(mut context: Context) 
+fn parse_block(mut context: Context, expect_brackets: bool) 
 	-> Result<AstNodeId>
 {
 	let loc = context.tokens.get_location();
-	match context.tokens.next() {
-		Some(Token { kind: TokenKind::Bracket('{'), .. }) => (),
-		_ => return_error!(loc, "Expected '{{' to start block"),
+	if expect_brackets {
+		match context.tokens.next() {
+			Some(Token { kind: TokenKind::Bracket('{'), .. }) => (),
+			_ => return_error!(loc, "Expected '{{' to start block"),
+		}
 	}
 
 	let mut context = context.sub_scope();
@@ -263,8 +265,13 @@ fn parse_block(mut context: Context)
 	let mut commands = Vec::new();
 	loop {
 		match context.tokens.peek() {
-			Some(Token { loc, kind: TokenKind::ClosingBracket('}') }) => {
+			Some(Token { loc, kind: TokenKind::ClosingBracket('}') }) if expect_brackets => {
 				commands.push(context.ast.insert_node(Node::new(loc, context.scope, NodeKind::EmptyLiteral)));
+				context.tokens.next();
+				break;
+			}
+			None if !expect_brackets => {
+				commands.push(context.ast.insert_node(Node::new(context.tokens, context.scope, NodeKind::EmptyLiteral)));
 				context.tokens.next();
 				break;
 			}
@@ -280,10 +287,17 @@ fn parse_block(mut context: Context)
 
 				// We have a declaration
 				let value = parse_expression(context.borrow())?;
-				let variable_name = context.scopes.declare_member(context.scope, name.to_string(), ident_loc, ScopeMemberKind::LocalVariable)?;
-				commands.push(context.ast.insert_node(Node::new(declare_loc, context.scope, NodeKind::Declaration {
-					variable_name, value,
-				})));
+				let variable_name = context.scopes.declare_member(
+					context.scope, 
+					name.to_string(), 
+					Some(ident_loc), 
+					ScopeMemberKind::LocalVariable
+				)?;
+				commands.push(context.ast.insert_node(
+					Node::new(declare_loc, context.scope, NodeKind::Declaration {
+						variable_name, value,
+					})
+				));
 				is_other = true;
 			}
 		}
@@ -295,8 +309,9 @@ fn parse_block(mut context: Context)
 
 		let loc = context.tokens.get_location();
 		match context.tokens.next() {
-			Some(Token { kind: TokenKind::ClosingBracket('}'), .. }) => break,
+			Some(Token { kind: TokenKind::ClosingBracket('}'), .. }) if expect_brackets => break,
 			Some(Token { kind: TokenKind::Semicolon, .. }) => (),
+			None if !expect_brackets => break,
 			_ => return_error!(loc, 
 				"Expected ';' or '}}', did you forget a semicolon or did you forget an operator?"),
 		}
@@ -332,7 +347,7 @@ fn parse_function(
 					let arg = context.scopes.declare_member(
 						sub_scope,
 						name.to_string(),
-						&loc,
+						Some(loc),
 						ScopeMemberKind::FunctionArgument,
 					)?;
 					args.push(arg);
@@ -481,7 +496,7 @@ fn parse_value(
 			}
 		}
 		TokenKind::Bracket('{') => {
-			parse_block(context.borrow())?
+			parse_block(context.borrow(), true)?
 		}
 		TokenKind::Bracket('(') => {
 			context.tokens.next();
@@ -589,7 +604,7 @@ pub fn parse_code(
 		tokens: &mut stream,
 		resources,
 	};
-	parse_expression(context)?;
+	parse_block(context, false)?;
 
 	Ok(ast)
 }
@@ -597,23 +612,31 @@ pub fn parse_code(
 create_id!(ScopeId);
 create_id!(ScopeMemberId);
 
-/// Scopes contains all the scopes for a routine. A single routine has its own local scope,
-/// because that makes it easy to duplicate the scope data for polymorphism and such.
-/// 
-/// This means however that we may need a separate system for constants, because those
-/// are not ordered and all that. But we may have needed a separate system for those anyway,
-/// so I'm not too worried about it.
-#[derive(Default, Debug)]
+/// Scopes contains all the scopes in the entire program.
+#[derive(Debug)]
 pub struct Scopes {
 	scopes: IdVec<Scope, ScopeId>,
 	members: IdVec<ScopeMember, ScopeMemberId>,
+	/// The super_scope is stuff that is contained within all the things.
+	pub super_scope: ScopeId,
 }
 
 impl Scopes {
-	pub fn new() -> Self { Default::default() }
+	pub fn new() -> Self {
+		let mut scopes = IdVec::new();
+		let super_scope = scopes.push(Default::default());
+		Scopes {
+			scopes,
+			members: IdVec::new(),
+			super_scope,
+		}
+	}
 
 	pub fn create_scope(&mut self, parent: Option<ScopeId>) -> ScopeId {
-		self.scopes.push(Scope { parent, .. Default::default() })
+		self.scopes.push(Scope { 
+			parent: Some(parent.unwrap_or(self.super_scope)), 
+			.. Default::default()
+		})
 	}
 
 	pub fn member(&self, member: ScopeMemberId) -> &ScopeMember {
@@ -622,12 +645,6 @@ impl Scopes {
 
 	pub fn member_mut(&mut self, member: ScopeMemberId) -> &mut ScopeMember {
 		self.members.get_mut(member)
-	}
-
-	pub fn members(&self, scope: ScopeId) 
-		-> impl Iterator<Item = &ScopeMember> 
-	{
-		self.scopes.get(scope).members.iter().map(move |v| self.member(*v))
 	}
 
 	fn find_member(&self, mut scope_id: ScopeId, name: &str) -> Option<ScopeMemberId> {
@@ -646,20 +663,23 @@ impl Scopes {
 		&mut self, 
 		scope: ScopeId, 
 		name: String, 
-		loc: &CodeLoc,
+		loc: Option<&CodeLoc>,
 		kind: ScopeMemberKind,
 	) -> Result<ScopeMemberId> {
-		for value in self.members(scope) {
-			if value.name == name {
+		if let Some(_) = self.find_member(scope, &name) {
+			if let Some(loc) = loc {
+				// TODO: Show where it was taken before.
 				return_error!(
 					loc,
-					"Name is already taken in the same scope"
+					"Name is already taken"
 				);
+			} else {
+				panic!("Non code based identifier name clash");
 			}
 		}
 
 		let member = ScopeMember { 
-			declaration_location: loc.clone(), 
+			declaration_location: loc.cloned(), 
 			name,
 			kind,
 			type_: None,
@@ -687,13 +707,14 @@ pub enum ScopeMemberKind {
 	LocalVariable,
 	FunctionArgument,
 	Label,
+	Constant(ResourceId),
 }
 
 #[derive(Debug)]
 pub struct ScopeMember {
 	pub name: String,
 	pub kind: ScopeMemberKind,
-	pub declaration_location: CodeLoc,
+	pub declaration_location: Option<CodeLoc>,
 	pub type_: Option<TypeId>,
 	pub storage_loc: Option<crate::code_gen::LocalId>,
 }

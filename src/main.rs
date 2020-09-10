@@ -72,6 +72,9 @@ fn main() {
 	let mut resources = Resources::new();
 	let mut types = Types::new();
 
+	// -- DEFINE STANDARD VALUES --
+
+	// -- COMPILE STUFF --
 	let ast = match parser::parse_code(&code, &mut resources, &mut scopes) {
 		Ok(value) => value,
 		Err(err) => {
