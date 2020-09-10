@@ -112,7 +112,6 @@ fn main() {
 
 fn print_location(code: &str, loc: &CodeLoc, message: &str) {
 	if let Some(line) = code.lines().nth(loc.line as usize - 1) {
-		println!("      |");
 		println!("{:>5} | {}", loc.line, line);
 
 		print!("      | ");
@@ -130,7 +129,6 @@ fn print_location(code: &str, loc: &CodeLoc, message: &str) {
 			}
 		}
 		println!("^-- {}", message);
-		println!("      |");
 	} else {
 		println!("After code: {}", message);
 	}
