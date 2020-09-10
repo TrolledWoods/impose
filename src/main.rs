@@ -107,6 +107,31 @@ fn main() {
 		None, 
 		ScopeMemberKind::Constant(string_function)
 	).unwrap();
+	
+	fn print_num_func(_resources: &Resources, arguments: &[i64]) -> i64 {
+		assert_eq!(arguments.len(), 1);
+		print!("{}", arguments[0]);
+		return arguments[0];
+	}
+
+	let func_type = types.insert_function(vec![u64_id], u64_id);
+	let print_num_function = resources.insert(Resource {
+		loc: CodeLoc {
+			file: std::rc::Rc::new(String::from("no_file thanks")),
+			line: 1, 
+			column: 1,
+		},
+		kind: ResourceKind::ExternalFunction {
+			type_: func_type,
+			func: Box::new(print_num_func),
+		}
+	});
+	scopes.declare_member(
+		scopes.super_scope, 
+		String::from("print_num"), 
+		None, 
+		ScopeMemberKind::Constant(print_num_function)
+	).unwrap();
 
 	// -- COMPILE STUFF --
 	let ast = match parser::parse_code(&code, &mut resources, &mut scopes) {

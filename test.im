@@ -1,3 +1,9 @@
-my_print := |x| print("This is my printing function\n");
+triple := |x| x + x + x;
 
-my_print(2);
+print("3 * 3 = ");
+print_num(triple(3));
+print("\n4 * 3 = ");
+print_num(triple(4));
+print("\n5 * 3 = ");
+print_num(triple(5));
+print("\n");
