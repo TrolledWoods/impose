@@ -622,22 +622,6 @@ impl ScopeMemberId {
 	}
 }
 
-/// A buffer that stores some data 'T' for every member in the
-/// scope.
-pub struct ScopeBuffer<T> {
-	data: Vec<T>,
-}
-
-impl<T> ScopeBuffer<T> {
-	pub fn member(&self, member_id: ScopeMemberId) -> &T {
-		&self.data[member_id.get()]
-	}
-
-	pub fn member_mut(&mut self, member_id: ScopeMemberId) -> &mut T {
-		&mut self.data[member_id.get()]
-	}
-}
-
 /// Scopes contains all the scopes for a routine. A single routine has its own local scope,
 /// because that makes it easy to duplicate the scope data for polymorphism and such.
 /// 
@@ -652,14 +636,6 @@ pub struct Scopes {
 
 impl Scopes {
 	pub fn new() -> Self { Default::default() }
-
-	pub fn create_buffer<T>(&self, mut default: impl FnMut() -> T) -> ScopeBuffer<T> {
-		ScopeBuffer {
-			data: (0..self.members.len())
-				.map(|_| default())
-				.collect(),
-		}
-	}
 
 	pub fn create_scope(&mut self, parent: Option<ScopeId>) -> ScopeId {
 		let id = self.scopes.len();
@@ -714,6 +690,7 @@ impl Scopes {
 			name,
 			kind,
 			type_: None,
+			storage_loc: None,
 		};
 
 		let scope_instance = &mut self.scopes[scope.get()];
@@ -746,4 +723,5 @@ pub struct ScopeMember {
 	pub kind: ScopeMemberKind,
 	pub declaration_location: CodeLoc,
 	pub type_: Option<TypeId>,
+	pub storage_loc: Option<crate::code_gen::LocalId>,
 }

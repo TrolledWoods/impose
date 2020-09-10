@@ -65,7 +65,7 @@ pub type LocalId = usize;
 
 pub fn compile_expression(
 	ast: &Ast, 
-	scopes: &Scopes,
+	scopes: &mut Scopes,
 	resources: &Resources,
 ) -> (Locals, Vec<Instruction>, Value) {
 	let mut locals = Locals::new();
@@ -73,7 +73,6 @@ pub fn compile_expression(
 	let mut instructions = Vec::new();
 
 	let mut temporary_labels: Vec<(_, _, Option<Value>)> = Vec::new();
-	let mut storage_locations = scopes.create_buffer(|| None);
 	
 	let mut function_arg_locations = Vec::new();
 
@@ -85,37 +84,37 @@ pub fn compile_expression(
 
 		match node.kind {
 			NodeKind::Identifier(member_id) => {
-				let member = match storage_locations.member(member_id) {
-					Some(value) => *value,
+				let member = match scopes.member(member_id).storage_loc {
+					Some(value) => value,
 					None => panic!("Invalid thing, \nLocals: {:?}, \nScopes: {:?}, \nInstructions: {:?}", locals, scopes, instructions),
 				};
 				
-				node_values.push(member);
+				node_values.push(Value::Local(member));
 			}
 			NodeKind::DeclareFunctionArgument { variable_name, .. } => {
 				// Declaring a function argument is like moving the responsibility of setting
 				// the locals to the caller. This should be done by the 'call' instruction,
 				// which will set all the affected locals to the appropriate values.
-				let location = Value::Local(locals.alloc_custom(Local {
+				let location = locals.alloc_custom(Local {
 					n_uses: 0,
 					scope_member: Some(variable_name),
-				}));
+				});
 
-				*storage_locations.member_mut(variable_name) = Some(location);
-				function_arg_locations.push(location);
+				scopes.member_mut(variable_name).storage_loc = Some(location);
+				function_arg_locations.push(Value::Local(location));
 				node_values.push(Value::Poison);
 			}
 			NodeKind::Declaration { variable_name, value } => {
-				let location = Value::Local(locals.alloc_custom(Local {
+				let location = locals.alloc_custom(Local {
 					n_uses: 0,
 					scope_member: Some(variable_name),
-				}));
-				*storage_locations.member_mut(variable_name) = Some(location);
+				});
+				scopes.member_mut(variable_name).storage_loc = Some(location);
 				
 				let input = node_values[value as usize];
-				locals.note_usage(&location);
+				locals.note_usage(&Value::Local(location));
 				locals.note_usage(&input);
-				push_instr!(instructions, Instruction::MoveU64(location, input));
+				push_instr!(instructions, Instruction::MoveU64(Value::Local(location), input));
 				node_values.push(Value::Poison);
 			}
 			NodeKind::Skip { label, value } => {
