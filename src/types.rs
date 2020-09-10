@@ -109,7 +109,13 @@ impl AstTyper {
 		}
 	}
 
-	pub fn try_type_ast(&mut self, types: &mut Types, ast: &Ast, scopes: &mut Scopes) -> Result<()> {
+	pub fn try_type_ast(
+		&mut self, 
+		types: &mut Types, 
+		ast: &Ast, 
+		scopes: &mut Scopes,
+		resources: &Resources,
+	) -> Result<()> {
 		while self.node_id < ast.nodes.len() {
 			debug_assert_eq!(self.types.len(), self.node_id);
 			let node = &ast.nodes[self.node_id];
@@ -120,6 +126,21 @@ impl AstTyper {
 				}
 				NodeKind::String(ref string) => {
 					todo!();
+				}
+				NodeKind::Resource(id) => {
+					let resource = resources.resource(id);
+					match resource.kind {
+						ResourceKind::Function { ref arguments, ref code, ref instructions } => {
+							let kind = TypeKind::FunctionPointer { 
+								args: arguments.iter().map(|_| types.insert(Type::new(TypeKind::Primitive(PrimitiveKind::U64)))).collect(),
+								returns: types.insert(Type::new(TypeKind::Primitive(PrimitiveKind::U64))),
+							};
+							Some(types.insert(Type::new(kind)))
+						}
+						ResourceKind::String(ref string) => {
+							todo!("Strings do not have types yet");
+						}
+					}
 				}
 				NodeKind::EmptyLiteral => {
 					None

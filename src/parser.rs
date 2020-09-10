@@ -7,7 +7,7 @@ struct Context<'a, 't> {
 	scopes: &'a mut Scopes,
 	scope: ScopeId, 
 	tokens: &'a mut TokenStream<'t>,
-	routines: &'a mut Vec<Routine>,
+	resources: &'a mut Resources,
 }
 
 impl<'a, 't> Context<'a, 't> {
@@ -17,7 +17,7 @@ impl<'a, 't> Context<'a, 't> {
 			scopes: self.scopes,
 			scope: self.scope,
 			tokens: self.tokens,
-			routines: self.routines,
+			resources: self.resources,
 		}
 	}
 
@@ -28,7 +28,7 @@ impl<'a, 't> Context<'a, 't> {
 			scopes: self.scopes,
 			scope: sub_scope,
 			tokens: self.tokens,
-			routines: self.routines,
+			resources: self.resources,
 		}
 	}
 }
@@ -97,6 +97,7 @@ pub enum NodeKind {
 	String(String),
 	EmptyLiteral,
 	Identifier(ScopeMemberId),
+	Resource(ResourceId),
 	FunctionDeclaration {
 		routine_id: usize,
 	},
@@ -283,7 +284,8 @@ fn parse_block(mut context: Context)
 		match context.tokens.next() {
 			Some(Token { kind: TokenKind::ClosingBracket('}'), .. }) => break,
 			Some(Token { kind: TokenKind::Semicolon, .. }) => (),
-			_ => return_error!(loc, "Expected ';' or '}}'"),
+			_ => return_error!(loc, 
+				"Expected ';' or '}}', did you forget a semicolon or did you forget an operator?"),
 		}
 	}
 
@@ -333,24 +335,25 @@ fn parse_expression(
 			scopes: context.scopes,
 			scope: sub_scope,
 			tokens: context.tokens,
-			routines: context.routines,
+			resources: context.resources,
 		};
 
 		// Parse the function body.
 		parse_expression(sub_context.borrow())?;
 
-		let id = context.routines.len();
-		context.routines.push(Routine {
-			declaration: token.loc.clone(),
-			arguments: args,
-			code: ast,
-			instructions: None,
+		let id = context.resources.insert(Resource {
+			loc: token.get_location(),
+			kind: ResourceKind::Function {
+				arguments: args,
+				code: ast,
+				instructions: None,
+			}
 		});
 
 		return Ok(context.ast.insert_node(Node::new(
 			token, 
 			context.scope, 
-			NodeKind::FunctionDeclaration { routine_id: id }
+			NodeKind::Resource(id),
 		)));
 	}
 
@@ -424,7 +427,11 @@ fn parse_value(
 			context.tokens.next();
 			// TODO: Find a way to get rid of the string cloning here!
 			// Possibly by making TokenStream own its data
-			context.ast.insert_node(Node::new(token, context.scope, NodeKind::String(string.clone())))
+			let id = context.resources.insert(Resource {
+				loc: token.get_location(),
+				kind: ResourceKind::String(string.clone()),
+			});
+			context.ast.insert_node(Node::new(token, context.scope, NodeKind::Resource(id)))
 		}
 		TokenKind::Identifier(name) => {
 			context.tokens.next();
@@ -532,7 +539,7 @@ fn try_parse_list<'t, V>(
 
 pub fn parse_code(
 	code: &str,
-	routines: &mut Vec<Routine>,
+	resources: &mut Resources,
 	scopes: &mut Scopes,
 ) -> Result<Ast> {
 	let (last_loc, tokens) = lexer::lex_code(code)?;
@@ -546,7 +553,7 @@ pub fn parse_code(
 		scopes,
 		scope,
 		tokens: &mut stream,
-		routines,
+		resources,
 	};
 	parse_expression(context)?;
 

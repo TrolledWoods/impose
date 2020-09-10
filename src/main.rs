@@ -3,7 +3,8 @@
 
 mod prelude {
 	pub(crate) use crate::{ 
-		Location, CodeLoc, Error, Result, Routine, RoutineId,
+		Location, CodeLoc, Error, Result, 
+		resource::{ Resource, ResourceKind, Resources, ResourceId },
 		operator::Operator,
 		lexer::{ self, Token, TokenKind }, 
 		parser::{ NodeKind, Ast, Node, Scopes, ScopeBuffer, ScopeId, ScopeMemberId, ScopeMemberKind },
@@ -49,18 +50,9 @@ mod parser;
 mod types;
 mod code_gen;
 mod run;
+mod resource;
 
 use std::fmt;
-
-// TODO: Move this into another file
-pub struct Routine {
-	declaration: CodeLoc,
-	arguments: Vec<parser::ScopeMemberId>,
-	code: parser::Ast,
-	instructions: Option<(code_gen::Locals, Vec<code_gen::Instruction>)>,
-}
-
-pub type RoutineId = usize;
 
 fn main() {
 	let code = std::fs::read_to_string("test.im").unwrap();
@@ -70,8 +62,8 @@ fn main() {
 	println!();
 
 	let mut scopes = Scopes::new();
-	let mut routines = Vec::new();
-	let ast = match parser::parse_code(&code, &mut routines, &mut scopes) {
+	let mut resources = Resources::new();
+	let ast = match parser::parse_code(&code, &mut resources, &mut scopes) {
 		Ok(value) => value,
 		Err(err) => {
 			print_error(&code, err);
@@ -81,7 +73,7 @@ fn main() {
 
 	let mut typer = types::AstTyper::new(&ast);
 	let mut types = types::Types::new();
-	match typer.try_type_ast(&mut types, &ast, &mut scopes) {
+	match typer.try_type_ast(&mut types, &ast, &mut scopes, &resources) {
 		Ok(()) => (),
 		Err(err) => {
 			print_error(&code, err);
