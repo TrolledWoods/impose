@@ -6,5 +6,9 @@
 	get_add_1_func := || |x| x + 1;
 	add_1 := get_add_1_func();
 
-	get_add_1_func()(add_1(1))
+	get_add_1_func()(
+		add_1(
+			(|x| x + 50)((|| 0)())
+		)
+	)
 }

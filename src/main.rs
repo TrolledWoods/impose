@@ -7,7 +7,7 @@ mod prelude {
 		resource::{ Resource, ResourceKind, Resources, ResourceId },
 		operator::Operator,
 		lexer::{ self, Token, TokenKind }, 
-		parser::{ NodeKind, Ast, Node, Scopes, ScopeBuffer, ScopeId, ScopeMemberId, ScopeMemberKind },
+		parser::{ NodeKind, Ast, Scopes, ScopeMemberId, ScopeMemberKind },
 		types::{ TypeId, Types, AstTyper, PrimitiveKind, TypeKind, Type },
 	};
 }
@@ -102,7 +102,6 @@ fn main() {
 
 	if let ResourceKind::Value { 
 		ref value, 
-		ref type_, 
 		.. 
 	} = resource.kind {
 		println!("\nResult: {:?}", value);

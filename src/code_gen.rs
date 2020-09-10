@@ -92,7 +92,7 @@ pub fn compile_expression(
 				
 				node_values.push(member);
 			}
-			NodeKind::DeclareFunctionArgument { variable_name, type_node } => {
+			NodeKind::DeclareFunctionArgument { variable_name, .. } => {
 				// Declaring a function argument is like moving the responsibility of setting
 				// the locals to the caller. This should be done by the 'call' instruction,
 				// which will set all the affected locals to the appropriate values.

@@ -96,9 +96,8 @@ impl Resources {
 					code: ref mut resource_code,
 					type_: ref mut resource_type,
 					typer: ref mut resource_typer,
-					ref mut depending_on_type,
 					value: ref mut resource_value,
-					ref mut depending_on_value,
+					..
 				} => {
 					*resource_type = 
 						Some(types.insert(Type::new(TypeKind::Primitive(PrimitiveKind::U64))));
@@ -144,7 +143,6 @@ impl Resources {
 				}
 				ResourceKind::CurrentlyUsed => panic!("CurrentlyUsed stuff, fix this later"),
 				ResourceKind::String(_) => todo!(),
-				ResourceKind::Type { .. } => todo!(),
 			}
 
 			self.return_resource(member_id, member);
@@ -173,10 +171,6 @@ impl Resources {
 	pub fn resource(&self, id: ResourceId) -> &Resource {
 		&self.members[id]
 	}
-
-	pub fn resource_mut(&mut self, id: ResourceId) -> &mut Resource {
-		&mut self.members[id]
-	}
 }
 
 pub struct Resource {
@@ -204,10 +198,6 @@ pub enum ResourceKind {
 		instructions: Option<(code_gen::Locals, Vec<code_gen::Instruction>, code_gen::Value)>,
 	},
 	String(String),
-	Type {
-		type_: Option<TypeId>,
-		depending_on_type: Vec<ResourceId>,
-	},
 	Value {
 		code: Ast,
 		type_: Option<TypeId>,

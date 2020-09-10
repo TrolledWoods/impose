@@ -110,14 +110,10 @@ impl Location for Node {
 #[derive(Debug)]
 pub enum NodeKind {
 	Number(i128),
-	String(String),
 	Type(TypeKind),
 	EmptyLiteral,
 	Identifier(ScopeMemberId),
 	Resource(ResourceId),
-	FunctionDeclaration {
-		routine_id: usize,
-	},
 	FunctionCall {
 		function_pointer: AstNodeId,
 		arg_list: Vec<AstNodeId>,
@@ -311,7 +307,7 @@ fn parse_block(mut context: Context)
 }
 
 fn parse_function(
-	mut parent_context: Context
+	parent_context: Context
 ) -> Result<ResourceId> {
 	// Lambda definition
 	let mut ast = Ast::new();

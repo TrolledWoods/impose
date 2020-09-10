@@ -26,10 +26,6 @@ impl Types {
 		id
 	}
 
-	pub fn get(&self, type_: TypeId) -> &Type {
-		&self.types[type_]
-	}
-
 	pub fn get_if(&self, type_: Option<TypeId>) -> Option<&Type> {
 		type_.map(|type_| &self.types[type_])
 	}
@@ -68,14 +64,6 @@ impl Type {
 			representation: Vec::new(), // TODO: Make good representation
 		}
 	}
-
-	pub fn new_loc(loc: &impl Location, kind: TypeKind) -> Self {
-		Type {
-			loc: Some(loc.get_location()),
-			kind,
-			representation: Vec::new(), // TODO: Make good representation
-		}
-	}
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -90,7 +78,6 @@ pub enum TypeKind {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum PrimitiveKind {
 	U64,
-	Pointer,
 }
 
 pub struct AstTyper {
@@ -122,11 +109,8 @@ impl AstTyper {
 			let node = &ast.nodes[self.node_id];
 
 			let type_kind = match node.kind {
-				NodeKind::Number(i128) => {
+				NodeKind::Number(_) => {
 					Some(types.insert(Type::new(TypeKind::Primitive(PrimitiveKind::U64))))
-				}
-				NodeKind::String(ref string) => {
-					todo!();
 				}
 				NodeKind::Type(ref kind) => {
 					Some(types.insert(Type::new(kind.clone())))
@@ -142,7 +126,6 @@ impl AstTyper {
 						ResourceKind::CurrentlyUsed => {
 							return_error!(node, "Resource loop (This is a little trigger happy and will catch more cases than necessary, but I'll figure that out in time)");
 						},
-						ResourceKind::Type { .. } => todo!(),
 						ResourceKind::Value { type_, .. } => {
 							Some(type_.unwrap())
 						},
@@ -154,7 +137,7 @@ impl AstTyper {
 								todo!("Wait for the type of a resource");
 							}
 						}
-						ResourceKind::String(ref string) => {
+						ResourceKind::String(_) => {
 							todo!("Strings do not have types yet");
 						}
 					}
@@ -172,25 +155,6 @@ impl AstTyper {
 						}
 					} else {
 						return_error!(node, "Typing can only handle local variables for now");
-					}
-				}
-				NodeKind::FunctionDeclaration { routine_id } => {
-					let resource = resources.resource(routine_id);
-					match resource.kind {
-						ResourceKind::Function {
-							type_: Some(type_),
-							..
-						} => {
-							Some(type_)
-						}
-						ResourceKind::Function {
-							type_: None,
-							..
-						} => {
-							// TODO: Make typing able to depend on resource data.
-							todo!();
-						}
-						_ => unreachable!("Cannot have a FunctionDeclaration node and point to a resource that is not a function!"),
 					}
 				}
 				NodeKind::FunctionCall { function_pointer, ref arg_list } => {
@@ -216,11 +180,11 @@ impl AstTyper {
 						return_error!(node, "This is not a function pointer, yet a function call was attemted on it");
 					}
 				}
-				NodeKind::BinaryOperator { operator, left, right } => {
+				NodeKind::BinaryOperator { left: _, right, .. } => {
 					// TODO: Make a better operator system
 					self.types[right as usize]
 				},
-				NodeKind::UnaryOperator { operator, operand, } => {
+				NodeKind::UnaryOperator { operand, .. } => {
 					self.types[operand as usize]
 				},
 				NodeKind::Declaration { variable_name, value } => {
