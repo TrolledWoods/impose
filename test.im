@@ -1,1 +1,3 @@
-print ("JOHN ÄRE NOOBE \n");
+my_print := |x| print("This is my printing function\n");
+
+my_print(2);

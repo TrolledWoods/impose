@@ -144,14 +144,12 @@ impl AstTyper {
 						},
 						ResourceKind::Function { type_, .. } => {
 							if let Some(type_) = type_ {
-								println!("Got function type from resource {:?}", id);
 								Some(type_)
 							} else {
 								todo!("Wait for the type of a resource");
 							}
 						}
 						ResourceKind::ExternalFunction { type_, .. } => {
-							println!("Got function type of external function from resource {:?}", id);
 							Some(type_)
 						}
 						ResourceKind::String(_) => {
