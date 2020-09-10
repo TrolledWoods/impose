@@ -114,7 +114,7 @@ fn print_location(code: &str, loc: &CodeLoc, message: &str) {
 	if let Some(line) = code.lines().nth(loc.line as usize - 1) {
 		println!("{:>5} | {}", loc.line, line);
 
-		print!("      | ");
+		print!("        ");
 
 		let mut chars = line.chars();
 		for _ in 1..loc.column {
@@ -137,27 +137,7 @@ fn print_location(code: &str, loc: &CodeLoc, message: &str) {
 fn print_error(code: &str, error: Error) {
 	println!("ERROR at {:?}: {}", error.source_code_location, error.message);
 
-	if let Some(line) = code.lines().nth(error.source_code_location.line as usize - 1) {
-		println!("      |");
-		println!("{:>5} | {}", error.source_code_location.line, line);
-
-		print!("      | ");
-
-		let mut chars = line.chars();
-		for _ in 1..error.source_code_location.column {
-			if let Some(c) = chars.next() {
-				if c.is_whitespace() {
-					print!("{}", c);
-				} else {
-					print!(" ");
-				}
-			} else {
-				print!("X");
-			}
-		}
-		println!("^--");
-		println!("      |");
-	}
+	print_location(code, &error.source_code_location, "");
 	println!("Compiler location: {:?}", error.compiler_location);
 }
 
