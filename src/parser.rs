@@ -39,12 +39,14 @@ pub type AstNodeId = u32;
 #[derive(Debug)]
 pub struct Ast {
 	pub nodes: Vec<Node>,
+	pub is_typed: bool,
 }
 
 impl Ast {
 	fn new() -> Self {
 		Ast { 
 			nodes: Vec::new(),
+			is_typed: false,
 		}
 	}
 
@@ -344,9 +346,11 @@ fn parse_expression(
 		let id = context.resources.insert(Resource {
 			loc: token.get_location(),
 			kind: ResourceKind::Function {
+				type_: None,
 				arguments: args,
 				code: ast,
 				instructions: None,
+				typer: None,
 			}
 		});
 

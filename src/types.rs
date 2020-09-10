@@ -1,7 +1,6 @@
 use crate::prelude::*;
 use crate::parser::ScopeMemberId;
 use std::collections::HashMap;
-use std::fmt;
 
 pub type TypeId = usize;
 
@@ -112,7 +111,7 @@ impl AstTyper {
 	pub fn try_type_ast(
 		&mut self, 
 		types: &mut Types, 
-		ast: &Ast, 
+		ast: &mut Ast, 
 		scopes: &mut Scopes,
 		resources: &Resources,
 	) -> Result<()> {
@@ -130,12 +129,19 @@ impl AstTyper {
 				NodeKind::Resource(id) => {
 					let resource = resources.resource(id);
 					match resource.kind {
-						ResourceKind::Function { ref arguments, ref code, ref instructions } => {
-							let kind = TypeKind::FunctionPointer { 
-								args: arguments.iter().map(|_| types.insert(Type::new(TypeKind::Primitive(PrimitiveKind::U64)))).collect(),
-								returns: types.insert(Type::new(TypeKind::Primitive(PrimitiveKind::U64))),
-							};
-							Some(types.insert(Type::new(kind)))
+						ResourceKind::CurrentlyUsed => {
+							return_error!(node, "Resource loop (This is a little trigger happy and will catch more cases than necessary, but I'll figure that out in time)");
+						},
+						ResourceKind::Type { .. } => todo!(),
+						ResourceKind::Value { type_, .. } => {
+							Some(type_.unwrap())
+						},
+						ResourceKind::Function { type_, .. } => {
+							if let Some(type_) = type_ {
+								Some(type_)
+							} else {
+								todo!("Wait for the type of a resource");
+							}
 						}
 						ResourceKind::String(ref string) => {
 							todo!("Strings do not have types yet");
@@ -237,6 +243,7 @@ impl AstTyper {
 			self.node_id += 1;
 		}
 
+		ast.is_typed = true;
 		Ok(())
 	}
 }

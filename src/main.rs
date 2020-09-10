@@ -3,12 +3,12 @@
 
 mod prelude {
 	pub(crate) use crate::{ 
-		Location, CodeLoc, Error, Result, 
+		Location, CodeLoc, Error, Result, Primitive,
 		resource::{ Resource, ResourceKind, Resources, ResourceId },
 		operator::Operator,
 		lexer::{ self, Token, TokenKind }, 
 		parser::{ NodeKind, Ast, Node, Scopes, ScopeBuffer, ScopeId, ScopeMemberId, ScopeMemberKind },
-		types::{ TypeId },
+		types::{ TypeId, Types, AstTyper, PrimitiveKind, TypeKind, Type },
 	};
 }
 
@@ -54,15 +54,20 @@ mod resource;
 
 use std::fmt;
 
+#[derive(Debug, Clone, Copy)]
+pub enum Primitive {
+	Type(TypeId),
+	U64(u64),
+	Pointer(ResourceId),
+}
+
 fn main() {
 	let code = std::fs::read_to_string("test.im").unwrap();
 
-	println!("Source code: ");
-	println!("{}", code);
-	println!();
-
 	let mut scopes = Scopes::new();
 	let mut resources = Resources::new();
+	let mut types = Types::new();
+
 	let ast = match parser::parse_code(&code, &mut resources, &mut scopes) {
 		Ok(value) => value,
 		Err(err) => {
@@ -71,43 +76,34 @@ fn main() {
 		}
 	};
 
-	let mut typer = types::AstTyper::new(&ast);
-	let mut types = types::Types::new();
-	match typer.try_type_ast(&mut types, &ast, &mut scopes, &resources) {
-		Ok(()) => (),
-		Err(err) => {
-			print_error(&code, err);
-			return;
+	let resource_id = resources.insert(Resource {
+		loc: ast.nodes[0].loc.clone(),
+		kind: ResourceKind::Value {
+			code: ast,
+			type_: None,
+			typer: None,
+			depending_on_type: Vec::new(),
+			value: None,
+			depending_on_value: Vec::new(),
 		}
+	});
+
+	while resources.compute_one(&mut types, &mut scopes).unwrap() {
+		println!("Computed one!");
 	}
 
-	for (node, type_) in ast.nodes.iter().zip(&typer.types) {
-		if let Some(type_) = type_ {
-			types.print(*type_);
-			print!(": ");
-		} else {
-			print!("No type: ");
-		}
-		println!("{:?}: {:?} {:?}", node.loc, node.scope, node.kind);
+	let resource = resources.resource(resource_id);
+
+	if let ResourceKind::Value { 
+		ref value, 
+		ref type_, 
+		.. 
+	} = resource.kind {
+
+		println!("\nResult: {:?}", value);
+	}else {
+		unreachable!();
 	}
-
-	let (locals, instructions, returns) = code_gen::compile_expression(&ast, &scopes);
-
-	println!("Locals: ");
-	for (i, local) in locals.locals.iter().enumerate() {
-		println!("{}: {:?}", i, local);
-		if let Some(member) = local.scope_member {
-			print_location(&code, &scopes.member(member).declaration_location, "Declared here");
-		}
-	}
-
-	println!();
-	println!("Instructions: ");
-	for instruction in &instructions {
-		println!("{:?}", instruction);
-	}
-
-	println!("\nResult: {}", run::run_instructions(&locals, &instructions, returns));
 }
 
 fn print_location(code: &str, loc: &CodeLoc, message: &str) {
