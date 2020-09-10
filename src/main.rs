@@ -9,10 +9,14 @@ mod prelude {
 		lexer::{ self, Token, TokenKind }, 
 		parser::{ NodeKind, Ast, Scopes, ScopeMemberId, ScopeMemberKind },
 		types::{ TypeId, Types, AstTyper, PrimitiveKind, TypeKind, Type },
+		id::IdVec,
 	};
 }
 
 use prelude::*;
+
+#[macro_use]
+mod id;
 
 /// This is a macro to allow the compiler line and column to ergonomically be passed
 /// inside the errors that are returned(for compiler debugging)

@@ -3,7 +3,7 @@ use crate::code_gen::{Instruction, Locals, Value};
 
 fn set_value(locals: &mut [i64], value: Value, num: i64) {
 	match value {
-		Value::Local(local) => locals[local] = num,
+		Value::Local(local) => locals[local.into_index()] = num,
 		Value::Constant(_) => panic!("Cannot set constant"),
 		Value::Poison => panic!("Cannot set poison"),
 	}
@@ -11,7 +11,7 @@ fn set_value(locals: &mut [i64], value: Value, num: i64) {
 
 fn get_value(locals: &[i64], value: Value) -> i64 {
 	match value {
-		Value::Local(local) => locals[local],
+		Value::Local(local) => locals[local.into_index()],
 		Value::Constant(i) => i,
 		Value::Poison => panic!("Cannot get poison"),
 	}
@@ -88,7 +88,7 @@ pub fn run_instructions_with_locals(
 						resources,
 					);
 
-					local_data[returns] = return_value;
+					local_data[returns.into_index()] = return_value;
 				} else {
 					unreachable!(
 						"Resource is not function! This should have been caught in type checking"

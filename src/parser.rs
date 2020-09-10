@@ -1,6 +1,5 @@
 use crate::prelude::*;
 use crate::operator::Operator;
-use std::num::NonZeroU32;
 
 struct Context<'a, 't> {
 	ast: &'a mut Ast, 
@@ -595,32 +594,8 @@ pub fn parse_code(
 	Ok(ast)
 }
 
-// TODO: Make a macro to auto-generate these kinds of id:s
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ScopeId(NonZeroU32);
-
-impl ScopeId {
-	fn new(id: usize) -> Self {
-		Self(NonZeroU32::new(id as u32 + 1).unwrap())
-	}
-
-	fn get(self) -> usize {
-		self.0.get() as usize - 1
-	}
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct ScopeMemberId(NonZeroU32);
-
-impl ScopeMemberId {
-	fn new(id: usize) -> Self {
-		Self(NonZeroU32::new(id as u32 + 1).unwrap())
-	}
-
-	fn get(self) -> usize {
-		self.0.get() as usize - 1
-	}
-}
+create_id!(ScopeId);
+create_id!(ScopeMemberId);
 
 /// Scopes contains all the scopes for a routine. A single routine has its own local scope,
 /// because that makes it easy to duplicate the scope data for polymorphism and such.
@@ -630,42 +605,40 @@ impl ScopeMemberId {
 /// so I'm not too worried about it.
 #[derive(Default, Debug)]
 pub struct Scopes {
-	scopes: Vec<Scope>,
-	members: Vec<ScopeMember>,
+	scopes: IdVec<Scope, ScopeId>,
+	members: IdVec<ScopeMember, ScopeMemberId>,
 }
 
 impl Scopes {
 	pub fn new() -> Self { Default::default() }
 
 	pub fn create_scope(&mut self, parent: Option<ScopeId>) -> ScopeId {
-		let id = self.scopes.len();
-		self.scopes.push(Scope { parent, .. Default::default() });
-		ScopeId::new(id)
+		self.scopes.push(Scope { parent, .. Default::default() })
 	}
 
 	pub fn member(&self, member: ScopeMemberId) -> &ScopeMember {
-		&self.members[member.get()]
+		self.members.get(member)
 	}
 
 	pub fn member_mut(&mut self, member: ScopeMemberId) -> &mut ScopeMember {
-		&mut self.members[member.get()]
+		self.members.get_mut(member)
 	}
 
 	pub fn members(&self, scope: ScopeId) 
 		-> impl Iterator<Item = &ScopeMember> 
 	{
-		self.scopes[scope.get()].members.iter().map(move |v| self.member(*v))
+		self.scopes.get(scope).members.iter().map(move |v| self.member(*v))
 	}
 
 	fn find_member(&self, mut scope_id: ScopeId, name: &str) -> Option<ScopeMemberId> {
 		loop {
-			for member_id in self.scopes[scope_id.get()].members.iter() {
-				if self.members[member_id.get()].name == name {
+			for member_id in self.scopes.get(scope_id).members.iter() {
+				if self.members.get(*member_id).name == name {
 					return Some(*member_id);
 				}
 			}
 
-			scope_id = self.scopes[scope_id.get()].parent?;
+			scope_id = self.scopes.get(scope_id).parent?;
 		}
 	}
 
@@ -693,9 +666,8 @@ impl Scopes {
 			storage_loc: None,
 		};
 
-		let scope_instance = &mut self.scopes[scope.get()];
-		let id = ScopeMemberId::new(self.members.len());
-		self.members.push(member);
+		let scope_instance = self.scopes.get_mut(scope);
+		let id = self.members.push(member);
 		scope_instance.members.push(id);
 		
 		Ok(id)

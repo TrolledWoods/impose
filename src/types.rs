@@ -2,36 +2,34 @@ use crate::prelude::*;
 use crate::parser::ScopeMemberId;
 use std::collections::HashMap;
 
-pub type TypeId = usize;
+create_id!(TypeId);
 
 pub struct Types {
-	types: Vec<Type>,
+	types: IdVec<Type, TypeId>,
 }
 
 impl Types {
 	pub fn new() -> Self {
-		Types { types: Vec::new() }
+		Types { types: IdVec::new() }
 	}
 
 	pub fn insert(&mut self, type_: Type) -> TypeId {
 		// Try to find a type that is already the same.
-		for (i, self_type) in self.types.iter().enumerate() {
+		for (id, self_type) in self.types.iter_ids() {
 			if *self_type == type_ {
-				return i as TypeId;
+				return id;
 			}
 		}
 
-		let id = self.types.len();
-		self.types.push(type_);
-		id
+		self.types.push(type_)
 	}
 
 	pub fn get_if(&self, type_: Option<TypeId>) -> Option<&Type> {
-		type_.map(|type_| &self.types[type_])
+		type_.map(|type_| self.types.get(type_))
 	}
 
 	pub fn print(&self, type_: TypeId) {
-		match self.types[type_].kind {
+		match self.types.get(type_).kind {
 			TypeKind::FunctionPointer { ref args, returns } => {
 				print!("(");
 				for (i, arg) in args.iter().enumerate() {

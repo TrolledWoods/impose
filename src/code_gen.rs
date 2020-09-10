@@ -60,8 +60,7 @@ impl fmt::Debug for Instruction {
 	}
 }
 
-// TODO: Make a custom type for this?
-pub type LocalId = usize;
+create_id!(LocalId);
 
 pub fn compile_expression(
 	ast: &Ast, 
@@ -268,34 +267,30 @@ pub struct Local {
 ///
 #[derive(Debug)]
 pub struct Locals {
-	pub locals: Vec<Local>,
+	pub locals: IdVec<Local, LocalId>,
 }
 
 impl Locals {
 	fn new() -> Self {
-		Locals { locals: Vec::new() }
+		Locals { locals: IdVec::new() }
 	}
 
 	fn alloc(&mut self) -> LocalId {
-		let id = self.locals.len();
 		self.locals.push(Local {
 			n_uses: 0,
 			scope_member: None,
-		});
-		id
+		})
 	}
 
 	fn alloc_custom(&mut self, local: Local) -> LocalId {
 		assert_eq!(local.n_uses, 0);
-		let id = self.locals.len();
-		self.locals.push(local);
-		id
+		self.locals.push(local)
 	}
 
 	fn note_usage(&mut self, value: &Value) {
 		match *value {
 			Value::Local(local) => {
-				self.locals[local].n_uses += 1;
+				self.locals.get_mut(local).n_uses += 1;
 			}
 			Value::Constant(_) => (),
 			Value::Poison => (),
