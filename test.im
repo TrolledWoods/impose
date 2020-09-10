@@ -1,9 +1,8 @@
 triple := |x| x + x + x;
 
-print("3 * 3 = ");
-print_num(triple(3));
-print("\n4 * 3 = ");
-print_num(triple(4));
-print("\n5 * 3 = ");
-print_num(triple(5));
+print("Please enter a number: ");
+number := input_num();
+print_num(number);
+print(" * 3 = ");
+print_num(triple(number));
 print("\n");
