@@ -44,7 +44,12 @@ impl Resources {
 					// TODO: Figure out the types of all the arguments.
 					// TODO: Ping all of the things depending on the type of the function that
 					// we are done here.
-					// *type_ = Some();
+					// We are going to assume at first that all arguments are of type U64.
+					// TODO: The return type should be figured out based on an '->', and not
+					// implicitly.
+					let arg_types = resource_arguments.iter()
+						.map(|_| types.insert(Type::new(TypeKind::Primitive(PrimitiveKind::U64))))
+						.collect();
 
 					if !resource_code.is_typed {
 						if resource_typer.is_none() {
@@ -57,15 +62,25 @@ impl Resources {
 							typer.try_type_ast(types, resource_code, scopes, self)?;
 
 							// TODO: If the typer is not done, put the typer back into the option.
+
+							// TODO: Remove this implicit type check
+							let return_type = typer.types.last().unwrap().unwrap();
+							*resource_type = Some(types.insert(Type::new(TypeKind::FunctionPointer {
+								args: arg_types,
+								returns: return_type,
+							})));
 						} 
 					}
 
 					// Generate the instructions
 					// TODO: If the value is not defined yet, pause, and come back later.
 					let (locals, instructions, return_value) 
-						= code_gen::compile_expression(resource_code, scopes);
+						= code_gen::compile_expression(resource_code, scopes, self);
 
-					println!("\n\n--- A function resource has finished computing! ---");
+					println!("\n\n--- Resource {} (function) has finished computing! ---", member_id);
+					print!("Type: ");
+					types.print(resource_type.unwrap());
+					println!();
 					println!("Locals: ");
 					for (i, local) in locals.locals.iter().enumerate() {
 						println!("{}: {:?}", i, local);
@@ -105,9 +120,12 @@ impl Resources {
 					// Generate the instructions
 					// TODO: If the value is not defined yet, pause, and come back later.
 					let (locals, instructions, return_value) 
-						= code_gen::compile_expression(resource_code, scopes);
+						= code_gen::compile_expression(resource_code, scopes, self);
 
-					println!("\n\n--- A value resource has finished computing! ---");
+					println!("\n\n--- Resource {} (value) has finished computing! ---", member_id);
+					print!("Type: ");
+					types.print(resource_type.unwrap());
+					println!();
 					println!("Locals: ");
 					for (i, local) in locals.locals.iter().enumerate() {
 						println!("{}: {:?}", i, local);
@@ -121,6 +139,7 @@ impl Resources {
 						&locals,
 						&instructions,
 						return_value,
+						self,
 					) as u64)]);
 				}
 				ResourceKind::CurrentlyUsed => panic!("CurrentlyUsed stuff, fix this later"),

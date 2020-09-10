@@ -88,7 +88,13 @@ fn main() {
 		}
 	});
 
-	while resources.compute_one(&mut types, &mut scopes).unwrap() {
+	while match resources.compute_one(&mut types, &mut scopes) {
+		Ok(should_continue) => should_continue,
+		Err(err) => {
+			print_error(&code, err);
+			false
+		}
+	}{
 		println!("Computed one!");
 	}
 
@@ -99,9 +105,10 @@ fn main() {
 		ref type_, 
 		.. 
 	} = resource.kind {
-
 		println!("\nResult: {:?}", value);
-	}else {
+	}else if let ResourceKind::CurrentlyUsed = resource.kind {
+		println!("Cannot calculate result because we had an error while calculating it");
+	} else {
 		unreachable!();
 	}
 }

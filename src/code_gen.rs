@@ -33,6 +33,11 @@ pub enum Instruction {
 	SubU64(Value, Value, Value),
 	MoveU64(Value, Value),
 	JumpRel(i64),
+	Call {
+		calling: Value, 
+		returns: LocalId, 
+		args: Vec<Value>,
+	},
 }
 
 impl fmt::Debug for Instruction {
@@ -42,6 +47,15 @@ impl fmt::Debug for Instruction {
 			Instruction::SubU64(a, b, c) => write!(f, "sub {:?}, {:?}, {:?}", a, b, c),
 			Instruction::MoveU64(a, b) => write!(f, "mov {:?}, {:?}", a, b),
 			Instruction::JumpRel(a) => write!(f, "jump {:?}", a),
+			Instruction::Call { calling, returns, ref args } => {
+				write!(f, "call {:?} with ", calling)?;
+				for arg in args.iter() {
+					write!(f, ", {:?}", arg)?;
+				}
+				write!(f, ", return into ({:?})", returns)?;
+
+				Ok(())
+			}
 		}
 	}
 }
@@ -52,6 +66,7 @@ pub type LocalId = usize;
 pub fn compile_expression(
 	ast: &Ast, 
 	scopes: &Scopes,
+	resources: &Resources,
 ) -> (Locals, Vec<Instruction>, Value) {
 	let mut locals = Locals::new();
 	let mut node_values: Vec<Value> = Vec::with_capacity(ast.nodes.len());
@@ -59,8 +74,15 @@ pub fn compile_expression(
 
 	let mut temporary_labels: Vec<(_, _, Option<Value>)> = Vec::new();
 	let mut storage_locations = scopes.create_buffer(|| None);
+	
+	let mut function_arg_locations = Vec::new();
 
 	for node in ast.nodes.iter() {
+		if node.is_meta_data { 
+			node_values.push(Value::Poison);
+			continue; 
+		}
+
 		match node.kind {
 			NodeKind::Identifier(member_id) => {
 				let member = match storage_locations.member(member_id) {
@@ -69,6 +91,19 @@ pub fn compile_expression(
 				};
 				
 				node_values.push(member);
+			}
+			NodeKind::DeclareFunctionArgument { variable_name, type_node } => {
+				// Declaring a function argument is like moving the responsibility of setting
+				// the locals to the caller. This should be done by the 'call' instruction,
+				// which will set all the affected locals to the appropriate values.
+				let location = Value::Local(locals.alloc_custom(Local {
+					n_uses: 0,
+					scope_member: Some(variable_name),
+				}));
+
+				*storage_locations.member_mut(variable_name) = Some(location);
+				function_arg_locations.push(location);
+				node_values.push(Value::Poison);
 			}
 			NodeKind::Declaration { variable_name, value } => {
 				let location = Value::Local(locals.alloc_custom(Local {
@@ -181,6 +216,27 @@ pub fn compile_expression(
 			}
 			NodeKind::EmptyLiteral => {
 				node_values.push(Value::Poison);
+			}
+			NodeKind::FunctionCall { function_pointer, ref arg_list } => {
+				let returns = locals.alloc();
+
+				let args = arg_list.iter().map(|arg| node_values[*arg as usize]).collect();
+				let calling = node_values[function_pointer as usize];
+
+				push_instr!(instructions, Instruction::Call { calling, returns, args });
+
+				node_values.push(Value::Local(returns));
+			}
+			NodeKind::Resource(id) => {
+				let resource = resources.resource(id);
+				match resource.kind {
+					ResourceKind::CurrentlyUsed => 
+						todo!("Deal with CurrentlyUsed resources in code_gen"),
+					ResourceKind::Function { .. } => {
+						node_values.push(Value::Constant(id as i64));
+					}
+					_ => todo!("Resource kind not dealt with in code gen"),
+				}
 			}
 			_ => todo!()
 		}

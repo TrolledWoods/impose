@@ -74,6 +74,9 @@ pub struct Node {
 	pub scope: ScopeId,
 	pub kind: NodeKind,
 	pub is_lvalue: bool,
+	/// Meta data is for typing and other things to use, and shouldn't be included
+	/// in the actual code output.
+	pub is_meta_data: bool,
 }
 
 impl Node {
@@ -83,6 +86,17 @@ impl Node {
 			kind, 
 			scope, 
 			is_lvalue: false, 
+			is_meta_data: false,
+		}
+	}
+
+	fn new_meta(location: &impl Location, scope: ScopeId, kind: NodeKind) -> Self {
+		Node { 
+			loc: location.get_location(), 
+			kind, 
+			scope, 
+			is_lvalue: false, 
+			is_meta_data: true,
 		}
 	}
 }
@@ -97,6 +111,7 @@ impl Location for Node {
 pub enum NodeKind {
 	Number(i128),
 	String(String),
+	Type(TypeKind),
 	EmptyLiteral,
 	Identifier(ScopeMemberId),
 	Resource(ResourceId),
@@ -116,6 +131,7 @@ pub enum NodeKind {
 		operator: Operator,
 		operand: AstNodeId,
 	},
+	DeclareFunctionArgument { variable_name: ScopeMemberId, type_node: AstNodeId },
 	Declaration { variable_name: ScopeMemberId, value: AstNodeId, },
 	Block {
 		contents: Vec<AstNodeId>,
@@ -294,7 +310,77 @@ fn parse_block(mut context: Context)
 	Ok(context.ast.insert_node(Node::new(&loc, context.scope, NodeKind::Block { contents: commands, label } )))
 }
 
-#[inline]
+fn parse_function(
+	mut parent_context: Context
+) -> Result<ResourceId> {
+	// Lambda definition
+	let mut ast = Ast::new();
+	let mut args = Vec::new();
+	let sub_scope = parent_context.scopes.create_scope(None);
+
+	let mut context = Context {
+		ast: &mut ast,
+		scopes: parent_context.scopes,
+		scope: sub_scope,
+		tokens: parent_context.tokens,
+		resources: parent_context.resources,
+	};
+
+	let token = context.tokens.peek().expect("Don't call parse_function without a '|' to start");
+	if let TokenKind::Operator(Operator::BitwiseOrOrLambda) = token.kind {
+		try_parse_list(
+			context.borrow(), 
+			|context| {
+				let value = context.tokens.expect_next(|| "Expected function argument name")?;
+				if let Token { loc, kind: TokenKind::Identifier(name) } = value {
+					println!("Declared variable '{}' in scope {:?}", name, context.scope);
+					let arg = context.scopes.declare_member(
+						sub_scope,
+						name.to_string(),
+						&loc,
+						ScopeMemberKind::FunctionArgument,
+					)?;
+					args.push(arg);
+
+					let node_id = context.ast.insert_node(
+						Node::new_meta(loc, sub_scope, NodeKind::Type(TypeKind::Primitive(PrimitiveKind::U64)))
+					);
+					context.ast.insert_node(Node::new(loc, sub_scope, 
+						NodeKind::DeclareFunctionArgument {
+							variable_name: arg,
+							type_node: node_id,
+						}
+					));
+
+					Ok(())
+				} else {
+					Err(error!(value, "Expected function argument name"))
+				}
+			},
+			&TokenKind::Operator(Operator::BitwiseOrOrLambda),
+			&TokenKind::Operator(Operator::BitwiseOrOrLambda),
+		)?;
+	} else {
+		assert_eq!(context.tokens.next().unwrap().kind, TokenKind::Operator(Operator::Or));
+	}
+
+	// Parse the function body.
+	parse_expression(context.borrow())?;
+
+	let id = parent_context.resources.insert(Resource {
+		loc: token.get_location(),
+		kind: ResourceKind::Function {
+			type_: None,
+			arguments: args,
+			code: ast,
+			instructions: None,
+			typer: None,
+		}
+	});
+
+	Ok(id)
+}
+
 fn parse_expression(
 	mut context: Context,
 ) -> Result<AstNodeId> {
@@ -302,58 +388,7 @@ fn parse_expression(
 	if let TokenKind::Operator(Operator::BitwiseOrOrLambda) 
 		| TokenKind::Operator(Operator::Or) = token.kind 
 	{
-		// Lambda definition
-		let mut ast = Ast::new();
-		let mut args = Vec::new();
-		let sub_scope = context.scopes.create_scope(None);
-		
-		if let TokenKind::Operator(Operator::BitwiseOrOrLambda) = token.kind {
-			try_parse_list(
-				context.borrow(), 
-				|context| {
-					let value = context.tokens.expect_next(|| "Expected function argument name")?;
-					if let Token { loc, kind: TokenKind::Identifier(name) } = value {
-						println!("Declared variable '{}' in scope {:?}", name, sub_scope);
-						args.push(context.scopes.declare_member(
-							sub_scope,
-							name.to_string(),
-							&loc,
-							ScopeMemberKind::LocalVariable,
-						)?);
-						Ok(())
-					} else {
-						Err(error!(value, "Expected function argument name"))
-					}
-				},
-				&TokenKind::Operator(Operator::BitwiseOrOrLambda),
-				&TokenKind::Operator(Operator::BitwiseOrOrLambda),
-			)?;
-		} else {
-			context.tokens.next();
-		}
-
-		let mut sub_context = Context {
-			ast: &mut ast,
-			scopes: context.scopes,
-			scope: sub_scope,
-			tokens: context.tokens,
-			resources: context.resources,
-		};
-
-		// Parse the function body.
-		parse_expression(sub_context.borrow())?;
-
-		let id = context.resources.insert(Resource {
-			loc: token.get_location(),
-			kind: ResourceKind::Function {
-				type_: None,
-				arguments: args,
-				code: ast,
-				instructions: None,
-				typer: None,
-			}
-		});
-
+		let id = parse_function(context.borrow())?;
 		return Ok(context.ast.insert_node(Node::new(
 			token, 
 			context.scope, 

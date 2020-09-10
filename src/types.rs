@@ -42,6 +42,8 @@ impl Types {
 					if i > 0 { print!(", "); }
 					self.print(*arg);
 				}
+				print!(") -> (");
+				self.print(returns);
 				print!(")");
 			}
 			TypeKind::Primitive(primitive_kind) => {
@@ -111,7 +113,7 @@ impl AstTyper {
 	pub fn try_type_ast(
 		&mut self, 
 		types: &mut Types, 
-		ast: &mut Ast, 
+		ast: &mut Ast,
 		scopes: &mut Scopes,
 		resources: &Resources,
 	) -> Result<()> {
@@ -126,6 +128,14 @@ impl AstTyper {
 				NodeKind::String(ref string) => {
 					todo!();
 				}
+				NodeKind::Type(ref kind) => {
+					Some(types.insert(Type::new(kind.clone())))
+				}
+				NodeKind::DeclareFunctionArgument { variable_name, type_node } => {
+					scopes.member_mut(variable_name).type_ 
+						= Some(self.types[type_node as usize].unwrap());
+					None
+				}
 				NodeKind::Resource(id) => {
 					let resource = resources.resource(id);
 					match resource.kind {
@@ -138,6 +148,7 @@ impl AstTyper {
 						},
 						ResourceKind::Function { type_, .. } => {
 							if let Some(type_) = type_ {
+								println!("Got function type from resource {:?}", id);
 								Some(type_)
 							} else {
 								todo!("Wait for the type of a resource");
@@ -153,7 +164,7 @@ impl AstTyper {
 				}
 				NodeKind::Identifier(id) => {
 					let member = scopes.member(id);
-					if member.kind == ScopeMemberKind::LocalVariable {
+					if member.kind == ScopeMemberKind::LocalVariable || member.kind == ScopeMemberKind::FunctionArgument {
 						if let Some(type_) = member.type_ {
 							Some(type_)
 						} else {
@@ -164,7 +175,23 @@ impl AstTyper {
 					}
 				}
 				NodeKind::FunctionDeclaration { routine_id } => {
-					None
+					let resource = resources.resource(routine_id);
+					match resource.kind {
+						ResourceKind::Function {
+							type_: Some(type_),
+							..
+						} => {
+							Some(type_)
+						}
+						ResourceKind::Function {
+							type_: None,
+							..
+						} => {
+							// TODO: Make typing able to depend on resource data.
+							todo!();
+						}
+						_ => unreachable!("Cannot have a FunctionDeclaration node and point to a resource that is not a function!"),
+					}
 				}
 				NodeKind::FunctionCall { function_pointer, ref arg_list } => {
 					// TODO: Check if the types in the arg_list are the same as the function
@@ -178,13 +205,13 @@ impl AstTyper {
 								args.len(), arg_list.len());
 						}
 
-						for (got, wanted) in args.iter().zip(arg_list) {
-							if self.types[*got as usize] != self.types[*wanted as usize] {
+						for (wanted, got) in args.iter().zip(arg_list) {
+							if Some(*wanted) != self.types[*got as usize] {
 								return_error!(ast.get_node(*got as u32), "Expected (TODO: Print type here), got (TODO: Print type here)");
 							}
 						}
 
-						self.types[*returns as usize]
+						Some(*returns)
 					} else {
 						return_error!(node, "This is not a function pointer, yet a function call was attemted on it");
 					}

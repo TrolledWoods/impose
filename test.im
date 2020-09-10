@@ -1,4 +1,10 @@
 {:main
-	x := 2;
-	1 + x + 2
+	// Functions are defined as '|arg1, arg2, arg3, ...| expression'
+	// All arguments are for now signed 64 bit ints(because type expressions are not implemented).
+	// However, function return types can be more complex than just an integer.
+
+	get_add_1_func := || |x| x + 1;
+	add_1 := get_add_1_func();
+
+	get_add_1_func()(add_1(1))
 }
