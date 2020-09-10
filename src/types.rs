@@ -13,6 +13,17 @@ impl Types {
 		Types { types: IdVec::new() }
 	}
 
+	pub fn u64(&mut self) -> TypeId {
+		self.insert(Type::new(TypeKind::Primitive(PrimitiveKind::U64)))
+	}
+
+	pub fn insert_function(&mut self, args: Vec<TypeId>, returns: TypeId) -> TypeId {
+		self.insert(Type::new(TypeKind::FunctionPointer {
+			args,
+			returns,
+		}))
+	}
+
 	pub fn insert(&mut self, type_: Type) -> TypeId {
 		// Try to find a type that is already the same.
 		for (id, self_type) in self.types.iter_ids() {
@@ -39,6 +50,9 @@ impl Types {
 				print!(") -> (");
 				self.print(returns);
 				print!(")");
+			}
+			TypeKind::String => {
+				print!("string");
 			}
 			TypeKind::Primitive(primitive_kind) => {
 				print!("{:?}", primitive_kind);
@@ -70,6 +84,7 @@ pub enum TypeKind {
 		args: Vec<TypeId>,
 		returns: TypeId,
 	},
+	String,
 	Primitive(PrimitiveKind),
 }
 
@@ -135,8 +150,12 @@ impl AstTyper {
 								todo!("Wait for the type of a resource");
 							}
 						}
+						ResourceKind::ExternalFunction { type_, .. } => {
+							println!("Got function type of external function from resource {:?}", id);
+							Some(type_)
+						}
 						ResourceKind::String(_) => {
-							todo!("Strings do not have types yet");
+							Some(types.insert(Type::new(TypeKind::String)))
 						}
 					}
 				}
@@ -150,6 +169,12 @@ impl AstTyper {
 							Some(type_)
 						} else {
 							return_error!(node, "Type is not assigned, is the variable not declared? (This is probably a compiler problem)");
+						}
+					} else if let ScopeMemberKind::Constant(id) = member.kind {
+						if let Some(type_) = resources.resource(id).kind.get_type(types) {
+							Some(type_)
+						} else {
+							return_error!(node, "Cannot use constants that have not found their type before this one currently");
 						}
 					} else {
 						return_error!(node, "Typing can only handle local variables for now");

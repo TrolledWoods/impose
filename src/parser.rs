@@ -343,7 +343,6 @@ fn parse_function(
 			|context| {
 				let value = context.tokens.expect_next(|| "Expected function argument name")?;
 				if let Token { loc, kind: TokenKind::Identifier(name) } = value {
-					println!("Declared variable '{}' in scope {:?}", name, context.scope);
 					let arg = context.scopes.declare_member(
 						sub_scope,
 						name.to_string(),
@@ -484,7 +483,6 @@ fn parse_value(
 		}
 		TokenKind::Identifier(name) => {
 			context.tokens.next();
-			println!("Finding variable '{}' in {:?}", name, context.scope);
 			match context.scopes.find_member(context.scope, name) {
 				Some(member) => {
 					if context.scopes.member(member).kind == ScopeMemberKind::Label {

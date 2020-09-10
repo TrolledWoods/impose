@@ -1,4 +1,1 @@
-
-multiply_by_3 := |x| x + x + x;
-fun_number := 20;
-multiply_by_3(fun_number);
+print ("JOHN ÄRE NOOBE \n");

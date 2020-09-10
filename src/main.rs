@@ -1,9 +1,11 @@
 #![feature(assoc_char_funcs)]
 #![feature(drain_filter)]
 
+pub const DEBUG: bool = false;
+
 mod prelude {
 	pub(crate) use crate::{ 
-		Location, CodeLoc, Error, Result, Primitive,
+		DEBUG, Location, CodeLoc, Error, Result, Primitive,
 		resource::{ Resource, ResourceKind, Resources, ResourceId },
 		operator::Operator,
 		lexer::{ self, Token, TokenKind }, 
@@ -73,6 +75,38 @@ fn main() {
 	let mut types = Types::new();
 
 	// -- DEFINE STANDARD VALUES --
+	fn print_func(resources: &Resources, arguments: &[i64]) -> i64 {
+		assert_eq!(arguments.len(), 1);
+		use crate::id::Id;
+		let resource = resources.resource(ResourceId::create(arguments[0] as u32));
+		if let ResourceKind::String(ref value) = resource.kind {
+			print!("{}", value);
+			return 0;
+		} else {
+			panic!("What was passed was not a string resource");
+		}
+	}
+
+	let string_type = types.insert(Type::new(TypeKind::String));
+	let u64_id = types.u64();
+	let func_type = types.insert_function(vec![string_type], u64_id);
+	let string_function = resources.insert(Resource {
+		loc: CodeLoc {
+			file: std::rc::Rc::new(String::from("no_file thanks")),
+			line: 1, 
+			column: 1,
+		},
+		kind: ResourceKind::ExternalFunction {
+			type_: func_type,
+			func: Box::new(print_func),
+		}
+	});
+	scopes.declare_member(
+		scopes.super_scope, 
+		String::from("print"), 
+		None, 
+		ScopeMemberKind::Constant(string_function)
+	).unwrap();
 
 	// -- COMPILE STUFF --
 	let ast = match parser::parse_code(&code, &mut resources, &mut scopes) {
@@ -101,9 +135,7 @@ fn main() {
 			print_error(&code, err);
 			false
 		}
-	}{
-		println!("Computed one!");
-	}
+	} {}
 
 	let resource = resources.resource(resource_id);
 
@@ -111,7 +143,9 @@ fn main() {
 		ref value, 
 		.. 
 	} = resource.kind {
-		println!("\nResult: {:?}", value);
+		if let Some(value) = value {
+			println!("Result: '{:?}'", value[0]);
+		}
 	}else if let ResourceKind::CurrentlyUsed = resource.kind {
 		println!("Cannot calculate result because we had an error while calculating it");
 	} else {

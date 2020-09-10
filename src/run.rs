@@ -69,30 +69,38 @@ pub fn run_instructions_with_locals(
 				// TODO: Get rid of recursion(by introducing call stack), 
 				// and don't crash if the function is not defined yet, just pause the execution
 				// and continue when it is ready.
-				let resource = resources.resource(get_value(local_data, calling) as ResourceId);
+				use crate::id::Id;
+				let resource = resources.resource(ResourceId::create(get_value(local_data, calling) as u32));
 
-				if let ResourceKind::Function { 
-					instructions: Some((ref sub_locals, ref instructions, return_value)), 
-					..
-				} = resource.kind {
-					let mut sub_local_data = vec![0; sub_locals.locals.len()];
-					for (i, arg) in args.iter().enumerate() {
-						sub_local_data[i] = get_value(local_data, *arg);
+				match resource.kind {
+					ResourceKind::Function { 
+						instructions: Some((ref sub_locals, ref instructions, return_value)), 
+						..
+					} => {
+						let mut sub_local_data = vec![0; sub_locals.locals.len()];
+						for (i, arg) in args.iter().enumerate() {
+							sub_local_data[i] = get_value(local_data, *arg);
+						}
+
+						let return_value = run_instructions_with_locals(
+							sub_locals,
+							instructions,
+							return_value,
+							&mut sub_local_data,
+							resources,
+						);
+
+						local_data[returns.into_index()] = return_value;
 					}
-
-					let return_value = run_instructions_with_locals(
-						sub_locals,
-						instructions,
-						return_value,
-						&mut sub_local_data,
-						resources,
-					);
-
-					local_data[returns.into_index()] = return_value;
-				} else {
-					unreachable!(
-						"Resource is not function! This should have been caught in type checking"
-					);
+					ResourceKind::ExternalFunction { ref func, .. } => {
+						let args = args.iter().map(|v| get_value(local_data, *v)).collect::<Vec<_>>();
+						local_data[returns.into_index()] = func(resources, &args);
+					}
+					_ => {
+						unreachable!(
+							"Resource is not function! This should have been caught in type checking"
+						);
+					}
 				}
 			}
 		}

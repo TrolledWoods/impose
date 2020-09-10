@@ -83,12 +83,21 @@ pub fn compile_expression(
 
 		match node.kind {
 			NodeKind::Identifier(member_id) => {
-				let member = match scopes.member(member_id).storage_loc {
-					Some(value) => value,
-					None => panic!("Invalid thing, \nLocals: {:?}, \nScopes: {:?}, \nInstructions: {:?}", locals, scopes, instructions),
-				};
-				
-				node_values.push(Value::Local(member));
+				match scopes.member(member_id).kind {
+					ScopeMemberKind::LocalVariable | ScopeMemberKind::FunctionArgument => {
+						let member = match scopes.member(member_id).storage_loc {
+							Some(value) => value,
+							None => panic!("Invalid thing, \nLocals: {:?}, \nScopes: {:?}, \nInstructions: {:?}", locals, scopes, instructions),
+						};
+						
+						node_values.push(Value::Local(member));
+					}
+					ScopeMemberKind::Constant(id) => {
+						use crate::id::Id;
+						node_values.push(Value::Constant(id.get() as i64));
+					}
+					ScopeMemberKind::Label => panic!("Cannot do labels"),
+				}
 			}
 			NodeKind::DeclareFunctionArgument { variable_name, .. } => {
 				// Declaring a function argument is like moving the responsibility of setting
@@ -231,7 +240,10 @@ pub fn compile_expression(
 					ResourceKind::CurrentlyUsed => 
 						todo!("Deal with CurrentlyUsed resources in code_gen"),
 					ResourceKind::Function { .. } => {
-						node_values.push(Value::Constant(id as i64));
+						node_values.push(Value::Constant(id.into_index() as i64));
+					}
+					ResourceKind::String(_) => {
+						node_values.push(Value::Constant(id.into_index() as i64));
 					}
 					_ => todo!("Resource kind not dealt with in code gen"),
 				}

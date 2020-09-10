@@ -2,12 +2,12 @@ use crate::prelude::*;
 use crate::code_gen;
 use std::collections::{ VecDeque, HashSet };
 
-pub type ResourceId = usize;
+create_id!(ResourceId);
 
 pub struct Resources {
 	compute_queue: VecDeque<ResourceId>,
 	uncomputed_resources: HashSet<ResourceId>,
-	pub members: Vec<Resource>,
+	pub members: IdVec<Resource, ResourceId>,
 }
 
 impl Resources {
@@ -20,8 +20,7 @@ impl Resources {
 	}
 
 	pub fn insert(&mut self, resource: Resource) -> ResourceId {
-		let id = self.members.len();
-		self.members.push(resource);
+		let id = self.members.push(resource);
 		self.uncomputed_resources.insert(id);
 		self.compute_queue.push_back(id);
 		id
@@ -77,17 +76,19 @@ impl Resources {
 					let (locals, instructions, return_value) 
 						= code_gen::compile_expression(resource_code, scopes, self);
 
-					println!("\n\n--- Resource {} (function) has finished computing! ---", member_id);
-					print!("Type: ");
-					types.print(resource_type.unwrap());
-					println!();
-					println!("Locals: ");
-					for (i, local) in locals.locals.iter().enumerate() {
-						println!("{}: {:?}", i, local);
-					}
-					println!("Instructions: ");
-					for instruction in &instructions {
-						println!("{:?}", instruction);
+					if DEBUG {
+						println!("\n\n--- Resource {} (function) has finished computing! ---", member_id);
+						print!("Type: ");
+						types.print(resource_type.unwrap());
+						println!();
+						println!("Locals: ");
+						for (i, local) in locals.locals.iter().enumerate() {
+							println!("{}: {:?}", i, local);
+						}
+						println!("Instructions: ");
+						for instruction in &instructions {
+							println!("{:?}", instruction);
+						}
 					}
 
 					*resource_instructions = Some((locals, instructions, return_value));
@@ -121,17 +122,19 @@ impl Resources {
 					let (locals, instructions, return_value) 
 						= code_gen::compile_expression(resource_code, scopes, self);
 
-					println!("\n\n--- Resource {} (value) has finished computing! ---", member_id);
-					print!("Type: ");
-					types.print(resource_type.unwrap());
-					println!();
-					println!("Locals: ");
-					for (i, local) in locals.locals.iter().enumerate() {
-						println!("{}: {:?}", i, local);
-					}
-					println!("Instructions: ");
-					for instruction in &instructions {
-						println!("{:?}", instruction);
+					if DEBUG {
+						println!("\n\n--- Resource {} (value) has finished computing! ---", member_id);
+						print!("Type: ");
+						types.print(resource_type.unwrap());
+						println!();
+						println!("Locals: ");
+						for (i, local) in locals.locals.iter().enumerate() {
+							println!("{}: {:?}", i, local);
+						}
+						println!("Instructions: ");
+						for instruction in &instructions {
+							println!("{:?}", instruction);
+						}
 					}
 
 					*resource_value = Some(vec![Primitive::U64(crate::run::run_instructions(
@@ -142,7 +145,8 @@ impl Resources {
 					) as u64)]);
 				}
 				ResourceKind::CurrentlyUsed => panic!("CurrentlyUsed stuff, fix this later"),
-				ResourceKind::String(_) => todo!(),
+				ResourceKind::String(_) => { }
+				ResourceKind::ExternalFunction { .. } => { }
 			}
 
 			self.return_resource(member_id, member);
@@ -158,18 +162,18 @@ impl Resources {
 	}
 
 	pub fn use_resource(&mut self, id: ResourceId) -> Resource {
-		let resource = &mut self.members[id];
+		let resource = self.members.get_mut(id);
 		let loc = resource.loc.clone();
 		std::mem::replace(resource, Resource { loc, kind: ResourceKind::CurrentlyUsed })
 	}
 
 	pub fn return_resource(&mut self, id: ResourceId, resource: Resource) {
-		assert!(matches!(self.members[id].kind, ResourceKind::CurrentlyUsed));
-		self.members[id] = resource;
+		assert!(matches!(self.members.get(id).kind, ResourceKind::CurrentlyUsed));
+		*self.members.get_mut(id) = resource;
 	}
 
 	pub fn resource(&self, id: ResourceId) -> &Resource {
-		&self.members[id]
+		self.members.get(id)
 	}
 }
 
@@ -188,6 +192,12 @@ impl Location for Resource {
 // resources have types.
 pub enum ResourceKind {
 	CurrentlyUsed,
+	ExternalFunction {
+		type_: TypeId,
+
+		// TODO: Make a more advanced interface to call external functions
+		func: Box<dyn Fn(&Resources, &[i64]) -> i64>,
+	},
 	Function {
 		type_: Option<TypeId>,
 		// argument_type_defs: Vec<Ast>,
@@ -206,4 +216,16 @@ pub enum ResourceKind {
 		value: Option<Vec<Primitive>>,
 		depending_on_value: Vec<ResourceId>,
 	},
+}
+
+impl ResourceKind {
+	pub fn get_type(&self, types: &mut Types) -> Option<TypeId> {
+		match *self {
+			ResourceKind::CurrentlyUsed => panic!("Currently in use!!!!"),
+			ResourceKind::ExternalFunction { type_, .. } => Some(type_),
+			ResourceKind::Function { type_, .. } => type_,
+			ResourceKind::String(_) => Some(types.insert(Type::new(TypeKind::String))),
+			ResourceKind::Value { type_, .. } => type_,
+		}
+	}
 }
