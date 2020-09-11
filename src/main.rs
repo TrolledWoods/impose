@@ -85,7 +85,7 @@ fn main() {
 			std::io::stdout().lock().flush().unwrap();
 			return 0;
 		} else {
-			panic!("What was passed was not a string resource");
+			panic!("What was passed was not a string resource: {}", arguments[0]);
 		}
 	}
 
@@ -171,6 +171,9 @@ fn main() {
 		}
 	};
 
+	let parent = scopes.super_scope;
+	scopes.debug(parent, 0);
+
 	let resource_id = resources.insert(Resource {
 		loc: ast.nodes[0].loc.clone(),
 		type_: None,
@@ -198,7 +201,7 @@ fn main() {
 		.. 
 	} = resource.kind {
 		if let Some(value) = value {
-			println!("Result: '{:?}'", value[0]);
+			println!("Result: '{:?}'", value);
 		}
 	}else if let ResourceKind::CurrentlyUsed = resource.kind {
 		println!("Cannot calculate result because we had an error while calculating it");

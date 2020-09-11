@@ -302,6 +302,48 @@ fn parse_block(mut context: Context, expect_brackets: bool)
 			}
 		}
 
+		if let Some(TokenKind::Identifier(name)) = context.tokens.peek_kind() {
+			if let Some(TokenKind::Operator(Operator::ConstDecl)) = context.tokens.peek_nth_kind(1) 
+			{
+				let ident_loc   = &context.tokens.next().unwrap().loc; 
+				context.tokens.next().unwrap();
+
+				// We have a constant declaration
+				let mut ast = Ast::new();
+				let sub_scope = context.scopes.create_scope(None);
+
+				let mut sub_context = Context {
+					ast: &mut ast,
+					scopes: context.scopes,
+					scope: sub_scope,
+					tokens: context.tokens,
+					resources: context.resources,
+				};
+
+				parse_expression(sub_context.borrow())?;
+
+				let resource_id = context.resources.insert(Resource {
+					loc: ident_loc.clone(),
+					type_: None,
+					kind: ResourceKind::Value {
+						code: ast,
+						typer: None,
+						depending_on_type: vec![],
+						value: None,
+						depending_on_value: vec![],
+					},
+				});
+
+				context.scopes.declare_member(
+					context.scope, 
+					name.to_string(), 
+					Some(ident_loc), 
+					ScopeMemberKind::Constant(resource_id)
+				)?;
+				is_other = true;
+			}
+		}
+
 		if !is_other {
 			let expr = parse_expression(context.borrow())?;
 			commands.push(expr);
@@ -484,15 +526,9 @@ fn parse_value(
 		}
 		TokenKind::Identifier(name) => {
 			context.tokens.next();
-			match Some(context.scopes.find_or_create_temp(context.scope, name)?) {
-				Some(member) => {
-					if context.scopes.member(member).kind == ScopeMemberKind::Label {
-						return_error!(token, "Tried using label as a variable or a constant");
-					}
-					context.ast.insert_node(Node::new(token, context.scope, NodeKind::Identifier(member)))
-				}
-				None => return_error!(token, "Unrecognised name"),
-			}
+			let member = context.scopes.find_or_create_temp(context.scope, name)?;
+
+			context.ast.insert_node(Node::new(token, context.scope, NodeKind::Identifier(member)))
 		}
 		TokenKind::Bracket('{') => {
 			parse_block(context.borrow(), true)?
@@ -653,15 +689,26 @@ impl Scopes {
 		}
 	}
 
+	pub fn debug(&self, scope_id: ScopeId, indent: usize) {
+		println!("{}Scope {:?}:", "\t".repeat(indent), scope_id);
+		for member in self.scopes.get(scope_id).members.iter() {
+			println!("{}Member {}: {:?}", "\t".repeat(indent), 
+				self.members.get(*member).name, self.members.get(*member).kind);
+		}
+
+		for scope in self.scopes.get(scope_id).sub_scopes.iter() {
+			self.debug(*scope, indent + 1);
+		}
+	}
+
 	pub fn create_scope(&mut self, parent: Option<ScopeId>) -> ScopeId {
+		let parent = parent.unwrap_or(self.super_scope);
 		let id = self.scopes.push(Scope { 
-			parent: Some(parent.unwrap_or(self.super_scope)), 
+			parent: Some(parent), 
 			.. Default::default()
 		});
 
-		if let Some(parent) = parent {
-			self.scopes.get_mut(parent).sub_scopes.push(id);
-		}
+		self.scopes.get_mut(parent).sub_scopes.push(id);
 
 		id
 	}
@@ -756,16 +803,10 @@ impl Scopes {
 			}
 
 			if let Some((_, declared_member_id)) = declared_member_id {
-				let member = ScopeMember { 
-					declaration_location: self.members.get(declared_member_id).declaration_location.clone(), 
-					name: name.clone(),
-					kind: ScopeMemberKind::Indirect(declared_member_id),
-					type_: None,
-					storage_loc: None,
-				};
-
-				*self.members.get_mut(declared_member_id) = member;
+				println!("Swapping member with indirect member");
+				self.members.get_mut(same_name_id).kind = ScopeMemberKind::Indirect(declared_member_id);
 			} else {
+				println!("Changing declaration point");
 				declared_member_id = Some((same_name_scope, same_name_id));
 			}
 		}

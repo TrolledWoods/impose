@@ -166,7 +166,7 @@ impl AstTyper {
 							return_error!(node, "Cannot use constants that have not found their type before this one currently");
 						}
 					} else {
-						return_error!(node, "Typing can only handle local variables for now");
+						return_error!(node, "Typing does not handle {:?} scope members yet", member.kind);
 					}
 				}
 				NodeKind::FunctionCall { function_pointer, ref arg_list } => {

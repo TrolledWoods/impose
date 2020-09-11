@@ -37,7 +37,8 @@ create_operators! {
 	Not;        "!" ,  true,   0, u32::MAX,
 
 	// Assignment and declaration
-	Declare;    ":=",  false,  3, 0,
+	Declare;    ":=",  false,  0, 0,
+	ConstDecl;  "::",  false,  0, 0,
 	Function;   "->",  false,  2, 0,
 	Assign;     "=",   false,  3, 0,
 

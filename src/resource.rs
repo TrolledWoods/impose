@@ -99,9 +99,6 @@ impl Resources {
 					value: ref mut resource_value,
 					..
 				} => {
-					*resource_type = 
-						Some(types.insert(Type::new(TypeKind::Primitive(PrimitiveKind::U64))));
-
 					if !resource_code.is_typed {
 						if resource_typer.is_none() {
 							*resource_typer = Some(AstTyper::new(resource_code));
@@ -113,6 +110,7 @@ impl Resources {
 							typer.try_type_ast(types, resource_code, scopes, self)?;
 
 							// TODO: If the typer is not done, put the typer back into the option.
+							*resource_type = *typer.types.last().unwrap();
 						} 
 					}
 
@@ -121,10 +119,19 @@ impl Resources {
 					let (locals, instructions, return_value) 
 						= code_gen::compile_expression(resource_code, scopes, self);
 
+					*resource_value = Some(crate::run::run_instructions(
+						&locals,
+						&instructions,
+						return_value,
+						self,
+					) as i64);
+
 					if DEBUG {
 						println!("\n\n--- Resource {} (value) has finished computing! ---", member_id);
-						print!("Type: ");
-						types.print(resource_type.unwrap());
+						if let Some(resource_type) = resource_type {
+							print!("Type: ");
+							types.print(*resource_type);
+						}
 						println!();
 						println!("Locals: ");
 						for (i, local) in locals.locals.iter().enumerate() {
@@ -134,17 +141,17 @@ impl Resources {
 						for instruction in &instructions {
 							println!("{:?}", instruction);
 						}
-					}
 
-					*resource_value = Some(vec![Primitive::U64(crate::run::run_instructions(
-						&locals,
-						&instructions,
-						return_value,
-						self,
-					) as u64)]);
+						println!("Value: {:?}", resource_value.unwrap());
+					}
 				}
 				ResourceKind::CurrentlyUsed => panic!("CurrentlyUsed stuff, fix this later"),
-				ResourceKind::String(_) => { }
+				ResourceKind::String(ref content) => { 
+					if DEBUG {
+						println!("\n\n--- Resource {} (string) has finished computing! ---", member_id);
+						println!("'{:?}", content);
+					}
+				}
 				ResourceKind::ExternalFunction { .. } => { }
 			}
 
@@ -210,7 +217,19 @@ pub enum ResourceKind {
 		code: Ast,
 		typer: Option<AstTyper>,
 		depending_on_type: Vec<ResourceId>,
-		value: Option<Vec<Primitive>>,
+		value: Option<i64>,
 		depending_on_value: Vec<ResourceId>,
 	},
+}
+
+impl std::fmt::Debug for ResourceKind {
+	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+		match self {
+			ResourceKind::CurrentlyUsed => write!(f, "currently used"),
+			ResourceKind::ExternalFunction { .. } => write!(f, "extern func"),
+			ResourceKind::Function { .. } => write!(f, "func"),
+			ResourceKind::String(_) => write!(f, "string"),
+			ResourceKind::Value { .. } => write!(f, "value"),
+		}
+	}
 }

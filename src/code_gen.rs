@@ -95,8 +95,7 @@ pub fn compile_expression(
 						node_values.push(Value::Local(member));
 					}
 					ScopeMemberKind::Constant(id) => {
-						use crate::id::Id;
-						node_values.push(Value::Constant(id.get() as i64));
+						node_values.push(get_resource_constant(resources, id));
 					}
 					ScopeMemberKind::Label => panic!("Cannot do labels"),
 				}
@@ -237,24 +236,45 @@ pub fn compile_expression(
 				node_values.push(Value::Local(returns));
 			}
 			NodeKind::Resource(id) => {
-				let resource = resources.resource(id);
-				match resource.kind {
-					ResourceKind::CurrentlyUsed => 
-						todo!("Deal with CurrentlyUsed resources in code_gen"),
-					ResourceKind::Function { .. } => {
-						node_values.push(Value::Constant(id.into_index() as i64));
-					}
-					ResourceKind::String(_) => {
-						node_values.push(Value::Constant(id.into_index() as i64));
-					}
-					_ => todo!("Resource kind not dealt with in code gen"),
-				}
+				node_values.push(get_resource_constant(resources, id))
 			}
 			_ => todo!()
 		}
 	}
 
 	(locals, instructions, node_values.last().copied().unwrap_or(Value::Poison))
+}
+
+fn get_resource_constant(resources: &Resources, id: ResourceId) 
+	-> Value
+{
+	let resource = resources.resource(id);
+	match resource.kind {
+		ResourceKind::ExternalFunction { .. } => {
+			use crate::id::Id;
+			Value::Constant(id.get() as i64)
+		}
+		ResourceKind::Function { .. } => {
+			use crate::id::Id;
+			Value::Constant(id.get() as i64)
+		}
+		ResourceKind::CurrentlyUsed => 
+			todo!("Deal with CurrentlyUsed resources in code_gen"),
+			ResourceKind::Function { .. } => {
+				Value::Constant(id.into_index() as i64)
+			}
+		ResourceKind::String(_) => {
+			Value::Constant(id.into_index() as i64)
+		}
+		ResourceKind::Value { value, .. } => {
+			if let Some(value) = value {
+				Value::Constant(value)
+			} else {
+				todo!("Values that are not defined yet");
+			}
+		}
+		_ => todo!("Resource kind not dealt with in code gen {:?}", resource.kind),
+	}
 }
 
 // TODO!!!

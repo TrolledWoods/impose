@@ -52,14 +52,14 @@ macro_rules! create_id {
 		impl std::fmt::Debug for $name {
 			fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 				write!(f, stringify!($name))?;
-				write!(f, "({})", self.0)?;
+				write!(f, "({})", self.into_index())?;
 				Ok(())
 			}
 		}
 
 		impl std::fmt::Display for $name {
 			fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-				write!(f, "{}", self.0)
+				write!(f, "{}", self.into_index())
 			}
 		}
 	}
