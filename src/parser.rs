@@ -378,8 +378,8 @@ fn parse_function(
 
 	let id = parent_context.resources.insert(Resource {
 		loc: token.get_location(),
+		type_: None,
 		kind: ResourceKind::Function {
-			type_: None,
 			arguments: args,
 			code: ast,
 			instructions: None,
@@ -477,6 +477,7 @@ fn parse_value(
 			// Possibly by making TokenStream own its data
 			let id = context.resources.insert(Resource {
 				loc: token.get_location(),
+				type_: Some(types::STRING_TYPE_ID),
 				kind: ResourceKind::String(string.clone()),
 			});
 			context.ast.insert_node(Node::new(token, context.scope, NodeKind::Resource(id)))

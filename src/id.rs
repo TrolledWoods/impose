@@ -14,6 +14,13 @@ macro_rules! create_id {
 
 		impl $name {
 			#[allow(unused)]
+			pub const fn create_raw(num: u32) -> Self {
+				// TODO: Find a way to remove the unsafe here. The problem is that unwrap does not
+				// work in constants, so we have to get it unchecked.
+				Self(unsafe { std::num::NonZeroU32::new_unchecked(num + 1) })
+			}
+
+			#[allow(unused)]
 			pub fn into_index(self) -> usize {
 				(self.0.get() - 1) as usize
 			}

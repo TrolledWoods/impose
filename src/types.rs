@@ -2,6 +2,9 @@ use crate::prelude::*;
 use crate::parser::ScopeMemberId;
 use std::collections::HashMap;
 
+pub const U64_TYPE_ID:    TypeId = TypeId::create_raw(0);
+pub const STRING_TYPE_ID: TypeId = TypeId::create_raw(1);
+
 create_id!(TypeId);
 
 pub struct Types {
@@ -10,11 +13,15 @@ pub struct Types {
 
 impl Types {
 	pub fn new() -> Self {
-		Types { types: IdVec::new() }
+		let mut types = IdVec::new();
+		assert_eq!(types.push(Type::new(TypeKind::Primitive(PrimitiveKind::U64))), U64_TYPE_ID);
+		assert_eq!(types.push(Type::new(TypeKind::String)), STRING_TYPE_ID);
+		Self { types }
 	}
 
+	// TODO: This function is deprecated
 	pub fn u64(&mut self) -> TypeId {
-		self.insert(Type::new(TypeKind::Primitive(PrimitiveKind::U64)))
+		U64_TYPE_ID
 	}
 
 	pub fn insert_function(&mut self, args: Vec<TypeId>, returns: TypeId) -> TypeId {
@@ -135,26 +142,10 @@ impl AstTyper {
 				}
 				NodeKind::Resource(id) => {
 					let resource = resources.resource(id);
-					match resource.kind {
-						ResourceKind::CurrentlyUsed => {
-							return_error!(node, "Resource loop (This is a little trigger happy and will catch more cases than necessary, but I'll figure that out in time)");
-						},
-						ResourceKind::Value { type_, .. } => {
-							Some(type_.unwrap())
-						},
-						ResourceKind::Function { type_, .. } => {
-							if let Some(type_) = type_ {
-								Some(type_)
-							} else {
-								todo!("Wait for the type of a resource");
-							}
-						}
-						ResourceKind::ExternalFunction { type_, .. } => {
-							Some(type_)
-						}
-						ResourceKind::String(_) => {
-							Some(types.insert(Type::new(TypeKind::String)))
-						}
+					if let Some(type_) = resource.type_ {
+						Some(type_)
+					} else {
+						return_error!(node, "TODO: Wait for other resource types");
 					}
 				}
 				NodeKind::EmptyLiteral => {
@@ -169,7 +160,7 @@ impl AstTyper {
 							return_error!(node, "Type is not assigned, is the variable not declared? (This is probably a compiler problem)");
 						}
 					} else if let ScopeMemberKind::Constant(id) = member.kind {
-						if let Some(type_) = resources.resource(id).kind.get_type(types) {
+						if let Some(type_) = resources.resource(id).type_ {
 							Some(type_)
 						} else {
 							return_error!(node, "Cannot use constants that have not found their type before this one currently");

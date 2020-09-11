@@ -10,7 +10,7 @@ mod prelude {
 		operator::Operator,
 		lexer::{ self, Token, TokenKind }, 
 		parser::{ NodeKind, Ast, Scopes, ScopeMemberId, ScopeMemberKind },
-		types::{ TypeId, Types, AstTyper, PrimitiveKind, TypeKind, Type },
+		types::{ self, TypeId, Types, AstTyper, PrimitiveKind, TypeKind, Type },
 		id::IdVec,
 	};
 }
@@ -98,8 +98,8 @@ fn main() {
 			line: 1, 
 			column: 1,
 		},
+		type_: Some(func_type),
 		kind: ResourceKind::ExternalFunction {
-			type_: func_type,
 			func: Box::new(print_func),
 		}
 	});
@@ -125,8 +125,8 @@ fn main() {
 			line: 1, 
 			column: 1,
 		},
+		type_: Some(func_type),
 		kind: ResourceKind::ExternalFunction {
-			type_: func_type,
 			func: Box::new(read_int),
 		}
 	});
@@ -143,15 +143,15 @@ fn main() {
 		return arguments[0];
 	}
 
-	let func_type = types.insert_function(vec![u64_id], u64_id);
+	let func_type = types.insert_function(vec![types::U64_TYPE_ID], types::U64_TYPE_ID);
 	let print_num_function = resources.insert(Resource {
 		loc: CodeLoc {
 			file: std::rc::Rc::new(String::from("no_file thanks")),
 			line: 1, 
 			column: 1,
 		},
+		type_: Some(func_type),
 		kind: ResourceKind::ExternalFunction {
-			type_: func_type,
 			func: Box::new(print_num_func),
 		}
 	});
@@ -173,9 +173,9 @@ fn main() {
 
 	let resource_id = resources.insert(Resource {
 		loc: ast.nodes[0].loc.clone(),
+		type_: None,
 		kind: ResourceKind::Value {
 			code: ast,
-			type_: None,
 			typer: None,
 			depending_on_type: Vec::new(),
 			value: None,

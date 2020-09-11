@@ -35,4 +35,13 @@ print("                             ************\n");
 print("                                 *******\n");
 print("                                     *\n");
 
-entry_point := main;
+print("\n\n--- NOW, TIME FOR SOME NUMBERS ---\n");
+
+add_five := |x| x + 5;
+
+print("Please input a number: ");
+my_num := input_num();
+print_num(add_five(my_num));
+print(" + 5 = ");
+print_num(my_num + 5);
+print("\n");

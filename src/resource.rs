@@ -31,6 +31,7 @@ impl Resources {
 	pub fn compute_one(&mut self, types: &mut Types, scopes: &mut Scopes) -> Result<bool> {
 		if let Some(member_id) = self.compute_queue.pop_front() {
 			let mut member = self.use_resource(member_id);
+			let resource_type = &mut member.type_;
 
 			match member.kind {
 				ResourceKind::Function { 
@@ -38,7 +39,6 @@ impl Resources {
 					code: ref mut resource_code, 
 					instructions: ref mut resource_instructions,
 					typer: ref mut resource_typer,
-					type_: ref mut resource_type,
 				} => {
 					// TODO: Figure out the types of all the arguments.
 					// TODO: Ping all of the things depending on the type of the function that
@@ -95,7 +95,6 @@ impl Resources {
 				}
 				ResourceKind::Value {
 					code: ref mut resource_code,
-					type_: ref mut resource_type,
 					typer: ref mut resource_typer,
 					value: ref mut resource_value,
 					..
@@ -164,7 +163,7 @@ impl Resources {
 	pub fn use_resource(&mut self, id: ResourceId) -> Resource {
 		let resource = self.members.get_mut(id);
 		let loc = resource.loc.clone();
-		std::mem::replace(resource, Resource { loc, kind: ResourceKind::CurrentlyUsed })
+		std::mem::replace(resource, Resource { loc, kind: ResourceKind::CurrentlyUsed, type_: None })
 	}
 
 	pub fn return_resource(&mut self, id: ResourceId, resource: Resource) {
@@ -180,6 +179,7 @@ impl Resources {
 pub struct Resource {
 	pub loc: CodeLoc,
 	pub kind: ResourceKind,
+	pub type_: Option<TypeId>,
 }
 
 impl Location for Resource {
@@ -188,18 +188,16 @@ impl Location for Resource {
 	}
 }
 
-// TODO: Move the type_ member out of this and into the Resource struct, because all
-// resources have types.
+impl Resource {
+}
+
 pub enum ResourceKind {
 	CurrentlyUsed,
 	ExternalFunction {
-		type_: TypeId,
-
 		// TODO: Make a more advanced interface to call external functions
 		func: Box<dyn Fn(&Resources, &[i64]) -> i64>,
 	},
 	Function {
-		type_: Option<TypeId>,
 		// argument_type_defs: Vec<Ast>,
 		// waiting_on_type: Vec<ResourceId>,
 		arguments: Vec<ScopeMemberId>,
@@ -210,22 +208,9 @@ pub enum ResourceKind {
 	String(String),
 	Value {
 		code: Ast,
-		type_: Option<TypeId>,
 		typer: Option<AstTyper>,
 		depending_on_type: Vec<ResourceId>,
 		value: Option<Vec<Primitive>>,
 		depending_on_value: Vec<ResourceId>,
 	},
-}
-
-impl ResourceKind {
-	pub fn get_type(&self, types: &mut Types) -> Option<TypeId> {
-		match *self {
-			ResourceKind::CurrentlyUsed => panic!("Currently in use!!!!"),
-			ResourceKind::ExternalFunction { type_, .. } => Some(type_),
-			ResourceKind::Function { type_, .. } => type_,
-			ResourceKind::String(_) => Some(types.insert(Type::new(TypeKind::String))),
-			ResourceKind::Value { type_, .. } => type_,
-		}
-	}
 }
