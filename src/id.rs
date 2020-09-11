@@ -6,9 +6,8 @@ pub trait Id {
 }
 
 macro_rules! create_id {
-	($name:ident) => {
-		/// Ids start at 0 and keep going up. This is useful because you can have a Vec
-		/// of items, and use Ids to keep track of them.
+	($(#[$meta_data:meta])* $name:ident) => {
+		$(#[$meta_data])*
 		#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 		pub struct $name(std::num::NonZeroU32);
 

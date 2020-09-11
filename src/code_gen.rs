@@ -84,6 +84,8 @@ pub fn compile_expression(
 		match node.kind {
 			NodeKind::Identifier(member_id) => {
 				match scopes.member(member_id).kind {
+					ScopeMemberKind::UndefinedDependency(_) => panic!("Cannot run code_gen on undefined dependencies"),
+					ScopeMemberKind::Indirect(_) => unreachable!("the member function on Scopes should handle indirects and shouldn't return one of them"),
 					ScopeMemberKind::LocalVariable | ScopeMemberKind::FunctionArgument => {
 						let member = match scopes.member(member_id).storage_loc {
 							Some(value) => value,

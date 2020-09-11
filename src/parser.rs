@@ -484,7 +484,7 @@ fn parse_value(
 		}
 		TokenKind::Identifier(name) => {
 			context.tokens.next();
-			match context.scopes.find_member(context.scope, name) {
+			match Some(context.scopes.find_or_create_temp(context.scope, name)?) {
 				Some(member) => {
 					if context.scopes.member(member).kind == ScopeMemberKind::Label {
 						return_error!(token, "Tried using label as a variable or a constant");
@@ -609,7 +609,29 @@ pub fn parse_code(
 }
 
 create_id!(ScopeId);
-create_id!(ScopeMemberId);
+
+create_id!(
+	/// NOTE: Even if 2 ScopeMemberId:s are different, doesn't mean that they point to different
+	/// variables. This is because we use a system to temorarily place scope members when making constants,
+	/// but that may create duplicates. For example:
+	///
+	/// ```impose
+	/// {
+	/// 	print(MY_CONSTANT);
+	/// 	// Here, a temporary scope member called 'MY_CONSTANT' is created
+	/// }
+	/// {
+	/// 	print(MY_CONSTANT);
+	/// 	// Here, another temporary scope member called 'MY_CONSTANT' is created
+	/// }
+	///
+	/// MY_CONSTANT :: "Hello, World!";
+	/// // This MY_CONSTANT looks into subscopes, finds out that there are 2 temporaries that should
+	/// // point to this constant. Hence, we have 2 id:s that point to MY_CONSTANT even though there
+	/// // is only one constant
+	/// ```
+	ScopeMemberId
+);
 
 /// Scopes contains all the scopes in the entire program.
 #[derive(Debug)]
@@ -632,23 +654,37 @@ impl Scopes {
 	}
 
 	pub fn create_scope(&mut self, parent: Option<ScopeId>) -> ScopeId {
-		self.scopes.push(Scope { 
+		let id = self.scopes.push(Scope { 
 			parent: Some(parent.unwrap_or(self.super_scope)), 
 			.. Default::default()
-		})
+		});
+
+		if let Some(parent) = parent {
+			self.scopes.get_mut(parent).sub_scopes.push(id);
+		}
+
+		id
 	}
 
-	pub fn member(&self, member: ScopeMemberId) -> &ScopeMember {
+	pub fn member(&self, mut member: ScopeMemberId) -> &ScopeMember {
+		while let ScopeMemberKind::Indirect(indirect) = self.members.get(member).kind {
+			member = indirect;
+		}
 		self.members.get(member)
 	}
 
-	pub fn member_mut(&mut self, member: ScopeMemberId) -> &mut ScopeMember {
+	pub fn member_mut(&mut self, mut member: ScopeMemberId) -> &mut ScopeMember {
+		while let ScopeMemberKind::Indirect(indirect) = self.members.get(member).kind {
+			member = indirect;
+		}
 		self.members.get_mut(member)
 	}
 
 	fn find_member(&self, mut scope_id: ScopeId, name: &str) -> Option<ScopeMemberId> {
 		loop {
 			for member_id in self.scopes.get(scope_id).members.iter() {
+				// This does not use the ``member`` function on purpose, because the member function
+				// uses indirection, while this does not use it.
 				if self.members.get(*member_id).name == name {
 					return Some(*member_id);
 				}
@@ -658,22 +694,79 @@ impl Scopes {
 		}
 	}
 
+	fn get_members_in_subscopes_with_name(
+		&self,
+		scope_id: ScopeId,
+		name: &str,
+		// TODO: Use TinyVec or something to not allocate with few elements.
+		buffer: &mut Vec<(ScopeId, ScopeMemberId)>,
+	) {
+		// If we find a member in this scope, there cannot possibly be a member in a subscope,
+		// because that would be a name collision. However, there can be several different members
+		// with the same name in different subscopes.
+		for member_id in self.scopes.get(scope_id).members.iter().cloned() {
+			if self.member(member_id).name == name {
+				buffer.push((scope_id, member_id));
+				// There is no way for another thing in a subscope to have the same name because 
+				// that would be a name collision.
+				return;
+			}
+		}
+
+		// Not in this scope, so it may be in a subscope
+		for sub_scope_id in self.scopes.get(scope_id).sub_scopes.iter().cloned() {
+			self.get_members_in_subscopes_with_name(sub_scope_id, name, buffer);
+		}
+	}
+
+	pub fn find_or_create_temp(&mut self, scope: ScopeId, name: &str) -> Result<ScopeMemberId> {
+		if let Some(member_id) = self.find_member(scope, name) {
+			return Ok(member_id);
+		} else {
+			self.declare_member(scope, name.to_string(), None, ScopeMemberKind::UndefinedDependency(Vec::new()))
+		}
+	}
+
 	pub fn declare_member(
 		&mut self, 
 		scope: ScopeId, 
+		// TODO: Make this a slice, not a string, because a temporary may already have an 
+		// allocated string for the name
 		name: String, 
 		loc: Option<&CodeLoc>,
 		kind: ScopeMemberKind,
 	) -> Result<ScopeMemberId> {
-		if let Some(_) = self.find_member(scope, &name) {
-			if let Some(loc) = loc {
-				// TODO: Show where it was taken before.
-				return_error!(
-					loc,
-					"Name is already taken"
-				);
+		let mut same_names_in_sub_scopes = Vec::new();
+		self.get_members_in_subscopes_with_name(scope, &name, &mut same_names_in_sub_scopes);
+
+		let mut declared_member_id = None;
+
+		for (same_name_scope, same_name_id) in same_names_in_sub_scopes {
+			// Check that the member is a temporary and not something else
+			if !matches!(self.members.get(same_name_id).kind, ScopeMemberKind::UndefinedDependency(_)) {
+				if let Some(ref loc) = self.member(same_name_id).declaration_location {
+					// TODO: Show where it was taken before.
+					return_error!(
+						loc,
+						"Name is already taken"
+					);
+				} else {
+					panic!("Non code based identifier name clash");
+				}
+			}
+
+			if let Some((_, declared_member_id)) = declared_member_id {
+				let member = ScopeMember { 
+					declaration_location: self.members.get(declared_member_id).declaration_location.clone(), 
+					name: name.clone(),
+					kind: ScopeMemberKind::Indirect(declared_member_id),
+					type_: None,
+					storage_loc: None,
+				};
+
+				*self.members.get_mut(declared_member_id) = member;
 			} else {
-				panic!("Non code based identifier name clash");
+				declared_member_id = Some((same_name_scope, same_name_id));
 			}
 		}
 
@@ -685,11 +778,27 @@ impl Scopes {
 			storage_loc: None,
 		};
 
-		let scope_instance = self.scopes.get_mut(scope);
-		let id = self.members.push(member);
-		scope_instance.members.push(id);
+		let declared_member_id = match declared_member_id {
+			Some((declared_member_scope_id, declared_member_id)) => {
+				let declared_member_scope = self.scopes.get_mut(declared_member_scope_id);
+				let index = declared_member_scope.members.iter().position(|&member| member == declared_member_id)
+					.expect("Scope should contain member");
+				declared_member_scope.members.swap_remove(index);
+
+				self.scopes.get_mut(scope).members.push(declared_member_id);
+
+				*self.members.get_mut(declared_member_id) = member;
+				declared_member_id
+			}
+			None => {
+				let scope_instance = self.scopes.get_mut(scope);
+				let id = self.members.push(member);
+				scope_instance.members.push(id);
+				id
+			}
+		};
 		
-		Ok(id)
+		Ok(declared_member_id)
 	}
 }
 
@@ -699,10 +808,17 @@ pub struct Scope {
 	// TODO: Make this better
 	pub has_locals: bool,
 	members: Vec<ScopeMemberId>,
+	sub_scopes: Vec<ScopeId>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum ScopeMemberKind {
+	UndefinedDependency(Vec<ResourceId>),
+	/// Redirects to another scope member. Used if 2 temporaries are created for the same variable,
+	/// in which case on of them has to become a "false" temporary and point to the other one,
+	/// because the things depending on them have different id:s.
+	Indirect(ScopeMemberId),
+
 	LocalVariable,
 	FunctionArgument,
 	Label,
