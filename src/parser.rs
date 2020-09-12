@@ -203,12 +203,13 @@ fn try_parse_create_label(
 		let loc = context.tokens.get_location();
 		match context.tokens.next_kind() {
 			Some(TokenKind::Identifier(name)) => {
-				let id = context.scopes.declare_member(
+				let (mut depenendants, id) = context.scopes.declare_member(
 					context.scope, 
 					name.to_string(),
 					Some(&loc),
 					ScopeMemberKind::Label,
 				)?;
+				context.resources.resolve_dependencies(&mut depenendants);
 				Ok(Some(id))
 			}
 			_ => return_error!(loc, "Expected label name"),
@@ -247,7 +248,7 @@ fn try_parse_label(
 	}
 }
 
-fn parse_block(mut context: Context, expect_brackets: bool) 
+fn parse_block(mut context: Context, expect_brackets: bool, is_runnable: bool) 
 	-> Result<AstNodeId>
 {
 	let loc = context.tokens.get_location();
@@ -285,14 +286,19 @@ fn parse_block(mut context: Context, expect_brackets: bool)
 				let ident_loc   = &context.tokens.next().unwrap().loc; 
 				let declare_loc = &context.tokens.next().unwrap().loc;
 
+				if !is_runnable {
+					return_error!(ident_loc, "This scope is not runnable, so the only thing you can do is declare constants");
+				}
+
 				// We have a declaration
 				let value = parse_expression(context.borrow())?;
-				let variable_name = context.scopes.declare_member(
+				let (mut dependants, variable_name) = context.scopes.declare_member(
 					context.scope, 
 					name.to_string(), 
 					Some(ident_loc), 
 					ScopeMemberKind::LocalVariable
 				)?;
+				context.resources.resolve_dependencies(&mut dependants);
 				commands.push(context.ast.insert_node(
 					Node::new(declare_loc, context.scope, NodeKind::Declaration {
 						variable_name, value,
@@ -344,8 +350,12 @@ fn parse_block(mut context: Context, expect_brackets: bool)
 		}
 
 		if !is_other {
-			let expr = parse_expression(context.borrow())?;
-			commands.push(expr);
+			if is_runnable {
+				let expr = parse_expression(context.borrow())?;
+				commands.push(expr);
+			} else {
+				return_error!(context.tokens, "This scope is not runnable, so the only thing you can do is declare constants");
+			}
 		}
 
 		let loc = context.tokens.get_location();
@@ -384,12 +394,13 @@ fn parse_function(
 			|context| {
 				let value = context.tokens.expect_next(|| "Expected function argument name")?;
 				if let Token { loc, kind: TokenKind::Identifier(name) } = value {
-					let arg = context.scopes.declare_member(
+					let (mut dependants, arg) = context.scopes.declare_member(
 						sub_scope,
 						name.to_string(),
 						Some(loc),
 						ScopeMemberKind::FunctionArgument,
 					)?;
+					context.resources.resolve_dependencies(&mut dependants);
 					args.push(arg);
 
 					let node_id = context.ast.insert_node(
@@ -531,7 +542,7 @@ fn parse_value(
 			context.ast.insert_node(Node::new(token, context.scope, NodeKind::Identifier(member)))
 		}
 		TokenKind::Bracket('{') => {
-			parse_block(context.borrow(), true)?
+			parse_block(context.borrow(), true, true)?
 		}
 		TokenKind::Bracket('(') => {
 			context.tokens.next();
@@ -625,10 +636,16 @@ pub fn parse_code(
 	code: &str,
 	resources: &mut Resources,
 	scopes: &mut Scopes,
+	mut scope: ScopeId,
+	is_value: bool,
 ) -> Result<Ast> {
 	let (last_loc, tokens) = lexer::lex_code(code)?;
 	let mut ast = Ast::new();
-	let scope = scopes.create_scope(None);
+
+
+	if is_value {
+		scope = scopes.create_scope(Some(scope));
+	}
 
 	let mut stream = TokenStream::new(&tokens, last_loc);
 
@@ -639,7 +656,7 @@ pub fn parse_code(
 		tokens: &mut stream,
 		resources,
 	};
-	parse_block(context, false)?;
+	parse_block(context, false, is_value)?;
 
 	Ok(ast)
 }
@@ -772,7 +789,12 @@ impl Scopes {
 		if let Some(member_id) = self.find_member(scope, name) {
 			return Ok(member_id);
 		} else {
-			self.declare_member(scope, name.to_string(), None, ScopeMemberKind::UndefinedDependency(Vec::new()))
+			let (mut dependants, id) = self.declare_member(scope, name.to_string(), None, ScopeMemberKind::UndefinedDependency(Vec::new()))?;
+			if let ScopeMemberKind::UndefinedDependency(ref mut vec) = self.member_mut(id).kind {
+				vec.append(&mut dependants);
+			} else { unreachable!(); }
+
+			Ok(id)
 		}
 	}
 
@@ -784,15 +806,54 @@ impl Scopes {
 		name: String, 
 		loc: Option<&CodeLoc>,
 		kind: ScopeMemberKind,
-	) -> Result<ScopeMemberId> {
+	) -> Result<(Vec<ResourceId>, ScopeMemberId)> {
 		let mut same_names_in_sub_scopes = Vec::new();
 		self.get_members_in_subscopes_with_name(scope, &name, &mut same_names_in_sub_scopes);
 
 		let mut declared_member_id = None;
 
+		let mut dependants_on_variable = Vec::new();
+
+		// Member that we want to declare
+		let mut member_we_are_declaring = Some(ScopeMember { 
+			declaration_location: loc.cloned(), 
+			name,
+			kind,
+			type_: None,
+			storage_loc: None,
+		});
+
+		// TODO: If I get around to multithreading, we have to change this completely, because
+		// anything can happen an that point.
+
 		for (same_name_scope, same_name_id) in same_names_in_sub_scopes {
 			// Check that the member is a temporary and not something else
-			if !matches!(self.members.get(same_name_id).kind, ScopeMemberKind::UndefinedDependency(_)) {
+			let member = self.members.get_mut(same_name_id);
+			if let ScopeMemberKind::UndefinedDependency(ref mut dependants) = member.kind {
+				dependants_on_variable.append(dependants);
+
+				if let Some((_, declared_member_id)) = declared_member_id {
+					// The member we have declared is already in a scope, however, 
+					member.kind = ScopeMemberKind::Indirect(declared_member_id);
+				} else {
+					println!("Changing declaration point");
+
+					// Swap the UndefinedDependency here with the thing we are going to declare,
+					// and change the scope of it.
+
+					*member = member_we_are_declaring.take().unwrap();
+
+					// Change the scope
+					let declared_member_scope = self.scopes.get_mut(same_name_scope);
+					let index = declared_member_scope.members.iter()
+						.position(|&member| member == same_name_id)
+						.expect("Scope should contain member");
+					declared_member_scope.members.swap_remove(index);
+					self.scopes.get_mut(scope).members.push(same_name_id);
+
+					declared_member_id = Some((same_name_scope, same_name_id));
+				}
+			} else {
 				if let Some(ref loc) = self.member(same_name_id).declaration_location {
 					// TODO: Show where it was taken before.
 					return_error!(
@@ -803,41 +864,20 @@ impl Scopes {
 					panic!("Non code based identifier name clash");
 				}
 			}
-
-			if let Some((_, declared_member_id)) = declared_member_id {
-				println!("Swapping member with indirect member");
-				self.members.get_mut(same_name_id).kind = ScopeMemberKind::Indirect(declared_member_id);
-			} else {
-				println!("Changing declaration point");
-				declared_member_id = Some((same_name_scope, same_name_id));
-			}
 		}
-
-		let member = ScopeMember { 
-			declaration_location: loc.cloned(), 
-			name,
-			kind,
-			type_: None,
-			storage_loc: None,
-		};
 
 		let declared_member_id = match declared_member_id {
 			Some((declared_member_scope_id, declared_member_id)) => {
-				let declared_member_scope = self.scopes.get_mut(declared_member_scope_id);
-				let index = declared_member_scope.members.iter().position(|&member| member == declared_member_id)
-					.expect("Scope should contain member");
-				declared_member_scope.members.swap_remove(index);
-
-				self.scopes.get_mut(scope).members.push(declared_member_id);
-
-				*self.members.get_mut(declared_member_id) = member;
-				declared_member_id
+				(dependants_on_variable, declared_member_id)
 			}
 			None => {
+				// There is no way for us to have depenendants if there were no UndefinedDependencies,
+				// because if there were a depenendant already, we would have one of those.
+				assert_eq!(dependants_on_variable.len(), 0);
 				let scope_instance = self.scopes.get_mut(scope);
-				let id = self.members.push(member);
+				let id = self.members.push(member_we_are_declaring.take().unwrap());
 				scope_instance.members.push(id);
-				id
+				(dependants_on_variable, id)
 			}
 		};
 		

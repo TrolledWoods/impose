@@ -68,8 +68,6 @@ pub enum Primitive {
 }
 
 fn main() {
-	let code = std::fs::read_to_string("test.im").unwrap();
-
 	let mut scopes = Scopes::new();
 	let mut resources = Resources::new();
 	let mut types = Types::new();
@@ -163,16 +161,16 @@ fn main() {
 	).unwrap();
 
 	// -- COMPILE STUFF --
-	let ast = match parser::parse_code(&code, &mut resources, &mut scopes) {
+	let code = std::fs::read_to_string("test.im").unwrap();
+
+	let super_scope = scopes.super_scope;
+	let ast = match parser::parse_code(&code, &mut resources, &mut scopes, super_scope, true) {
 		Ok(value) => value,
 		Err(err) => {
 			print_error(&code, err);
 			return;
 		}
 	};
-
-	// let parent = scopes.super_scope;
-	// scopes.debug(parent, 0);
 
 	let resource_id = resources.insert(Resource::new(
 		ast.nodes[0].loc.clone(),
@@ -193,20 +191,7 @@ fn main() {
 		}
 	} {}
 
-	let resource = resources.resource(resource_id);
-
-	if let ResourceKind::Value { 
-		ref value, 
-		.. 
-	} = resource.kind {
-		if let Some(value) = value {
-			println!("Result: '{:?}'", value);
-		}
-	}else if let ResourceKind::CurrentlyUsed = resource.kind {
-		println!("Cannot calculate result because we had an error while calculating it");
-	} else {
-		unreachable!();
-	}
+	resources.check_completion(&code);
 }
 
 fn print_location(code: &str, loc: &CodeLoc, message: &str) {

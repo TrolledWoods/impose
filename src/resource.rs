@@ -73,7 +73,7 @@ impl Resources {
 								}))
 							});
 
-							self.compute_queue.extend(member.waiting_on_type.drain(..));
+							self.resolve_dependencies(&mut member.waiting_on_type);
 						} 
 					}
 
@@ -88,8 +88,8 @@ impl Resources {
 						}
 					};
 
-					if let Some(waiting_on_value) = member.waiting_on_value.take() {
-						self.compute_queue.extend(waiting_on_value);
+					if let Some(mut waiting_on_value) = member.waiting_on_value.take() {
+						self.resolve_dependencies(&mut waiting_on_value);
 					}
 
 					if DEBUG {
@@ -132,7 +132,7 @@ impl Resources {
 							}
 
 							*resource_type = *typer.types.last().unwrap();
-							self.compute_queue.extend(member.waiting_on_type.drain(..));
+							self.resolve_dependencies(&mut member.waiting_on_type);
 						} 
 					}
 
@@ -154,8 +154,8 @@ impl Resources {
 						self,
 					) as i64);
 
-					if let Some(waiting_on_value) = member.waiting_on_value.take() {
-						self.compute_queue.extend(waiting_on_value);
+					if let Some(mut waiting_on_value) = member.waiting_on_value.take() {
+						self.resolve_dependencies(&mut waiting_on_value);
 					}
 
 					if DEBUG {
@@ -191,11 +191,18 @@ impl Resources {
 			self.uncomputed_resources.remove(&member_id);
 			Ok(true)
 		} else {
-			if self.uncomputed_resources.len() > 0 {
-				panic!("Some resources are not computed!");
-			} else {
-				Ok(false)
+			Ok(false)
+		}
+	}
+
+	pub fn check_completion(&self, code: &str) {
+		if self.uncomputed_resources.len() > 0 {
+			for uncomputed_resource_id in self.uncomputed_resources.iter().copied() {
+				let resource = self.resource(uncomputed_resource_id);
+
+				crate::print_location(code, &resource.loc, "Resource cannot be computed");
 			}
+			panic!("TODO: Allow several compiler errors");
 		}
 	}
 
@@ -208,6 +215,7 @@ impl Resources {
 					scopes.member_mut(scope_member_id).kind
 				{
 					dependants.push(dependant);
+					self.resource_mut(dependant).depending_on = Some(dependency);
 				} else {
 					self.compute_queue.push_back(dependant);
 				}
@@ -216,6 +224,7 @@ impl Resources {
 				let depending_on = self.resource_mut(resource_id);
 				if depending_on.type_.is_none() {
 					depending_on.waiting_on_type.push(dependant);
+					self.resource_mut(dependant).depending_on = Some(dependency);
 				} else {
 					self.compute_queue.push_back(dependant);
 				}
@@ -224,10 +233,18 @@ impl Resources {
 				let depending_on = self.resource_mut(resource_id);
 				if let Some(ref mut waiting_on_value) = depending_on.waiting_on_value {
 					waiting_on_value.push(dependant);
+					self.resource_mut(dependant).depending_on = Some(dependency);
 				} else {
 					self.compute_queue.push_back(dependant);
 				}
 			}
+		}
+	}
+
+	pub fn resolve_dependencies(&mut self, dependencies: &mut Vec<ResourceId>) {
+		for resource_id in dependencies.drain(..) {
+			self.resource_mut(resource_id).depending_on = None;
+			self.compute_queue.push_back(resource_id);
 		}
 	}
 
@@ -251,7 +268,7 @@ impl Resources {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Dependency {
 	/// We depend on some ScopeMember that isn't defined yet, presumably a constant, but it could
 	/// be a local too if all we want is the type.
@@ -261,6 +278,7 @@ pub enum Dependency {
 }
 
 pub struct Resource {
+	pub depending_on: Option<Dependency>,
 	pub loc: CodeLoc,
 	pub kind: ResourceKind,
 	pub type_: Option<TypeId>,
@@ -280,6 +298,7 @@ impl Location for Resource {
 impl Resource {
 	pub fn new(loc: CodeLoc, kind: ResourceKind) -> Self {
 		Self {
+			depending_on: None,
 			loc,
 			kind,
 			type_: None,
@@ -290,6 +309,7 @@ impl Resource {
 
 	pub fn new_with_type(loc: CodeLoc, kind: ResourceKind, type_: TypeId) -> Self {
 		Self {
+			depending_on: None,
 			loc,
 			kind,
 			type_: Some(type_),

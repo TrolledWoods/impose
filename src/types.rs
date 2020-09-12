@@ -155,20 +155,30 @@ impl AstTyper {
 				}
 				NodeKind::Identifier(id) => {
 					let member = scopes.member(id);
-					if member.kind == ScopeMemberKind::LocalVariable || member.kind == ScopeMemberKind::FunctionArgument {
-						if let Some(type_) = member.type_ {
-							Some(type_)
-						} else {
-							return_error!(node, "Type is not assigned, is the variable not declared? (This is probably a compiler problem)");
+					match member.kind {
+						ScopeMemberKind::LocalVariable | ScopeMemberKind::FunctionArgument => {
+							if let Some(type_) = member.type_ {
+								Some(type_)
+							} else {
+								return_error!(node, "Type is not assigned, is the variable not declared? (This is probably a compiler problem)");
+							}
+						} 
+						ScopeMemberKind::Constant(id) => {
+							if let Some(type_) = resources.resource(id).type_ {
+								Some(type_)
+							} else {
+								return Ok(Some(Dependency::Type(id)));
+							}
 						}
-					} else if let ScopeMemberKind::Constant(id) = member.kind {
-						if let Some(type_) = resources.resource(id).type_ {
-							Some(type_)
-						} else {
-							return Ok(Some(Dependency::Type(id)));
+						ScopeMemberKind::UndefinedDependency(_) => {
+							return Ok(Some(Dependency::Constant(id)));
 						}
-					} else {
-						return_error!(node, "Typing does not handle {:?} scope members yet", member.kind);
+						ScopeMemberKind::Label => {
+							return_error!(node, "This is not a variable, it is a label!");
+						}
+						ScopeMemberKind::Indirect(_) => { 
+							unreachable!("scope.member function should never return Indirect");
+						}
 					}
 				}
 				NodeKind::FunctionCall { function_pointer, ref arg_list } => {
