@@ -310,7 +310,7 @@ fn parse_block(mut context: Context, expect_brackets: bool)
 
 				// We have a constant declaration
 				let mut ast = Ast::new();
-				let sub_scope = context.scopes.create_scope(None);
+				let sub_scope = context.scopes.create_scope(Some(context.scope));
 
 				let mut sub_context = Context {
 					ast: &mut ast,
@@ -367,7 +367,7 @@ fn parse_function(
 	// Lambda definition
 	let mut ast = Ast::new();
 	let mut args = Vec::new();
-	let sub_scope = parent_context.scopes.create_scope(None);
+	let sub_scope = parent_context.scopes.create_scope(Some(parent_context.scope));
 
 	let mut context = Context {
 		ast: &mut ast,
@@ -847,6 +847,8 @@ impl Scopes {
 
 #[derive(Debug, Default)]
 pub struct Scope {
+	// TODO: Add stack frame id:s to scopes, so that we can check if a local is from the current
+	// stack frame and not some other stack frame, which can cause very weird behaviour.
 	pub parent: Option<ScopeId>,
 	// TODO: Make this better
 	pub has_locals: bool,

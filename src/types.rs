@@ -165,7 +165,7 @@ impl AstTyper {
 						if let Some(type_) = resources.resource(id).type_ {
 							Some(type_)
 						} else {
-							return_error!(node, "Cannot use constants that have not found their type before this one currently");
+							return Ok(Some(Dependency::Type(id)));
 						}
 					} else {
 						return_error!(node, "Typing does not handle {:?} scope members yet", member.kind);

@@ -1,7 +1,7 @@
 #![feature(assoc_char_funcs)]
 #![feature(drain_filter)]
 
-pub const DEBUG: bool = false;
+pub const DEBUG: bool = true;
 
 mod prelude {
 	pub(crate) use crate::{ 
@@ -171,8 +171,8 @@ fn main() {
 		}
 	};
 
-	let parent = scopes.super_scope;
-	scopes.debug(parent, 0);
+	// let parent = scopes.super_scope;
+	// scopes.debug(parent, 0);
 
 	let resource_id = resources.insert(Resource::new(
 		ast.nodes[0].loc.clone(),

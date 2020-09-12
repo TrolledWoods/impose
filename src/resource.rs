@@ -60,6 +60,7 @@ impl Resources {
 								Some(dependency) => {
 									self.add_dependency(member_id, dependency, scopes);
 									*resource_typer = Some(typer);
+									self.return_resource(member_id, member);
 									return Ok(true);
 								}
 								None => {}
@@ -82,6 +83,7 @@ impl Resources {
 						Ok(value) => value,
 						Err(dependency) => {
 							self.add_dependency(member_id, dependency, scopes);
+							self.return_resource(member_id, member);
 							return Ok(true);
 						}
 					};
@@ -123,6 +125,7 @@ impl Resources {
 								Some(dependency) => {
 									self.add_dependency(member_id, dependency, scopes);
 									*resource_typer = Some(typer);
+									self.return_resource(member_id, member);
 									return Ok(true);
 								}
 								None => {}
@@ -139,6 +142,7 @@ impl Resources {
 						Ok(value) => value,
 						Err(dependency) => {
 							self.add_dependency(member_id, dependency, scopes);
+							self.return_resource(member_id, member);
 							return Ok(true);
 						}
 					};

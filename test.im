@@ -1,11 +1,15 @@
-add_2 :: |x| { 
-	NUM_TO_ADD :: 2;
-	x + NUM_TO_ADD
-};
+add_one :: |x| x + 1;
+my_func :: |y| add_one(add_one(y));
 
-print_num(add_2(2));
-print("\n");
-print_num(add_2(1));
-print("\n");
-print_num(add_2(3));
-print("\n");
+X :: 2 + 5;
+
+main :: || {
+	x := X + Y; 
+
+	print_num(my_func(add_one(x)));
+	print("\n");
+
+	Y :: 2 - 2;
+
+	6
+};
