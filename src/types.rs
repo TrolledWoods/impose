@@ -125,7 +125,7 @@ impl AstTyper {
 		ast: &mut Ast,
 		scopes: &mut Scopes,
 		resources: &Resources,
-	) -> Result<()> {
+	) -> Result<Option<Dependency>> {
 		while self.node_id < ast.nodes.len() {
 			debug_assert_eq!(self.types.len(), self.node_id);
 			let node = &ast.nodes[self.node_id];
@@ -249,6 +249,6 @@ impl AstTyper {
 		}
 
 		ast.is_typed = true;
-		Ok(())
+		Ok(None)
 	}
 }

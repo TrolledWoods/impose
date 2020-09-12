@@ -1,9 +1,8 @@
-print_num :: |x| {
-	print("my number is: ");
-	print_num(x);
-	print("!\n");
-};
+add_2 := |x| { x + 2 };
 
-print_num(5);
-print_num(1);
-print_num(3);
+print_num(add_2(2));
+print("\n");
+print_num(add_2(1));
+print("\n");
+print_num(add_2(3));
+print("\n");

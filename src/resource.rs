@@ -61,7 +61,6 @@ impl Resources {
 							typer.try_type_ast(types, resource_code, scopes, self)?;
 
 							// TODO: If the typer is not done, put the typer back into the option.
-
 							// TODO: Remove this implicit type check
 							*resource_type = typer.types.last().unwrap().map(|return_type| {
 								types.insert(Type::new(TypeKind::FunctionPointer {
@@ -69,6 +68,8 @@ impl Resources {
 									returns: return_type,
 								}))
 							});
+
+							self.compute_queue.extend(member.waiting_on_type.drain(..));
 						} 
 					}
 
@@ -76,6 +77,10 @@ impl Resources {
 					// TODO: If the value is not defined yet, pause, and come back later.
 					let (locals, instructions, return_value) 
 						= code_gen::compile_expression(resource_code, scopes, self);
+
+					if let Some(waiting_on_value) = member.waiting_on_value.take() {
+						self.compute_queue.extend(waiting_on_value);
+					}
 
 					if DEBUG {
 						println!("\n\n--- Resource {} (function) has finished computing! ---", member_id);
@@ -112,6 +117,7 @@ impl Resources {
 
 							// TODO: If the typer is not done, put the typer back into the option.
 							*resource_type = *typer.types.last().unwrap();
+							self.compute_queue.extend(member.waiting_on_type.drain(..));
 						} 
 					}
 
@@ -126,6 +132,10 @@ impl Resources {
 						return_value,
 						self,
 					) as i64);
+
+					if let Some(waiting_on_value) = member.waiting_on_value.take() {
+						self.compute_queue.extend(waiting_on_value);
+					}
 
 					if DEBUG {
 						println!("\n\n--- Resource {} (value) has finished computing! ---", member_id);
@@ -168,6 +178,38 @@ impl Resources {
 		}
 	}
 
+	/// Adds a dependency on something for a resource. Once that dependency is resolved, the
+	/// dependant will be pushed onto the compute queue again to resume evaluation.
+	fn add_dependency(&mut self, dependant: ResourceId, dependency: Dependency, scopes: &mut Scopes) {
+		match dependency {
+			Dependency::Constant(scope_member_id) => {
+				if let ScopeMemberKind::UndefinedDependency(ref mut dependants) =
+					scopes.member_mut(scope_member_id).kind
+				{
+					dependants.push(dependant);
+				} else {
+					self.compute_queue.push_back(dependant);
+				}
+			}
+			Dependency::Type(resource_id) => {
+				let depending_on = self.resource_mut(resource_id);
+				if depending_on.type_.is_none() {
+					depending_on.waiting_on_type.push(dependant);
+				} else {
+					self.compute_queue.push_back(dependant);
+				}
+			}
+			Dependency::Value(resource_id) => {
+				let depending_on = self.resource_mut(resource_id);
+				if let Some(ref mut waiting_on_value) = depending_on.waiting_on_value {
+					waiting_on_value.push(dependant);
+				} else {
+					self.compute_queue.push_back(dependant);
+				}
+			}
+		}
+	}
+
 	pub fn use_resource(&mut self, id: ResourceId) -> Resource {
 		let resource = self.members.get_mut(id);
 		let loc = resource.loc.clone();
@@ -182,6 +224,19 @@ impl Resources {
 	pub fn resource(&self, id: ResourceId) -> &Resource {
 		self.members.get(id)
 	}
+
+	pub fn resource_mut(&mut self, id: ResourceId) -> &mut Resource {
+		self.members.get_mut(id)
+	}
+}
+
+#[derive(Debug)]
+pub enum Dependency {
+	/// We depend on some ScopeMember that isn't defined yet, presumably a constant, but it could
+	/// be a local too if all we want is the type.
+	Constant(ScopeMemberId),
+	Type(ResourceId),
+	Value(ResourceId),
 }
 
 pub struct Resource {
@@ -189,7 +244,10 @@ pub struct Resource {
 	pub kind: ResourceKind,
 	pub type_: Option<TypeId>,
 	pub waiting_on_type: Vec<ResourceId>,
-	pub waiting_on_value: Vec<ResourceId>,
+	/// This is Some when the value has not been calculated yet,
+	/// but None when it has been calculated, so that we cannot add more dependencies
+	/// after it's been calulated and fail compilation for no reason.
+	pub waiting_on_value: Option<Vec<ResourceId>>,
 }
 
 impl Location for Resource {
@@ -205,7 +263,7 @@ impl Resource {
 			kind,
 			type_: None,
 			waiting_on_type: vec![],
-			waiting_on_value: vec![],
+			waiting_on_value: Some(vec![]),
 		}
 	}
 
@@ -215,7 +273,7 @@ impl Resource {
 			kind,
 			type_: Some(type_),
 			waiting_on_type: vec![],
-			waiting_on_value: vec![],
+			waiting_on_value: Some(vec![]),
 		}
 	}
 }

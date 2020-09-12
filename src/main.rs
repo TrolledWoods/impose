@@ -6,7 +6,7 @@ pub const DEBUG: bool = false;
 mod prelude {
 	pub(crate) use crate::{ 
 		DEBUG, Location, CodeLoc, Error, Result,
-		resource::{ Resource, ResourceKind, Resources, ResourceId },
+		resource::{ Resource, ResourceKind, Resources, ResourceId, Dependency },
 		operator::Operator,
 		lexer::{ self, Token, TokenKind }, 
 		parser::{ NodeKind, Ast, Scopes, ScopeMemberId, ScopeMemberKind },
