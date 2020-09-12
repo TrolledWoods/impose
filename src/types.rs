@@ -48,6 +48,7 @@ impl Types {
 
 	pub fn print(&self, type_: TypeId) {
 		match self.types.get(type_).kind {
+			TypeKind::EmptyType => print!("Empty"),
 			TypeKind::FunctionPointer { ref args, returns } => {
 				print!("(");
 				for (i, arg) in args.iter().enumerate() {
@@ -85,10 +86,9 @@ impl Type {
 	}
 }
 
-// TODO: Make an empty type to differentiate between no type and
-// a type that isn't computed yet.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TypeKind {
+	EmptyType,
 	FunctionPointer {
 		args: Vec<TypeId>,
 		returns: TypeId,
@@ -151,7 +151,7 @@ impl AstTyper {
 					}
 				}
 				NodeKind::EmptyLiteral => {
-					None
+					Some(types.insert(Type::new(TypeKind::EmptyType)))
 				}
 				NodeKind::Identifier(id) => {
 					let member = scopes.member(id);

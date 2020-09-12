@@ -1,15 +1,5 @@
-add_one :: |x| x + 1;
-my_func :: |y| add_one(add_one(y));
-
-X :: 2 + 5;
-
 main :: || {
-	x := X + Y; 
-
-	print_num(my_func(add_one(x)));
-	print("\n");
-
-	Y :: 2 - 2;
-
-	6
+	print("Hi from main function!\n");
 };
+
+main();
