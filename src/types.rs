@@ -85,6 +85,8 @@ impl Type {
 	}
 }
 
+// TODO: Make an empty type to differentiate between no type and
+// a type that isn't computed yet.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TypeKind {
 	FunctionPointer {

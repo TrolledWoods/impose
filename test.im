@@ -1,18 +1,9 @@
-{
-	print(MY_MESSAGE);
-	print(MY_MESSAGE);
-	print(MY_MESSAGE);
-	print(MY_MESSAGE);
-	print(MY_MESSAGE);
-	print(MY_MESSAGE);
-	print(MY_MESSAGE);
-	print(MY_MESSAGE);
-	print(MY_MESSAGE);
-};
-{
-	print(MY_MESSAGE);
+print_num :: |x| {
+	print("my number is: ");
+	print_num(x);
+	print("!\n");
 };
 
-MY_MESSAGE :: "Hello, World!\n";
-
-
+print_num(5);
+print_num(1);
+print_num(3);

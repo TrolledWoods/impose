@@ -63,11 +63,12 @@ impl Resources {
 							// TODO: If the typer is not done, put the typer back into the option.
 
 							// TODO: Remove this implicit type check
-							let return_type = typer.types.last().unwrap().unwrap();
-							*resource_type = Some(types.insert(Type::new(TypeKind::FunctionPointer {
-								args: arg_types,
-								returns: return_type,
-							})));
+							*resource_type = typer.types.last().unwrap().map(|return_type| {
+								types.insert(Type::new(TypeKind::FunctionPointer {
+									args: arg_types,
+									returns: return_type,
+								}))
+							});
 						} 
 					}
 
@@ -170,7 +171,7 @@ impl Resources {
 	pub fn use_resource(&mut self, id: ResourceId) -> Resource {
 		let resource = self.members.get_mut(id);
 		let loc = resource.loc.clone();
-		std::mem::replace(resource, Resource { loc, kind: ResourceKind::CurrentlyUsed, type_: None })
+		std::mem::replace(resource, Resource::new(loc, ResourceKind::CurrentlyUsed))
 	}
 
 	pub fn return_resource(&mut self, id: ResourceId, resource: Resource) {
@@ -187,6 +188,8 @@ pub struct Resource {
 	pub loc: CodeLoc,
 	pub kind: ResourceKind,
 	pub type_: Option<TypeId>,
+	pub waiting_on_type: Vec<ResourceId>,
+	pub waiting_on_value: Vec<ResourceId>,
 }
 
 impl Location for Resource {
@@ -196,6 +199,25 @@ impl Location for Resource {
 }
 
 impl Resource {
+	pub fn new(loc: CodeLoc, kind: ResourceKind) -> Self {
+		Self {
+			loc,
+			kind,
+			type_: None,
+			waiting_on_type: vec![],
+			waiting_on_value: vec![],
+		}
+	}
+
+	pub fn new_with_type(loc: CodeLoc, kind: ResourceKind, type_: TypeId) -> Self {
+		Self {
+			loc,
+			kind,
+			type_: Some(type_),
+			waiting_on_type: vec![],
+			waiting_on_value: vec![],
+		}
+	}
 }
 
 pub enum ResourceKind {

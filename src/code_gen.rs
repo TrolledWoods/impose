@@ -250,22 +250,12 @@ fn get_resource_constant(resources: &Resources, id: ResourceId)
 {
 	let resource = resources.resource(id);
 	match resource.kind {
-		ResourceKind::ExternalFunction { .. } => {
-			use crate::id::Id;
-			Value::Constant(id.get() as i64)
-		}
-		ResourceKind::Function { .. } => {
-			use crate::id::Id;
-			Value::Constant(id.get() as i64)
-		}
+		ResourceKind::ExternalFunction { .. } |
+		ResourceKind::Function { .. } | 
+		ResourceKind::String(_) =>
+			Value::Constant(id.into_index() as i64),
 		ResourceKind::CurrentlyUsed => 
 			todo!("Deal with CurrentlyUsed resources in code_gen"),
-			ResourceKind::Function { .. } => {
-				Value::Constant(id.into_index() as i64)
-			}
-		ResourceKind::String(_) => {
-			Value::Constant(id.into_index() as i64)
-		}
 		ResourceKind::Value { value, .. } => {
 			if let Some(value) = value {
 				Value::Constant(value)
@@ -273,7 +263,6 @@ fn get_resource_constant(resources: &Resources, id: ResourceId)
 				todo!("Values that are not defined yet");
 			}
 		}
-		_ => todo!("Resource kind not dealt with in code gen {:?}", resource.kind),
 	}
 }
 

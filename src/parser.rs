@@ -322,17 +322,16 @@ fn parse_block(mut context: Context, expect_brackets: bool)
 
 				parse_expression(sub_context.borrow())?;
 
-				let resource_id = context.resources.insert(Resource {
-					loc: ident_loc.clone(),
-					type_: None,
-					kind: ResourceKind::Value {
+				let resource_id = context.resources.insert(Resource::new(
+					ident_loc.clone(),
+					ResourceKind::Value {
 						code: ast,
 						typer: None,
 						depending_on_type: vec![],
 						value: None,
 						depending_on_value: vec![],
 					},
-				});
+				));
 
 				context.scopes.declare_member(
 					context.scope, 
@@ -418,16 +417,15 @@ fn parse_function(
 	// Parse the function body.
 	parse_expression(context.borrow())?;
 
-	let id = parent_context.resources.insert(Resource {
-		loc: token.get_location(),
-		type_: None,
-		kind: ResourceKind::Function {
+	let id = parent_context.resources.insert(Resource::new(
+		token.get_location(),
+		ResourceKind::Function {
 			arguments: args,
 			code: ast,
 			instructions: None,
 			typer: None,
 		}
-	});
+	));
 
 	Ok(id)
 }
@@ -517,11 +515,13 @@ fn parse_value(
 			context.tokens.next();
 			// TODO: Find a way to get rid of the string cloning here!
 			// Possibly by making TokenStream own its data
-			let id = context.resources.insert(Resource {
-				loc: token.get_location(),
-				type_: Some(types::STRING_TYPE_ID),
-				kind: ResourceKind::String(string.clone()),
-			});
+			let id = context.resources.insert(
+				Resource::new_with_type(
+					token.loc.clone(),
+					ResourceKind::String(string.clone()),
+					types::STRING_TYPE_ID
+				)
+			);
 			context.ast.insert_node(Node::new(token, context.scope, NodeKind::Resource(id)))
 		}
 		TokenKind::Identifier(name) => {
@@ -714,14 +714,16 @@ impl Scopes {
 	}
 
 	pub fn member(&self, mut member: ScopeMemberId) -> &ScopeMember {
-		while let ScopeMemberKind::Indirect(indirect) = self.members.get(member).kind {
+		// Because an indirect never points to another indirect(because then we can just redirect
+		// to the thing that redirects), we can just do an if here.
+		if let ScopeMemberKind::Indirect(indirect) = self.members.get(member).kind {
 			member = indirect;
 		}
 		self.members.get(member)
 	}
 
 	pub fn member_mut(&mut self, mut member: ScopeMemberId) -> &mut ScopeMember {
-		while let ScopeMemberKind::Indirect(indirect) = self.members.get(member).kind {
+		if let ScopeMemberKind::Indirect(indirect) = self.members.get(member).kind {
 			member = indirect;
 		}
 		self.members.get_mut(member)

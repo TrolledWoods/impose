@@ -5,7 +5,7 @@ pub const DEBUG: bool = false;
 
 mod prelude {
 	pub(crate) use crate::{ 
-		DEBUG, Location, CodeLoc, Error, Result, Primitive,
+		DEBUG, Location, CodeLoc, Error, Result,
 		resource::{ Resource, ResourceKind, Resources, ResourceId },
 		operator::Operator,
 		lexer::{ self, Token, TokenKind }, 
@@ -92,17 +92,17 @@ fn main() {
 	let string_type = types.insert(Type::new(TypeKind::String));
 	let u64_id = types.u64();
 	let func_type = types.insert_function(vec![string_type], u64_id);
-	let string_function = resources.insert(Resource {
-		loc: CodeLoc {
+	let string_function = resources.insert(Resource::new_with_type(
+		CodeLoc {
 			file: std::rc::Rc::new(String::from("no_file thanks")),
 			line: 1, 
 			column: 1,
 		},
-		type_: Some(func_type),
-		kind: ResourceKind::ExternalFunction {
+		ResourceKind::ExternalFunction {
 			func: Box::new(print_func),
-		}
-	});
+		},
+		func_type,
+	));
 	scopes.declare_member(
 		scopes.super_scope, 
 		String::from("print"), 
@@ -119,17 +119,17 @@ fn main() {
 
 	let u64_id = types.u64();
 	let func_type = types.insert_function(vec![], u64_id);
-	let read_int_function = resources.insert(Resource {
-		loc: CodeLoc {
+	let read_int_function = resources.insert(Resource::new_with_type(
+		CodeLoc {
 			file: std::rc::Rc::new(String::from("no_file thanks")),
 			line: 1, 
 			column: 1,
 		},
-		type_: Some(func_type),
-		kind: ResourceKind::ExternalFunction {
+		ResourceKind::ExternalFunction {
 			func: Box::new(read_int),
-		}
-	});
+		},
+		func_type,
+	));
 	scopes.declare_member(
 		scopes.super_scope, 
 		String::from("input_num"), 
@@ -144,17 +144,17 @@ fn main() {
 	}
 
 	let func_type = types.insert_function(vec![types::U64_TYPE_ID], types::U64_TYPE_ID);
-	let print_num_function = resources.insert(Resource {
-		loc: CodeLoc {
+	let print_num_function = resources.insert(Resource::new_with_type(
+		CodeLoc {
 			file: std::rc::Rc::new(String::from("no_file thanks")),
 			line: 1, 
 			column: 1,
 		},
-		type_: Some(func_type),
-		kind: ResourceKind::ExternalFunction {
+		ResourceKind::ExternalFunction {
 			func: Box::new(print_num_func),
-		}
-	});
+		},
+		func_type,
+	));
 	scopes.declare_member(
 		scopes.super_scope, 
 		String::from("print_num"), 
@@ -174,17 +174,16 @@ fn main() {
 	let parent = scopes.super_scope;
 	scopes.debug(parent, 0);
 
-	let resource_id = resources.insert(Resource {
-		loc: ast.nodes[0].loc.clone(),
-		type_: None,
-		kind: ResourceKind::Value {
+	let resource_id = resources.insert(Resource::new(
+		ast.nodes[0].loc.clone(),
+		ResourceKind::Value {
 			code: ast,
 			typer: None,
 			depending_on_type: Vec::new(),
 			value: None,
 			depending_on_value: Vec::new(),
 		}
-	});
+	));
 
 	while match resources.compute_one(&mut types, &mut scopes) {
 		Ok(should_continue) => should_continue,
