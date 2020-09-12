@@ -62,11 +62,13 @@ impl fmt::Debug for Instruction {
 
 create_id!(LocalId);
 
+// TODO: Add a struct with data about compiling an expression, so that we can keep going
+// at the same point that we stopped if there is an undefined dependency.
 pub fn compile_expression(
 	ast: &Ast, 
 	scopes: &mut Scopes,
 	resources: &Resources,
-) -> (Locals, Vec<Instruction>, Value) {
+) -> std::result::Result<(Locals, Vec<Instruction>, Value), Dependency> {
 	let mut locals = Locals::new();
 	let mut node_values: Vec<Value> = Vec::with_capacity(ast.nodes.len());
 	let mut instructions = Vec::new();
@@ -84,7 +86,7 @@ pub fn compile_expression(
 		match node.kind {
 			NodeKind::Identifier(member_id) => {
 				match scopes.member(member_id).kind {
-					ScopeMemberKind::UndefinedDependency(_) => panic!("Cannot run code_gen on undefined dependencies"),
+					ScopeMemberKind::UndefinedDependency(_) => panic!("Cannot run code_gen on undefined dependencies(they have to have been caught in the typer)"),
 					ScopeMemberKind::Indirect(_) => unreachable!("the member function on Scopes should handle indirects and shouldn't return one of them"),
 					ScopeMemberKind::LocalVariable | ScopeMemberKind::FunctionArgument => {
 						let member = match scopes.member(member_id).storage_loc {
@@ -95,7 +97,7 @@ pub fn compile_expression(
 						node_values.push(Value::Local(member));
 					}
 					ScopeMemberKind::Constant(id) => {
-						node_values.push(get_resource_constant(resources, id));
+						node_values.push(get_resource_constant(resources, id)?);
 					}
 					ScopeMemberKind::Label => panic!("Cannot do labels"),
 				}
@@ -236,31 +238,31 @@ pub fn compile_expression(
 				node_values.push(Value::Local(returns));
 			}
 			NodeKind::Resource(id) => {
-				node_values.push(get_resource_constant(resources, id))
+				node_values.push(get_resource_constant(resources, id)?)
 			}
 			_ => todo!()
 		}
 	}
 
-	(locals, instructions, node_values.last().copied().unwrap_or(Value::Poison))
+	Ok((locals, instructions, node_values.last().copied().unwrap_or(Value::Poison)))
 }
 
 fn get_resource_constant(resources: &Resources, id: ResourceId) 
-	-> Value
+	-> std::result::Result<Value, Dependency>
 {
 	let resource = resources.resource(id);
 	match resource.kind {
 		ResourceKind::ExternalFunction { .. } |
 		ResourceKind::Function { .. } | 
 		ResourceKind::String(_) =>
-			Value::Constant(id.into_index() as i64),
+			Ok(Value::Constant(id.into_index() as i64)),
 		ResourceKind::CurrentlyUsed => 
 			todo!("Deal with CurrentlyUsed resources in code_gen"),
 		ResourceKind::Value { value, .. } => {
 			if let Some(value) = value {
-				Value::Constant(value)
+				Ok(Value::Constant(value))
 			} else {
-				todo!("Values that are not defined yet");
+				Err(Dependency::Value(id))
 			}
 		}
 	}

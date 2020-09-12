@@ -1,4 +1,7 @@
-add_2 := |x| { x + 2 };
+add_2 :: |x| { 
+	NUM_TO_ADD :: 2;
+	x + NUM_TO_ADD
+};
 
 print_num(add_2(2));
 print("\n");

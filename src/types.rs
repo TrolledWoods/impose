@@ -147,7 +147,7 @@ impl AstTyper {
 					if let Some(type_) = resource.type_ {
 						Some(type_)
 					} else {
-						return_error!(node, "TODO: Wait for other resource types");
+						return Ok(Some(Dependency::Type(id)));
 					}
 				}
 				NodeKind::EmptyLiteral => {

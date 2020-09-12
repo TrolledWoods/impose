@@ -56,12 +56,15 @@ impl Resources {
 						}
 
 						if let Some(mut typer) = resource_typer.take() {
-							// TODO: Check if the error is an unknown identifier or something 
-							// like that, in which case just put this back on the todo list.
-							typer.try_type_ast(types, resource_code, scopes, self)?;
+							match typer.try_type_ast(types, resource_code, scopes, self)? {
+								Some(dependency) => {
+									self.add_dependency(member_id, dependency, scopes);
+									*resource_typer = Some(typer);
+									return Ok(true);
+								}
+								None => {}
+							}
 
-							// TODO: If the typer is not done, put the typer back into the option.
-							// TODO: Remove this implicit type check
 							*resource_type = typer.types.last().unwrap().map(|return_type| {
 								types.insert(Type::new(TypeKind::FunctionPointer {
 									args: arg_types,
@@ -73,10 +76,15 @@ impl Resources {
 						} 
 					}
 
-					// Generate the instructions
-					// TODO: If the value is not defined yet, pause, and come back later.
 					let (locals, instructions, return_value) 
-						= code_gen::compile_expression(resource_code, scopes, self);
+						= match code_gen::compile_expression(resource_code, scopes, self) 
+					{
+						Ok(value) => value,
+						Err(dependency) => {
+							self.add_dependency(member_id, dependency, scopes);
+							return Ok(true);
+						}
+					};
 
 					if let Some(waiting_on_value) = member.waiting_on_value.take() {
 						self.compute_queue.extend(waiting_on_value);
@@ -111,20 +119,29 @@ impl Resources {
 						}
 
 						if let Some(mut typer) = resource_typer.take() {
-							// TODO: Check if the error is an unknown identifier or something 
-							// like that, in which case just put this back on the todo list.
-							typer.try_type_ast(types, resource_code, scopes, self)?;
+							match typer.try_type_ast(types, resource_code, scopes, self)? {
+								Some(dependency) => {
+									self.add_dependency(member_id, dependency, scopes);
+									*resource_typer = Some(typer);
+									return Ok(true);
+								}
+								None => {}
+							}
 
-							// TODO: If the typer is not done, put the typer back into the option.
 							*resource_type = *typer.types.last().unwrap();
 							self.compute_queue.extend(member.waiting_on_type.drain(..));
 						} 
 					}
 
-					// Generate the instructions
-					// TODO: If the value is not defined yet, pause, and come back later.
 					let (locals, instructions, return_value) 
-						= code_gen::compile_expression(resource_code, scopes, self);
+						= match code_gen::compile_expression(resource_code, scopes, self) 
+					{
+						Ok(value) => value,
+						Err(dependency) => {
+							self.add_dependency(member_id, dependency, scopes);
+							return Ok(true);
+						}
+					};
 
 					*resource_value = Some(crate::run::run_instructions(
 						&locals,
