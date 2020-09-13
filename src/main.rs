@@ -10,7 +10,7 @@ mod prelude {
 		operator::Operator,
 		lexer::{ self, Token, TokenKind }, 
 		parser::{ NodeKind, Ast, AstNodeId, Scopes, ScopeMemberId, ScopeMemberKind },
-		types::{ self, TypeId, Types, AstTyper, PrimitiveKind, TypeKind, Type },
+		types::{ self, TypeId, TypeHandle, Types, AstTyper, PrimitiveKind, TypeKind, Type },
 		id::IdVec,
 	};
 }
@@ -107,6 +107,14 @@ fn main() {
 		None, 
 		ScopeMemberKind::Constant(string_function)
 	).unwrap();
+
+	types.insert(Type::new(TypeKind::Struct { members: vec![
+		(format!("x"), 0, TypeHandle { id: types::U64_TYPE_ID, size: 8, align: 8, }),
+		(format!("y"), 8, TypeHandle { id: types::U64_TYPE_ID, size: 8, align: 8, }),
+		(format!("z"), 16, TypeHandle { id: types::U64_TYPE_ID, size: 8, align: 8, }),
+	] }));
+
+
 
 	fn read_int(_resources: &Resources, arguments: &[i64]) -> i64 {
 		assert_eq!(arguments.len(), 0);

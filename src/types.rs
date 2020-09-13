@@ -19,6 +19,11 @@ impl Types {
 		Self { types }
 	}
 
+	pub fn get_handle(&self, id: TypeId) -> TypeHandle {
+		let type_ = self.types.get(id);
+		TypeHandle { id, size: type_.size, align: type_.align }
+	}
+
 	// TODO: This function is deprecated
 	pub fn u64(&mut self) -> TypeId {
 		U64_TYPE_ID
@@ -49,6 +54,16 @@ impl Types {
 	pub fn print(&self, type_: TypeId) {
 		match self.types.get(type_).kind {
 			TypeKind::EmptyType => print!("Empty"),
+			TypeKind::Struct { ref members } => {
+				print!("struct{{ ");
+				for (i, (name, offset, member)) in members.iter().enumerate() {
+					if i > 0 { print!(", "); }
+
+					print!("{}[{}]: ", name, offset);
+					self.print(member.id);
+				}
+				print!("}}");
+			}
 			TypeKind::FunctionPointer { ref args, returns } => {
 				print!("(");
 				for (i, arg) in args.iter().enumerate() {
@@ -69,25 +84,61 @@ impl Types {
 	}
 }
 
+/// Contains common info about a type, to avoid having to look too many things up
+/// all the time. This handle alone is enough to compare two different types, pass
+/// a type to a function, e.t.c.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TypeHandle {
+	pub size: usize,
+	pub align: usize,
+	pub id: TypeId,
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Type {
 	pub loc: Option<CodeLoc>,
 	pub kind: TypeKind,
-	pub representation: Vec<PrimitiveKind>,
+	pub size: usize,
+	pub align: usize,
 }
 
 impl Type {
 	pub fn new(kind: TypeKind) -> Self {
+		let (mut size, align) = match kind {
+			TypeKind::Struct { ref members } => {
+				let mut align = 1;
+				let mut size = 0;
+				for &(_, offset, handle) in members {
+					size  = size.max(offset + handle.size);
+					align = align.max(handle.align);
+				}
+				(size, align)
+			}
+			TypeKind::EmptyType => (0, 1),
+			TypeKind::Primitive(PrimitiveKind::U64) => (8, 8),
+			TypeKind::String => (8, 8),
+			TypeKind::FunctionPointer { .. } => (8, 8),
+		};
+
+		// Make sure its size is aligned as it should be
+		if size & (align - 1) != 0 {
+			size = align + (size & !(align - 1));
+		}
+
 		Type {
 			loc: None,
 			kind,
-			representation: Vec::new(), // TODO: Make good representation
+			size,
+			align,
 		}
 	}
 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TypeKind {
+	Struct {
+		members: Vec<(String, usize, TypeHandle)>,
+	},
 	EmptyType,
 	FunctionPointer {
 		args: Vec<TypeId>,
