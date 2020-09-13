@@ -49,15 +49,34 @@ pub fn run_instructions_with_locals(
 
 		match *instruction {
 			Instruction::Temporary => panic!("Cannot run temporary instruction"),
-			Instruction::AddU64(result, a, b) => {
+			Instruction::PrimitiveBinaryOperator(operator, primitive, result, a, b) => {
 				let a = get_value(local_data, a);
 				let b = get_value(local_data, b);
-				set_value(local_data, result, a + b);
-			}
-			Instruction::SubU64(result, a, b) => {
-				let a = get_value(local_data, a);
-				let b = get_value(local_data, b);
-				set_value(local_data, result, a - b);
+
+				use Operator::*;
+				use PrimitiveKind::*;
+				match (operator, primitive) {
+					(Equ, U64) => set_value(local_data, result, if a == b { 1 } else { 0 }),
+					(NEqu, U64) => set_value(local_data, result, if a != b { 1 } else { 0 }),
+					(LessEqu, U64) => set_value(local_data, result, if a <= b { 1 } else { 0 }),
+					(GreaterEqu, U64) => set_value(local_data, result, if a >= b { 1 } else { 0 }),
+					(Less, U64) => set_value(local_data, result, if a < b { 1 } else { 0 }),
+					(Greater, U64) => set_value(local_data, result, if a > b { 1 } else { 0 }),
+					(Not, U64) => set_value(local_data, result, if a < b { 1 } else { 0 }),
+					(And, U64) => set_value(local_data, result, 
+						if a != 0 && b != 0 { 1 } else { 0 }),
+					(Or, U64) => set_value(local_data, result,
+						if a != 0 || b != 0 { 1 } else { 0 }),
+					(Xor, U64) => set_value(local_data, result,
+						if (a != 0) ^ (b != 0) { 1 } else { 0 }),
+					(BitwiseOrOrLambda, U64) => set_value(local_data, result, a | b),
+					(Add, U64) => set_value(local_data, result, a + b),
+					(Sub, U64) => set_value(local_data, result, a - b),
+					(MulOrDeref, U64) => set_value(local_data, result, a * b),
+					(Div, U64) => set_value(local_data, result, a / b),
+					(Mod, U64) => set_value(local_data, result, a % b),
+					(_, _) => panic!("Unhandled combination {:?} {:?}", operator, primitive),
+				}
 			}
 			Instruction::MoveU64(into, from) => {
 				let from = get_value(local_data, from);

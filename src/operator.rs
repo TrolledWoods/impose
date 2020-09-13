@@ -46,6 +46,7 @@ create_operators! {
 	// TODO: Make these different priorities, people are probably used to and having a lower priority
 	And;        "&&",  true,   4, 0,
 	Or ;        "||",  true,   4, 0,
+	Xor;        "^^",  true,   4, 0,
 
 	// Bitwise operators
 	BitwiseOrOrLambda; "|", true, 5, 0,

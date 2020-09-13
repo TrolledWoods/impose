@@ -32,8 +32,9 @@ impl fmt::Debug for Value {
 pub enum Instruction {
 	/// Temporary instruction. Cannot be run, because it's supposed to be overwritten later.
 	Temporary,
-	AddU64(Value, Value, Value),
-	SubU64(Value, Value, Value),
+
+	PrimitiveBinaryOperator(Operator, PrimitiveKind, Value, Value, Value),
+
 	MoveU64(Value, Value),
 	JumpRel(i64),
 	JumpRelIfZero(Value, i64),
@@ -48,8 +49,8 @@ impl fmt::Debug for Instruction {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match self {
 			Instruction::Temporary => write!(f, "temp"),
-			Instruction::AddU64(a, b, c) => write!(f, "add {:?}, {:?}, {:?}", a, b, c),
-			Instruction::SubU64(a, b, c) => write!(f, "sub {:?}, {:?}, {:?}", a, b, c),
+			Instruction::PrimitiveBinaryOperator(operator, primitive, a, b, c) => 
+				write!(f, "{:?} {:?} {:?} = {:?}, {:?}", operator, primitive, a, b, c),
 			Instruction::MoveU64(a, b) => write!(f, "mov {:?}, {:?}", a, b),
 			Instruction::JumpRel(a) => write!(f, "jump {:?}", a),
 			Instruction::JumpRelIfZero(value, a) => write!(f, "jump {:?} if {:?} == 0", a, value),
@@ -135,6 +136,10 @@ pub fn compile_expression(
 				push_instr!(instructions, Instruction::MoveU64(Value::Local(location), input));
 				node_values.push(Value::Poison);
 			}
+			NodeKind::LocationMarker => {
+				instruction_locations.insert(node_id, instructions.len());
+				node_values.push(Value::Poison);
+			}
 			NodeKind::Member { child_of, contains, id } => {
 				let mut node_value = None;
 
@@ -178,6 +183,15 @@ pub fn compile_expression(
 
 				let node_value = node_value.unwrap_or_else(|| node_values[contains as usize]);
 				node_values.push(node_value);
+			}
+			NodeKind::Loop { start_location, .. } => {
+				let jump_to_instr_loc = *instruction_locations.get(&start_location).unwrap();
+				let current_instr_loc = instructions.len();
+				push_instr!(instructions, Instruction::JumpRel(
+					jump_to_instr_loc as i64 - current_instr_loc as i64 - 1
+				));
+
+				node_values.push(Value::Poison);
 			}
 			NodeKind::If { condition, .. } => {
 				let condition_instr_loc = *instruction_locations.get(&condition).unwrap();
@@ -283,6 +297,7 @@ pub fn compile_expression(
 			NodeKind::BinaryOperator { operator, left, right } => {
 				let a = node_values[left as usize];
 				let b = node_values[right as usize];
+
 				locals.note_usage(&a);
 				locals.note_usage(&b);
 
@@ -297,11 +312,12 @@ pub fn compile_expression(
 						// the return value of an AstNode is used or not
 						push_instr!(instructions, Instruction::MoveU64(result, b));
 					}
-					Operator::Add => 
-						push_instr!(instructions, Instruction::AddU64(result, a, b)),
-					Operator::Sub => 
-						push_instr!(instructions, Instruction::SubU64(result, a, b)),
-					_ => todo!()
+					// TODO: Allow for more types than U64
+					_ => push_instr!(instructions, 
+						Instruction::PrimitiveBinaryOperator(
+							operator, PrimitiveKind::U64, result, a, b
+						)
+					),
 				}
 
 				locals.note_usage(&result);

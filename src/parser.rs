@@ -153,6 +153,13 @@ pub enum NodeKind {
 		true_body : AstNodeId,
 		false_body: AstNodeId,
 	},
+
+	LocationMarker,
+	Loop {
+		body: AstNodeId,
+		start_location: AstNodeId,
+	},
+
 	DeclareFunctionArgument { variable_name: ScopeMemberId, type_node: AstNodeId },
 	Declaration { variable_name: ScopeMemberId, value: AstNodeId, },
 	Block {
@@ -561,6 +568,19 @@ fn parse_value(
 				)
 			);
 			context.ast.insert_node(Node::new(token, context.scope, NodeKind::Resource(id)))
+		}
+		TokenKind::Keyword("loop") => {
+			context.tokens.next();
+
+			let start_location = context.ast.insert_node(
+				Node::new(token, context.scope, NodeKind::LocationMarker)
+			);
+			let body = parse_expression(context.borrow())?;
+
+			context.ast.insert_node(Node::new(token, context.scope, NodeKind::Loop {
+				body,
+				start_location,
+			}))
 		}
 		TokenKind::Keyword("if") => {
 			context.tokens.next();

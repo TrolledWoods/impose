@@ -146,6 +146,10 @@ impl AstTyper {
 						= Some(self.types[type_node as usize].unwrap());
 					None
 				}
+				NodeKind::LocationMarker => None,
+				NodeKind::Loop { .. } => {
+					Some(types.insert(Type::new(TypeKind::EmptyType)))
+				}
 				NodeKind::If { .. } => {
 					// TODO: Check that condition is a boolean, but booleans do not exist yet.
 
@@ -264,7 +268,10 @@ impl AstTyper {
 					} else {
 						self.label_types.insert(
 							label, 
-							value.map(|value| self.types[value as usize]).flatten()
+							match value {
+								Some(value) => self.types[value as usize],
+								None => Some(types.insert(Type::new(TypeKind::EmptyType))),
+							}
 						);
 					}
 
