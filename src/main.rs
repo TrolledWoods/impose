@@ -57,6 +57,7 @@ mod types;
 mod code_gen;
 mod run;
 mod resource;
+mod stack_frame;
 
 use std::fmt;
 
@@ -107,14 +108,6 @@ fn main() {
 		None, 
 		ScopeMemberKind::Constant(string_function)
 	).unwrap();
-
-	types.insert(Type::new(TypeKind::Struct { members: vec![
-		(format!("x"), 0, TypeHandle { id: types::U64_TYPE_ID, size: 8, align: 8, }),
-		(format!("y"), 8, TypeHandle { id: types::U64_TYPE_ID, size: 8, align: 8, }),
-		(format!("z"), 16, TypeHandle { id: types::U64_TYPE_ID, size: 8, align: 8, }),
-	] }));
-
-
 
 	fn read_int(_resources: &Resources, arguments: &[i64]) -> i64 {
 		assert_eq!(arguments.len(), 0);
