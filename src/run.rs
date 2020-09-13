@@ -48,6 +48,7 @@ pub fn run_instructions_with_locals(
 		instr_pointer += 1;
 
 		match *instruction {
+			Instruction::Temporary => panic!("Cannot run temporary instruction"),
 			Instruction::AddU64(result, a, b) => {
 				let a = get_value(local_data, a);
 				let b = get_value(local_data, b);
@@ -64,6 +65,12 @@ pub fn run_instructions_with_locals(
 			}
 			Instruction::JumpRel(a) => {
 				instr_pointer = (instr_pointer as i64 + a) as usize;
+			}
+			Instruction::JumpRelIfZero(value, a) => {
+				let value = get_value(local_data, value);
+				if value == 0 {
+					instr_pointer = (instr_pointer as i64 + a) as usize;
+				}
 			}
 			Instruction::Call { calling, returns, ref args } => {
 				// TODO: Get rid of recursion(by introducing call stack), 

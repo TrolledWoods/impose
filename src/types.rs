@@ -131,6 +131,10 @@ impl AstTyper {
 			let node = &ast.nodes[self.node_id];
 
 			let type_kind = match node.kind {
+				NodeKind::Temporary => return_error!(node, "Temporaries have to be removed in the parser, they are not to be kept around until type checking(internal compiler error)"),
+				NodeKind::Member { contains, .. } => {
+					self.types[contains as usize]
+				}
 				NodeKind::Number(_) => {
 					Some(types.insert(Type::new(TypeKind::Primitive(PrimitiveKind::U64))))
 				}
@@ -141,6 +145,21 @@ impl AstTyper {
 					scopes.member_mut(variable_name).type_ 
 						= Some(self.types[type_node as usize].unwrap());
 					None
+				}
+				NodeKind::If { condition, body } => {
+					// TODO: Check that condition is a boolean, but booleans do not exist yet.
+
+					// If on its own never returns a type
+					Some(types.insert(Type::new(TypeKind::EmptyType)))
+				}
+				NodeKind::IfWithElse { condition, true_body, false_body } => {
+					// TODO: Check that condition is a boolean
+					
+					if self.types[true_body as usize] != self.types[false_body as usize] {
+						return_error!(node, "if and else blocks have to have the same types");
+					}
+
+					self.types[true_body as usize]
 				}
 				NodeKind::Resource(id) => {
 					let resource = resources.resource(id);

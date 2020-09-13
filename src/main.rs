@@ -1,7 +1,7 @@
 #![feature(assoc_char_funcs)]
 #![feature(drain_filter)]
 
-pub const DEBUG: bool = true;
+pub const DEBUG: bool = false;
 
 mod prelude {
 	pub(crate) use crate::{ 
@@ -9,7 +9,7 @@ mod prelude {
 		resource::{ Resource, ResourceKind, Resources, ResourceId, Dependency },
 		operator::Operator,
 		lexer::{ self, Token, TokenKind }, 
-		parser::{ NodeKind, Ast, Scopes, ScopeMemberId, ScopeMemberKind },
+		parser::{ NodeKind, Ast, AstNodeId, Scopes, ScopeMemberId, ScopeMemberKind },
 		types::{ self, TypeId, Types, AstTyper, PrimitiveKind, TypeKind, Type },
 		id::IdVec,
 	};

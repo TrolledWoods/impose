@@ -1,5 +1,6 @@
 use crate::prelude::*;
 use std::fmt;
+use std::collections::HashMap;
 
 macro_rules! push_instr {
 	($instrs:expr, $instr:expr) => {{
@@ -29,10 +30,13 @@ impl fmt::Debug for Value {
 }
 
 pub enum Instruction {
+	/// Temporary instruction. Cannot be run, because it's supposed to be overwritten later.
+	Temporary,
 	AddU64(Value, Value, Value),
 	SubU64(Value, Value, Value),
 	MoveU64(Value, Value),
 	JumpRel(i64),
+	JumpRelIfZero(Value, i64),
 	Call {
 		calling: Value, 
 		returns: LocalId, 
@@ -43,10 +47,12 @@ pub enum Instruction {
 impl fmt::Debug for Instruction {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match self {
+			Instruction::Temporary => write!(f, "temp"),
 			Instruction::AddU64(a, b, c) => write!(f, "add {:?}, {:?}, {:?}", a, b, c),
 			Instruction::SubU64(a, b, c) => write!(f, "sub {:?}, {:?}, {:?}", a, b, c),
 			Instruction::MoveU64(a, b) => write!(f, "mov {:?}, {:?}", a, b),
 			Instruction::JumpRel(a) => write!(f, "jump {:?}", a),
+			Instruction::JumpRelIfZero(value, a) => write!(f, "jump {:?} if {:?} == 0", a, value),
 			Instruction::Call { calling, returns, ref args } => {
 				write!(f, "call {:?} with ", calling)?;
 				for arg in args.iter() {
@@ -74,10 +80,11 @@ pub fn compile_expression(
 	let mut instructions = Vec::new();
 
 	let mut temporary_labels: Vec<(_, _, Option<Value>)> = Vec::new();
+	let mut instruction_locations: HashMap<AstNodeId, usize> = HashMap::new();
 	
 	let mut function_arg_locations = Vec::new();
 
-	for node in ast.nodes.iter() {
+	for (node_id, node) in ast.nodes.iter().enumerate().map(|(a, b)| (a as u32, b)) {
 		if node.is_meta_data { 
 			node_values.push(Value::Poison);
 			continue; 
@@ -127,6 +134,86 @@ pub fn compile_expression(
 				locals.note_usage(&input);
 				push_instr!(instructions, Instruction::MoveU64(Value::Local(location), input));
 				node_values.push(Value::Poison);
+			}
+			NodeKind::Member { child_of, contains, id } => {
+				let mut node_value = None;
+
+				match (&ast.nodes[child_of as usize].kind, id) {
+					(NodeKind::If { .. }, 0) => {
+						instruction_locations.insert(node_id, instructions.len());
+						// Will be a jump instruction over the body
+						push_instr!(instructions, Instruction::Temporary);
+					}
+					(NodeKind::If { .. }, 1) => {
+						// TODO: Remove this state
+					}
+					(NodeKind::IfWithElse { .. }, 0) => {
+						instruction_locations.insert(node_id, instructions.len());
+						// Jump instruction to skip the true body and jump to the else
+						push_instr!(instructions, Instruction::Temporary);
+					}
+					(NodeKind::IfWithElse { .. }, 1) => {
+						// Instruction to move the value into a new local, so that the else can
+						// also use that same local
+						let local = locals.alloc();
+						push_instr!(
+							instructions, 
+							Instruction::MoveU64(Value::Local(local), node_values[contains as usize])
+						);
+						node_value = Some(Value::Local(local));
+
+						// Instruction to jump to to skip the if body
+						instruction_locations.insert(node_id, instructions.len());
+
+						// Jump instruction to skip else
+						push_instr!(instructions, Instruction::Temporary);
+					}
+					(NodeKind::IfWithElse { .. }, 2) => {
+						// Instruction to jump to to skip the else
+						instruction_locations.insert(node_id, instructions.len());
+					}
+					(node_kind, id) => 
+						panic!("{:?} does not have a member with id {}", node_kind, id),
+				}
+
+				let node_value = node_value.unwrap_or_else(|| node_values[contains as usize]);
+				node_values.push(node_value);
+			}
+			NodeKind::If { condition, .. } => {
+				let condition_instr_loc = *instruction_locations.get(&condition).unwrap();
+				let current_instr_loc   = instructions.len();
+				instructions[condition_instr_loc] = Instruction::JumpRelIfZero(
+					node_values[condition as usize],
+					current_instr_loc as i64 - condition_instr_loc as i64 - 1
+				);
+
+				node_values.push(Value::Poison);
+			}
+			NodeKind::IfWithElse { condition, true_body, false_body } => {
+				let condition_instr_loc = *instruction_locations.get(&condition).unwrap();
+				let true_body_instr_loc = *instruction_locations.get(&true_body).unwrap();
+				let current_instr_loc   = instructions.len();
+
+				instructions[condition_instr_loc] = Instruction::JumpRelIfZero(
+					node_values[condition as usize],
+					// We don't subtract one here, because we wanna move past the Jump that skips
+					// over the else block at true_body_instr_loc
+					true_body_instr_loc as i64 - condition_instr_loc as i64
+				);
+
+				instructions[true_body_instr_loc] = Instruction::JumpRel(
+					// Move past the MoveU64 that moves the false body return value into the
+					// true body return value
+					current_instr_loc as i64 - true_body_instr_loc as i64
+				);
+
+				push_instr!(instructions, Instruction::MoveU64(
+					node_values[true_body as usize], 
+					node_values[false_body as usize],
+				));
+
+				let true_body_value = node_values[true_body as usize];
+				node_values.push(true_body_value);
 			}
 			NodeKind::Skip { label, value } => {
 				let mut instruction_loc = instructions.len();

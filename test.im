@@ -1,3 +1,24 @@
-print(MESSAGE);
+print("Please enter either 0, 1, 2, 3, or 4: ");
+input := input_num();
 
-MESSAGE :: "Hello, World!\n";
+print(if input {
+	if input - 1 {
+		if input - 2 {
+			if input - 3 {
+				if input - 4 {
+					"Invalid input :C\n"
+				} else {
+					"Four!\n"
+				}
+			} else {
+				"Three!\n"
+			}
+		} else {
+			"Two!\n"
+		}
+	} else {
+		"One!\n"
+	}
+} else {
+	"Zero!\n"
+});
