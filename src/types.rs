@@ -227,8 +227,13 @@ impl AstTyper {
 						return_error!(node, "This is not a function pointer, yet a function call was attemted on it");
 					}
 				}
-				NodeKind::BinaryOperator { left: _, right, .. } => {
-					// TODO: Make a better operator system
+				NodeKind::BinaryOperator { left, right, operator } => {
+					if operator != Operator::Assign {
+						if self.types[right as usize] != self.types[left as usize] {
+							return_error!(node, "This operator needs both operands to be of the same type");
+						}
+					}
+
 					self.types[right as usize]
 				},
 				NodeKind::UnaryOperator { operand, .. } => {
