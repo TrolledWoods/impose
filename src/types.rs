@@ -146,13 +146,13 @@ impl AstTyper {
 						= Some(self.types[type_node as usize].unwrap());
 					None
 				}
-				NodeKind::If { condition, body } => {
+				NodeKind::If { .. } => {
 					// TODO: Check that condition is a boolean, but booleans do not exist yet.
 
 					// If on its own never returns a type
 					Some(types.insert(Type::new(TypeKind::EmptyType)))
 				}
-				NodeKind::IfWithElse { condition, true_body, false_body } => {
+				NodeKind::IfWithElse { true_body, false_body, .. } => {
 					// TODO: Check that condition is a boolean
 					
 					if self.types[true_body as usize] != self.types[false_body as usize] {

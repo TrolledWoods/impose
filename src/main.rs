@@ -172,7 +172,7 @@ fn main() {
 		}
 	};
 
-	let resource_id = resources.insert(Resource::new(
+	resources.insert(Resource::new(
 		ast.nodes[0].loc.clone(),
 		ResourceKind::Value {
 			code: ast,
@@ -255,4 +255,3 @@ type Result<T> = std::result::Result<T, Error>;
 pub trait Location {
 	fn get_location(&self) -> CodeLoc;
 }
-

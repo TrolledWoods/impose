@@ -798,6 +798,7 @@ impl Scopes {
 		}
 	}
 
+	#[allow(unused)]
 	pub fn debug(&self, scope_id: ScopeId, indent: usize) {
 		println!("{}Scope {:?}:", "\t".repeat(indent), scope_id);
 		for member in self.scopes.get(scope_id).members.iter() {
@@ -959,7 +960,7 @@ impl Scopes {
 		}
 
 		let declared_member_id = match declared_member_id {
-			Some((declared_member_scope_id, declared_member_id)) => {
+			Some((_, declared_member_id)) => {
 				(dependants_on_variable, declared_member_id)
 			}
 			None => {
