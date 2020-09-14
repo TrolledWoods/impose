@@ -1,37 +1,136 @@
-use crate::types::{ TypeHandle };
+use crate::id::IdVec;
 
-#[derive(PartialEq, Eq)]
-pub struct StackMember(TypeHandle, usize);
+pub type ConstBuffer = smallvec::SmallVec<[u8; 8]>;
 
-pub struct StackFrameAllocator {
-	stack_pointer: usize,
+/// A Value is either a LocalHandle, or a Constant.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Value {
+	Local(LocalHandle),
+	Constant(ConstBuffer),
 }
 
-impl StackFrameAllocator {
+impl From<usize> for Value {
+	fn from(other: usize) -> Self {
+		Self::Constant(ConstBuffer::from_slice(&other.to_le_bytes()))
+	}
+}
+
+impl From<u64> for Value {
+	fn from(other: u64) -> Self {
+		Self::Constant(ConstBuffer::from_slice(&other.to_le_bytes()))
+	}
+}
+
+impl From<i64> for Value {
+	fn from(other: i64) -> Self {
+		Self::Constant(ConstBuffer::from_slice(&other.to_le_bytes()))
+	}
+}
+
+impl From<u32> for Value {
+	fn from(other: u32) -> Self {
+		Self::Constant(ConstBuffer::from_slice(&other.to_le_bytes()))
+	}
+}
+
+impl From<i32> for Value {
+	fn from(other: i32) -> Self {
+		Self::Constant(ConstBuffer::from_slice(&other.to_le_bytes()))
+	}
+}
+
+/// A handle to any subsection of a local.
+///
+/// It cannot however contain a constant value.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LocalHandle {
+	offset: usize,
+	// TODO: Check if align is really necessary to have as a member here.
+	align: usize,
+	pub size: usize,
+	id: LocalId,
+}
+
+create_id!(LocalId);
+
+struct Local {
+	size: usize,
+	align: usize,
+}
+
+pub struct Locals {
+	locals: IdVec<Local, LocalId>,
+}
+
+impl Locals {
 	pub fn new() -> Self {
 		Self {
-			stack_pointer: 0,
+			locals: IdVec::new(),
 		}
 	}
 
-	pub fn allocate(&mut self, type_: TypeHandle) -> StackMember {
-		// Align the stack pointer
-		while self.stack_pointer & (type_.align - 1) != 0 {
-			self.stack_pointer += 1;
+	/// Allocates the space of a type as a local.
+	pub fn allocate(&mut self, type_: crate::types::TypeHandle) -> LocalHandle {
+		let id = self.locals.push(Local {
+			size:  type_.size,
+			align: type_.align,
+		});
+
+		LocalHandle {
+			id,
+			offset: 0,
+			size:  type_.size,
+			align: type_.align,
 		}
-
-		let position = self.stack_pointer;
-		self.stack_pointer += type_.size;
-
-		StackMember(type_, position)
 	}
 
-	pub fn create_instance(&self) -> StackFrameInstance {
+	pub fn id_as_handle(&self, id: LocalId) -> LocalHandle {
+		let local = self.locals.get(id);
+
+		LocalHandle {
+			size: local.size,
+			align: local.align,
+			offset: 0,
+			id,
+		}
+	}
+
+	pub fn layout(&self) -> StackFrameLayout {
+		let mut total_size = 0;
+		let mut local_positions = Vec::with_capacity(self.locals.len());
+
+		for local in self.locals.iter() {
+			total_size = crate::align::to_aligned(local.align, total_size);
+
+			local_positions.push(total_size);
+			total_size += local.size;
+		}
+
+		StackFrameLayout {
+			total_size,
+			local_positions,
+		}
+	}
+}
+
+/// A stack frame layout maps from local ids to locations in the stack frame.
+pub struct StackFrameLayout {
+	total_size: usize,
+	local_positions: Vec<usize>,
+}
+
+impl StackFrameLayout {
+	fn local_pos_and_size(&self, local: LocalHandle) -> (usize, usize) {
+		(
+			self.local_positions[local.id.into_index()] + local.offset,
+			local.size,
+		)
+	}
+
+	pub fn create_instance(self: &std::sync::Arc<Self>) -> StackFrameInstance {
 		StackFrameInstance {
-			buffer: vec![
-				ForceAlignment([0xff; STACK_FRAME_ALIGNMENT]);
-				1 + self.stack_pointer / STACK_FRAME_ALIGNMENT
-			].into_boxed_slice()
+			buffer: vec![ForceAlignment([0; STACK_FRAME_ALIGNMENT]); self.total_size],
+			layout: self.clone(),
 		}
 	}
 }
@@ -46,55 +145,88 @@ pub struct StackFrameInstance {
 	/// The buffer for the data inside. The type here is kindof weird, but the reason for it is
 	/// so that we force it to be aligned to the right number of bytes, so that nothing in the
 	/// stack itself becomes unaligned.
-	buffer: Box<[ForceAlignment]>,
+	buffer: Vec<ForceAlignment>,
+
+	layout: std::sync::Arc<StackFrameLayout>,
 }
 
 impl StackFrameInstance {
-	/// Returns a primitive stack member(you shouldn't try to get anything else with this, as
-	/// the memory layout will get so complicated if you do).
-	///
-	/// # SAFETY
-	/// Make sure that member location is aligned properly to its alignment, 
-	/// and that it isn't out of bounds.
-	///
-	/// The alignment of T should also not be greater than STACK_FRAME_ALIGNMENT. If it has to be,
-	/// then change STACK_FRAME_ALIGNMENT to something bigger.
-	pub unsafe fn get_primitive_member<T: Copy>(&self, member: StackMember) -> T {
-		debug_assert!(std::mem::align_of::<T>() <= STACK_FRAME_ALIGNMENT, "Too big alignment");
-		debug_assert_eq!(member.1 % std::mem::align_of::<T>(), 0, "Bad alignment");
+	pub fn get_u32(&self, value: &Value) -> u32 {
+		match value {
+			Value::Local(handle) => {
+				let (pos, size) = self.layout.local_pos_and_size(*handle);
+				debug_assert_eq!(size, 4);
+				debug_assert!(crate::align::is_aligned(4, pos));
 
-		// SAFETY: The member should be aligned properly according to T's alignment
-		// (and its alignment should be smaller than the STACK_FRAME_ALIGNMENT). 
-		// If it is, then since buffer_bytes returns a slice aligned to STACK_FRAME_ALIGNMENT,
-		// everything should be fine.
-		// Also, the members location shouldn't be out of bounds
-		unsafe {
-			*(self.buffer_bytes()[member.1] as *const u8 as *const T)
+				// SAFETY: The position should be aligned to 4 bytes.
+				unsafe {
+					*(&self.buffer_bytes()[pos] as *const u8 as *const u32)
+				}
+			}
+			Value::Constant(vector) => {
+				if let &[a, b, c, d] = vector.as_slice() {
+					u32::from_le_bytes([a, b, c, d])
+				} else {
+					panic!("Cannot call get_u64 with non 64 bit value");
+				}
+			}
 		}
 	}
 
-	/// Returns a mutable reference to a primitive stack member
-	/// (you shouldn't try to get anything else with this, as the memory layout will get so 
-	/// complicated if you do).
-	///
-	/// # SAFETY
-	/// Make sure that member location is aligned properly to its alignment, 
-	/// and that it isn't out of bounds.
-	///
-	/// The alignment of T should also not be greater than STACK_FRAME_ALIGNMENT. If it has to be,
-	/// then change STACK_FRAME_ALIGNMENT to something bigger.
-	pub unsafe fn get_primitive_member_mut<T: Copy>(&mut self, member: StackMember) -> &mut T {
-		debug_assert!(std::mem::align_of::<T>() <= STACK_FRAME_ALIGNMENT, "Too big alignment");
-		debug_assert_eq!(member.1 % std::mem::align_of::<T>(), 0, "Bad alignment");
+	/// Returns a u64. Panics if the value is invalid.
+	pub fn get_u64(&self, value: &Value) -> u64 {
+		match value {
+			Value::Local(handle) => {
+				let (pos, size) = self.layout.local_pos_and_size(*handle);
+				debug_assert_eq!(size, 8);
+				debug_assert!(crate::align::is_aligned(8, pos));
 
-		// SAFETY: The member should be aligned properly according to T's alignment
-		// (and its alignment should be smaller than the STACK_FRAME_ALIGNMENT). 
-		// If it is, then since buffer_bytes returns a slice aligned to STACK_FRAME_ALIGNMENT,
-		// everything should be fine.
-		// Also, the members location shouldn't be out of bounds
-		unsafe {
-			&mut *(self.buffer_bytes_mut()[member.1] as *mut u8 as *mut T)
+				// SAFETY: The position should be aligned to 8 bytes.
+				unsafe {
+					*(&self.buffer_bytes()[pos] as *const u8 as *const u64)
+				}
+			}
+			Value::Constant(vector) => {
+				if let &[a, b, c, d, e, f, g, h] = vector.as_slice() {
+					u64::from_le_bytes([a, b, c, d, e, f, g, h])
+				} else {
+					panic!("Cannot call get_u64 with non 64 bit value");
+				}
+			}
 		}
+	}
+
+	pub fn clone_value(&self, value: &Value) -> ConstBuffer {
+		match value {
+			Value::Local(local) => {
+				let (pos, size) = self.layout.local_pos_and_size(*local);
+				ConstBuffer::from_slice(&self.buffer_bytes()[pos..pos + size])
+			}
+			Value::Constant(vector) => vector.clone(),
+		}
+	}
+
+	pub fn insert_value_into_local(&mut self, local: LocalHandle, value: &Value) {
+		match value {
+			Value::Local(from_local) => {
+				let (to_pos, to_size) = self.layout.local_pos_and_size(local);
+				let (from_pos, from_size) = self.layout.local_pos_and_size(*from_local);
+				assert_eq!(from_size, to_size);
+
+				self.buffer_bytes_mut().copy_within(from_pos..from_pos + from_size, to_pos);
+			}
+			Value::Constant(ref values) => 
+				self.insert_into_local(local, values),
+		}
+	}
+
+	/// Inserts a buffer of data into a local.
+	///
+	/// # Panics
+	/// If the data is not the same size as the local
+	pub fn insert_into_local(&mut self, local: LocalHandle, data: &[u8]) {
+		let (pos, size) = self.layout.local_pos_and_size(local);
+		self.buffer_bytes_mut()[pos..pos + size].copy_from_slice(data);
 	}
 
 	fn buffer_bytes(&self) -> &[u8] {

@@ -1,0 +1,16 @@
+counter := 0;
+
+{:exit_loop
+	loop {
+		if counter - 0x50000 {
+			2
+		} else {
+			skip :exit_loop;
+			5
+		};
+
+		counter = counter + 1;
+	};
+};
+
+counter

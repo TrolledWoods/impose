@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use crate::stack_frame::{ Locals, Value, LocalHandle, StackFrameLayout };
 use std::fmt;
 use std::collections::HashMap;
 
@@ -9,38 +10,25 @@ macro_rules! push_instr {
 	}}
 }
 
-/// A 'Local' is the equivalent of a register, but there is an arbitrary amount
-/// of locals possible.
-/// All locals are u64(for now).
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Value {
-	Local(LocalId),
-	Constant(i64),
-	Poison,
-}
-
-impl fmt::Debug for Value {
-	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		match self {
-			Value::Local(local) => write!(f, "({})", local),
-			Value::Constant(value) => write!(f, "{}", value),
-			Value::Poison => write!(f, "Poison"),
-		}
-	}
-}
-
 pub enum Instruction {
 	/// Temporary instruction. Cannot be run, because it's supposed to be overwritten later.
 	Temporary,
 
-	PrimitiveBinaryOperator(Operator, PrimitiveKind, Value, Value, Value),
+	/// Wrapping addition. The LocalHandle, Value and Value have to have the same size.
+	// TODO: We can make this take up less space by having the same size 
+	// for everything, potentially?
+	WrappingAdd(LocalHandle, Value, Value),
+	WrappingSub(LocalHandle, Value, Value),
+	WrappingMul(LocalHandle, Value, Value),
+	WrappingDiv(LocalHandle, Value, Value),
 
-	MoveU64(Value, Value),
+	Move(LocalHandle, Value),
+
 	JumpRel(i64),
 	JumpRelIfZero(Value, i64),
 	Call {
 		calling: Value, 
-		returns: LocalId, 
+		returns: LocalHandle, 
 		args: Vec<Value>,
 	},
 }
@@ -49,9 +37,15 @@ impl fmt::Debug for Instruction {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match self {
 			Instruction::Temporary => write!(f, "temp"),
-			Instruction::PrimitiveBinaryOperator(operator, primitive, a, b, c) => 
-				write!(f, "{:?} {:?} {:?} = {:?}, {:?}", operator, primitive, a, b, c),
-			Instruction::MoveU64(a, b) => write!(f, "mov {:?}, {:?}", a, b),
+			Instruction::WrappingAdd(result, a, b) => 
+				write!(f, "{:?} = {:?} + {:?}", result, a, b),
+			Instruction::WrappingSub(result, a, b) => 
+				write!(f, "{:?} = {:?} - {:?}", result, a, b),
+			Instruction::WrappingMul(result, a, b) => 
+				write!(f, "{:?} = {:?} * {:?}", result, a, b),
+			Instruction::WrappingDiv(result, a, b) => 
+				write!(f, "{:?} = {:?} / {:?}", result, a, b),
+			Instruction::Move(a, b) => write!(f, "mov {:?}, {:?}", a, b),
 			Instruction::JumpRel(a) => write!(f, "jump {:?}", a),
 			Instruction::JumpRelIfZero(value, a) => write!(f, "jump {:?} if {:?} == 0", a, value),
 			Instruction::Call { calling, returns, ref args } => {
@@ -63,11 +57,11 @@ impl fmt::Debug for Instruction {
 
 				Ok(())
 			}
+			// TODO: Make this proper
+			_ => write!(f, "some arithmetic instrution"),
 		}
 	}
 }
-
-create_id!(LocalId);
 
 // TODO: Add a struct with data about compiling an expression, so that we can keep going
 // at the same point that we stopped if there is an undefined dependency.
@@ -75,19 +69,20 @@ pub fn compile_expression(
 	ast: &Ast, 
 	scopes: &mut Scopes,
 	resources: &Resources,
-) -> std::result::Result<(Locals, Vec<Instruction>, Value), Dependency> {
+	types: &Types,
+) -> std::result::Result<(StackFrameLayout, Vec<Instruction>, Option<Value>), Dependency> {
 	let mut locals = Locals::new();
-	let mut node_values: Vec<Value> = Vec::with_capacity(ast.nodes.len());
+	let mut node_values: Vec<Option<Value>> = Vec::with_capacity(ast.nodes.len());
 	let mut instructions = Vec::new();
 
-	let mut temporary_labels: Vec<(_, _, Option<Value>)> = Vec::new();
+	let mut temporary_labels: Vec<(_, _, Option<LocalHandle>)> = Vec::new();
 	let mut instruction_locations: HashMap<AstNodeId, usize> = HashMap::new();
 	
 	let mut function_arg_locations = Vec::new();
 
 	for (node_id, node) in ast.nodes.iter().enumerate().map(|(a, b)| (a as u32, b)) {
 		if node.is_meta_data { 
-			node_values.push(Value::Poison);
+			node_values.push(None);
 			continue; 
 		}
 
@@ -99,46 +94,43 @@ pub fn compile_expression(
 					ScopeMemberKind::LocalVariable | ScopeMemberKind::FunctionArgument => {
 						let member = match scopes.member(member_id).storage_loc {
 							Some(value) => value,
-							None => panic!("Invalid thing, \nLocals: {:?}, \nScopes: {:?}, \nInstructions: {:?}", locals, scopes, instructions),
+							None => panic!("Invalid thing, \nScopes: {:?}, \nInstructions: {:?}", scopes, instructions),
 						};
 						
-						node_values.push(Value::Local(member));
+						node_values.push(Some(Value::Local(member)));
 					}
 					ScopeMemberKind::Constant(id) => {
-						node_values.push(get_resource_constant(resources, id)?);
+						node_values.push(Some(get_resource_constant(resources, id)?));
 					}
 					ScopeMemberKind::Label => panic!("Cannot do labels"),
 				}
 			}
 			NodeKind::DeclareFunctionArgument { variable_name, .. } => {
+				let scope_member = scopes.member_mut(variable_name);
+
 				// Declaring a function argument is like moving the responsibility of setting
 				// the locals to the caller. This should be done by the 'call' instruction,
 				// which will set all the affected locals to the appropriate values.
-				let location = locals.alloc_custom(Local {
-					n_uses: 0,
-					scope_member: Some(variable_name),
-				});
+				let location = locals.allocate(types.handle(scope_member.type_.unwrap()));
 
-				scopes.member_mut(variable_name).storage_loc = Some(location);
-				function_arg_locations.push(Value::Local(location));
-				node_values.push(Value::Poison);
+				scope_member.storage_loc = Some(location);
+
+				function_arg_locations.push(location);
+				node_values.push(None);
 			}
 			NodeKind::Declaration { variable_name, value } => {
-				let location = locals.alloc_custom(Local {
-					n_uses: 0,
-					scope_member: Some(variable_name),
-				});
+				let location = locals.allocate(
+					types.handle(ast.nodes[value as usize].type_.unwrap())
+				);
 				scopes.member_mut(variable_name).storage_loc = Some(location);
 				
-				let input = node_values[value as usize];
-				locals.note_usage(&Value::Local(location));
-				locals.note_usage(&input);
-				push_instr!(instructions, Instruction::MoveU64(Value::Local(location), input));
-				node_values.push(Value::Poison);
+				let input = node_values[value as usize].clone().unwrap();
+				push_instr!(instructions, Instruction::Move(location, input));
+				node_values.push(None);
 			}
 			NodeKind::LocationMarker => {
 				instruction_locations.insert(node_id, instructions.len());
-				node_values.push(Value::Poison);
+				node_values.push(None);
 			}
 			NodeKind::Member { child_of, contains, id } => {
 				let mut node_value = None;
@@ -160,10 +152,12 @@ pub fn compile_expression(
 					(NodeKind::IfWithElse { .. }, 1) => {
 						// Instruction to move the value into a new local, so that the else can
 						// also use that same local
-						let local = locals.alloc();
+						let local = locals.allocate(
+							types.handle(ast.nodes[contains as usize].type_.unwrap())
+						);
 						push_instr!(
 							instructions, 
-							Instruction::MoveU64(Value::Local(local), node_values[contains as usize])
+							Instruction::Move(local, node_values[contains as usize].clone().unwrap())
 						);
 						node_value = Some(Value::Local(local));
 
@@ -181,8 +175,10 @@ pub fn compile_expression(
 						panic!("{:?} does not have a member with id {}", node_kind, id),
 				}
 
-				let node_value = node_value.unwrap_or_else(|| node_values[contains as usize]);
-				node_values.push(node_value);
+				match node_value {
+					Some(node_value) => node_values.push(Some(node_value)),
+					None => node_values.push(node_values[contains as usize].clone()),
+				}
 			}
 			NodeKind::Loop { start_location, .. } => {
 				let jump_to_instr_loc = *instruction_locations.get(&start_location).unwrap();
@@ -191,17 +187,17 @@ pub fn compile_expression(
 					jump_to_instr_loc as i64 - current_instr_loc as i64 - 1
 				));
 
-				node_values.push(Value::Poison);
+				node_values.push(None);
 			}
 			NodeKind::If { condition, .. } => {
 				let condition_instr_loc = *instruction_locations.get(&condition).unwrap();
 				let current_instr_loc   = instructions.len();
 				instructions[condition_instr_loc] = Instruction::JumpRelIfZero(
-					node_values[condition as usize],
+					node_values[condition as usize].clone().unwrap(),
 					current_instr_loc as i64 - condition_instr_loc as i64 - 1
 				);
 
-				node_values.push(Value::Poison);
+				node_values.push(None);
 			}
 			NodeKind::IfWithElse { condition, true_body, false_body } => {
 				let condition_instr_loc = *instruction_locations.get(&condition).unwrap();
@@ -209,7 +205,7 @@ pub fn compile_expression(
 				let current_instr_loc   = instructions.len();
 
 				instructions[condition_instr_loc] = Instruction::JumpRelIfZero(
-					node_values[condition as usize],
+					node_values[condition as usize].clone().unwrap(),
 					// We don't subtract one here, because we wanna move past the Jump that skips
 					// over the else block at true_body_instr_loc
 					true_body_instr_loc as i64 - condition_instr_loc as i64
@@ -221,12 +217,16 @@ pub fn compile_expression(
 					current_instr_loc as i64 - true_body_instr_loc as i64
 				);
 
-				push_instr!(instructions, Instruction::MoveU64(
-					node_values[true_body as usize], 
-					node_values[false_body as usize],
-				));
+				if let Value::Local(local) = node_values[true_body as usize].clone().unwrap() {
+					push_instr!(instructions, Instruction::Move(
+						local, 
+						node_values[false_body as usize].clone().unwrap(),
+					));
+				} else {
+					panic!("This can't be a constant bruh");
+				}
 
-				let true_body_value = node_values[true_body as usize];
+				let true_body_value = node_values[true_body as usize].clone();
 				node_values.push(true_body_value);
 			}
 			NodeKind::Skip { label, value } => {
@@ -243,21 +243,21 @@ pub fn compile_expression(
 					}
 
 					if return_value_local.is_none() {
-						return_value_local = Some(Value::Local(locals.alloc()));
+						return_value_local = Some(locals.allocate(
+							types.handle(ast.nodes[value as usize].type_.unwrap())
+						));
 					}
 
-					let input = node_values[value as usize];
-					locals.note_usage(&input);
-					locals.note_usage(return_value_local.as_ref().unwrap());
+					let input = node_values[value as usize].clone().unwrap();
 
 					instruction_loc += 1;
-					push_instr!(instructions, Instruction::MoveU64(return_value_local.unwrap(), input));
+					push_instr!(instructions, Instruction::Move(return_value_local.unwrap(), input));
 				}
 
 				push_instr!(instructions, Instruction::JumpRel(-42069));
 
 				temporary_labels.push((label, instruction_loc, return_value_local));
-				node_values.push(Value::Poison);
+				node_values.push(None);
 			}
 			NodeKind::Block { ref contents, label } => {
 				let mut return_value_loc = None;
@@ -278,11 +278,11 @@ pub fn compile_expression(
 					}
 				}
 
-				let result = node_values[*contents.last().unwrap() as usize];
+				let result = node_values[*contents.last().unwrap() as usize].clone();
 				match return_value_loc {
 					Some(location) => {
-						push_instr!(instructions, Instruction::MoveU64(location, result));
-						node_values.push(location);
+						push_instr!(instructions, Instruction::Move(location, result.unwrap()));
+						node_values.push(Some(Value::Local(location)));
 					}
 					None => {
 						node_values.push(result);
@@ -292,62 +292,75 @@ pub fn compile_expression(
 			NodeKind::Number(num) => {
 				// TODO: Check that the number fits, although I guess this should
 				// be down further up in the pipeline
-				node_values.push(Value::Constant(num as i64));
+				node_values.push(Some((num as u64).into()));
 			}
 			NodeKind::BinaryOperator { operator, left, right } => {
-				let a = node_values[left as usize];
-				let b = node_values[right as usize];
+				let a = node_values[left as usize] .clone().unwrap();
+				let b = node_values[right as usize].clone().unwrap();
 
-				locals.note_usage(&a);
-				locals.note_usage(&b);
-
-				let result = Value::Local(locals.alloc());
+				let result = locals.allocate(types.handle(ast.nodes[right as usize].type_.unwrap()));
 
 				match operator {
 					Operator::Assign => {
-						push_instr!(instructions, Instruction::MoveU64(a, b));
+						if let Value::Local(local) = a {
+							push_instr!(instructions, Instruction::Move(local, b.clone()));
+						} else {
+							todo!("Left hand side of assignment cannot be constant atm");
+						}
 
-						locals.note_usage(&b);
 						// TODO: Check if the result is used eventually, we will have a flag for if
 						// the return value of an AstNode is used or not
-						push_instr!(instructions, Instruction::MoveU64(result, b));
+						push_instr!(instructions, Instruction::Move(result, b));
 					}
-					// TODO: Allow for more types than U64
-					_ => push_instr!(instructions, 
-						Instruction::PrimitiveBinaryOperator(
-							operator, PrimitiveKind::U64, result, a, b
-						)
-					),
+					Operator::Add =>
+						push_instr!(instructions, Instruction::WrappingAdd(result, a, b)),
+					Operator::Sub =>
+						push_instr!(instructions, Instruction::WrappingSub(result, a, b)),
+					Operator::MulOrDeref =>
+						push_instr!(instructions, Instruction::WrappingMul(result, a, b)),
+					Operator::Div =>
+						push_instr!(instructions, Instruction::WrappingDiv(result, a, b)),
+					_ => todo!("Unhandled operator"),
 				}
 
-				locals.note_usage(&result);
-				node_values.push(result);
+				node_values.push(Some(Value::Local(result)));
 				
 				// I know what I'm doing, we are not copying these without reason!
 				// locals.free_value(node_values[left as usize].clone());
 				// locals.free_value(node_values[right as usize].clone());
 			}
 			NodeKind::EmptyLiteral => {
-				node_values.push(Value::Constant(0));
+				node_values.push(None);
 			}
 			NodeKind::FunctionCall { function_pointer, ref arg_list } => {
-				let returns = locals.alloc();
+				// Get the type of the function
+				let (_arg_types, return_type) = match types.get(
+					ast.nodes[function_pointer as usize].type_.unwrap()
+				).kind {
+					TypeKind::FunctionPointer { ref args, returns } => (args, returns),
+					_ => unreachable!("´The function pointer wasn't of type function pointer!?"),
+				};
 
-				let args = arg_list.iter().map(|arg| node_values[*arg as usize]).collect();
-				let calling = node_values[function_pointer as usize];
+				// TODO: Use the argument types?
+
+				let returns = locals.allocate(types.handle(return_type));
+
+				// TODO: If I have zst:s, this won't handle them properly.
+				let args = arg_list.iter().map(|arg| node_values[*arg as usize].clone().unwrap()).collect();
+				let calling = node_values[function_pointer as usize].clone().unwrap();
 
 				push_instr!(instructions, Instruction::Call { calling, returns, args });
 
-				node_values.push(Value::Local(returns));
+				node_values.push(Some(Value::Local(returns)));
 			}
 			NodeKind::Resource(id) => {
-				node_values.push(get_resource_constant(resources, id)?)
+				node_values.push(Some(get_resource_constant(resources, id)?))
 			}
 			_ => todo!()
 		}
 	}
 
-	Ok((locals, instructions, node_values.last().copied().unwrap_or(Value::Poison)))
+	Ok((locals.layout(), instructions, node_values.last().unwrap().clone()))
 }
 
 fn get_resource_constant(resources: &Resources, id: ResourceId) 
@@ -358,70 +371,15 @@ fn get_resource_constant(resources: &Resources, id: ResourceId)
 		ResourceKind::ExternalFunction { .. } |
 		ResourceKind::Function { .. } | 
 		ResourceKind::String(_) =>
-			Ok(Value::Constant(id.into_index() as i64)),
+			Ok(id.into_index().into()),
 		ResourceKind::CurrentlyUsed => 
 			todo!("Deal with CurrentlyUsed resources in code_gen"),
-		ResourceKind::Value { value, .. } => {
+		ResourceKind::Value { ref value, .. } => {
 			if let Some(value) = value {
-				Ok(Value::Constant(value))
+				Ok(Value::Constant(value.clone()))
 			} else {
 				Err(Dependency::Value(id))
 			}
-		}
-	}
-}
-
-// TODO!!!
-// We're just going to assume all return types are i64:s for now, when typing is done 
-// this will not be the case!
-
-#[derive(Debug, Clone)]
-pub struct Local {
-	// type_: PrimitiveType,
-	n_uses: u32,
-	pub scope_member: Option<ScopeMemberId>,
-}
-
-///
-/// Allocates locals,
-/// keeps track of which ones are used and unused,
-/// and keeps track of how many times each one has been used.
-/// The ones that have been used a lot are preferred, basically
-/// we want a few to be used a lot and most to be used just a little bit,
-/// because if we think about what happens on a real computer, only some
-/// of these are going to be in actual registers, so we want the ones
-/// that are used a lot to be in registers, and those are going to be used
-/// a lot.
-///
-#[derive(Debug)]
-pub struct Locals {
-	pub locals: IdVec<Local, LocalId>,
-}
-
-impl Locals {
-	fn new() -> Self {
-		Locals { locals: IdVec::new() }
-	}
-
-	fn alloc(&mut self) -> LocalId {
-		self.locals.push(Local {
-			n_uses: 0,
-			scope_member: None,
-		})
-	}
-
-	fn alloc_custom(&mut self, local: Local) -> LocalId {
-		assert_eq!(local.n_uses, 0);
-		self.locals.push(local)
-	}
-
-	fn note_usage(&mut self, value: &Value) {
-		match *value {
-			Value::Local(local) => {
-				self.locals.get_mut(local).n_uses += 1;
-			}
-			Value::Constant(_) => (),
-			Value::Poison => (),
 		}
 	}
 }

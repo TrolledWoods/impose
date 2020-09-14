@@ -74,6 +74,7 @@ pub struct Node {
 	// later.
 	pub scope: ScopeId,
 	pub kind: NodeKind,
+	pub type_: Option<TypeId>,
 	pub is_lvalue: bool,
 	/// Meta data is for typing and other things to use, and shouldn't be included
 	/// in the actual code output.
@@ -88,6 +89,7 @@ impl Node {
 			scope, 
 			is_lvalue: false, 
 			is_meta_data: false,
+			type_: None,
 		}
 	}
 
@@ -98,6 +100,7 @@ impl Node {
 			scope, 
 			is_lvalue: false, 
 			is_meta_data: true,
+			type_: None,
 		}
 	}
 }
@@ -1029,5 +1032,5 @@ pub struct ScopeMember {
 	pub kind: ScopeMemberKind,
 	pub declaration_location: Option<CodeLoc>,
 	pub type_: Option<TypeId>,
-	pub storage_loc: Option<crate::code_gen::LocalId>,
+	pub storage_loc: Option<crate::stack_frame::LocalHandle>,
 }

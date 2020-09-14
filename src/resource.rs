@@ -52,7 +52,7 @@ impl Resources {
 
 					if !resource_code.is_typed {
 						if resource_typer.is_none() {
-							*resource_typer = Some(AstTyper::new(resource_code));
+							*resource_typer = Some(AstTyper::new());
 						}
 
 						if let Some(mut typer) = resource_typer.take() {
@@ -66,7 +66,7 @@ impl Resources {
 								None => {}
 							}
 
-							*resource_type = typer.types.last().unwrap().map(|return_type| {
+							*resource_type = resource_code.nodes.last().unwrap().type_.map(|return_type| {
 								types.insert(Type::new(TypeKind::FunctionPointer {
 									args: arg_types,
 									returns: return_type,
@@ -78,7 +78,7 @@ impl Resources {
 					}
 
 					let (locals, instructions, return_value) 
-						= match code_gen::compile_expression(resource_code, scopes, self) 
+						= match code_gen::compile_expression(resource_code, scopes, self, types) 
 					{
 						Ok(value) => value,
 						Err(dependency) => {
@@ -97,17 +97,14 @@ impl Resources {
 						print!("Type: ");
 						types.print(resource_type.unwrap());
 						println!();
-						println!("Locals: ");
-						for (i, local) in locals.locals.iter().enumerate() {
-							println!("{}: {:?}", i, local);
-						}
 						println!("Instructions: ");
 						for instruction in &instructions {
 							println!("{:?}", instruction);
 						}
 					}
 
-					*resource_instructions = Some((locals, instructions, return_value));
+					*resource_instructions = 
+						Some((std::sync::Arc::new(locals), instructions, return_value));
 				}
 				ResourceKind::Value {
 					code: ref mut resource_code,
@@ -117,7 +114,7 @@ impl Resources {
 				} => {
 					if !resource_code.is_typed {
 						if resource_typer.is_none() {
-							*resource_typer = Some(AstTyper::new(resource_code));
+							*resource_typer = Some(AstTyper::new());
 						}
 
 						if let Some(mut typer) = resource_typer.take() {
@@ -131,13 +128,13 @@ impl Resources {
 								None => {}
 							}
 
-							*resource_type = *typer.types.last().unwrap();
+							*resource_type = resource_code.nodes.last().unwrap().type_;
 							self.resolve_dependencies(&mut member.waiting_on_type);
 						} 
 					}
 
-					let (locals, instructions, return_value) 
-						= match code_gen::compile_expression(resource_code, scopes, self) 
+					let (stack_layout, instructions, return_value) 
+						= match code_gen::compile_expression(resource_code, scopes, self, types) 
 					{
 						Ok(value) => value,
 						Err(dependency) => {
@@ -147,12 +144,13 @@ impl Resources {
 						}
 					};
 
+					// TODO: Go through the type, and change any pointers into resource pointers.
 					*resource_value = Some(crate::run::run_instructions(
-						&locals,
 						&instructions,
-						return_value,
+						return_value.as_ref(),
+						&mut std::sync::Arc::new(stack_layout).create_instance(),
 						self,
-					) as i64);
+					));
 
 					if let Some(mut waiting_on_value) = member.waiting_on_value.take() {
 						self.resolve_dependencies(&mut waiting_on_value);
@@ -164,17 +162,12 @@ impl Resources {
 							print!("Type: ");
 							types.print(*resource_type);
 						}
-						println!();
-						println!("Locals: ");
-						for (i, local) in locals.locals.iter().enumerate() {
-							println!("{}: {:?}", i, local);
-						}
 						println!("Instructions: ");
 						for instruction in &instructions {
 							println!("{:?}", instruction);
 						}
 
-						println!("Value: {:?}", resource_value.unwrap());
+						println!("Value: {:?}", resource_value.as_ref().unwrap());
 					}
 				}
 				ResourceKind::CurrentlyUsed => panic!("CurrentlyUsed stuff, fix this later"),
@@ -323,7 +316,7 @@ pub enum ResourceKind {
 	CurrentlyUsed,
 	ExternalFunction {
 		// TODO: Make a more advanced interface to call external functions
-		func: Box<dyn Fn(&Resources, &[i64]) -> i64>,
+		func: Box<dyn Fn(&Resources, &[u8], &mut [u8])>,
 	},
 	Function {
 		// argument_type_defs: Vec<Ast>,
@@ -331,14 +324,18 @@ pub enum ResourceKind {
 		arguments: Vec<ScopeMemberId>,
 		code: Ast,
 		typer: Option<AstTyper>,
-		instructions: Option<(code_gen::Locals, Vec<code_gen::Instruction>, code_gen::Value)>,
+		instructions: Option<(
+			std::sync::Arc<crate::stack_frame::StackFrameLayout>,
+			Vec<code_gen::Instruction>, 
+			Option<crate::stack_frame::Value>,
+		)>,
 	},
 	String(String),
 	Value {
 		code: Ast,
 		typer: Option<AstTyper>,
 		depending_on_type: Vec<ResourceId>,
-		value: Option<i64>,
+		value: Option<crate::stack_frame::ConstBuffer>,
 		depending_on_value: Vec<ResourceId>,
 	},
 }

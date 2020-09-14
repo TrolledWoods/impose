@@ -19,14 +19,9 @@ impl Types {
 		Self { types }
 	}
 
-	pub fn get_handle(&self, id: TypeId) -> TypeHandle {
+	pub fn handle(&self, id: TypeId) -> TypeHandle {
 		let type_ = self.types.get(id);
 		TypeHandle { id, size: type_.size, align: type_.align }
-	}
-
-	// TODO: This function is deprecated
-	pub fn u64(&mut self) -> TypeId {
-		U64_TYPE_ID
 	}
 
 	pub fn insert_function(&mut self, args: Vec<TypeId>, returns: TypeId) -> TypeId {
@@ -45,6 +40,10 @@ impl Types {
 		}
 
 		self.types.push(type_)
+	}
+
+	pub fn get(&self, type_: TypeId) -> &Type {
+		self.types.get(type_)
 	}
 
 	pub fn get_if(&self, type_: Option<TypeId>) -> Option<&Type> {
@@ -156,15 +155,13 @@ pub enum PrimitiveKind {
 pub struct AstTyper {
 	/// Each element in this corresponds to an ast node.
 	/// Once done, this list should be the same length as the ast.
-	pub types: Vec<Option<TypeId>>,
 	node_id: usize,
 	label_types: HashMap<ScopeMemberId, Option<TypeId>>,
 }
 
 impl AstTyper {
-	pub fn new(ast: &Ast) -> AstTyper {
+	pub fn new() -> AstTyper {
 		AstTyper {
-			types: Vec::with_capacity(ast.nodes.len()),
 			node_id: 0,
 			label_types: HashMap::new(),
 		}
@@ -178,13 +175,12 @@ impl AstTyper {
 		resources: &Resources,
 	) -> Result<Option<Dependency>> {
 		while self.node_id < ast.nodes.len() {
-			debug_assert_eq!(self.types.len(), self.node_id);
 			let node = &ast.nodes[self.node_id];
 
 			let type_kind = match node.kind {
 				NodeKind::Temporary => return_error!(node, "Temporaries have to be removed in the parser, they are not to be kept around until type checking(internal compiler error)"),
 				NodeKind::Member { contains, .. } => {
-					self.types[contains as usize]
+					ast.nodes[contains as usize].type_
 				}
 				NodeKind::Number(_) => {
 					Some(types.insert(Type::new(TypeKind::Primitive(PrimitiveKind::U64))))
@@ -194,7 +190,7 @@ impl AstTyper {
 				}
 				NodeKind::DeclareFunctionArgument { variable_name, type_node } => {
 					scopes.member_mut(variable_name).type_ 
-						= Some(self.types[type_node as usize].unwrap());
+						= Some(ast.nodes[type_node as usize].type_.unwrap());
 					None
 				}
 				NodeKind::LocationMarker => None,
@@ -210,11 +206,11 @@ impl AstTyper {
 				NodeKind::IfWithElse { true_body, false_body, .. } => {
 					// TODO: Check that condition is a boolean
 					
-					if self.types[true_body as usize] != self.types[false_body as usize] {
+					if ast.nodes[true_body as usize].type_ != ast.nodes[false_body as usize].type_ {
 						return_error!(node, "if and else blocks have to have the same types");
 					}
 
-					self.types[true_body as usize]
+					ast.nodes[true_body as usize].type_
 				}
 				NodeKind::Resource(id) => {
 					let resource = resources.resource(id);
@@ -258,7 +254,7 @@ impl AstTyper {
 				NodeKind::FunctionCall { function_pointer, ref arg_list } => {
 					// TODO: Check if the types in the arg_list are the same as the function
 					// pointer type
-					let func_type = types.get_if(self.types[function_pointer as usize]);
+					let func_type = types.get_if(ast.nodes[function_pointer as usize].type_);
 					if let Some(Type { kind: TypeKind::FunctionPointer { ref args, returns }, .. }) 
 						= func_type 
 					{
@@ -268,7 +264,7 @@ impl AstTyper {
 						}
 
 						for (wanted, got) in args.iter().zip(arg_list) {
-							if Some(*wanted) != self.types[*got as usize] {
+							if Some(*wanted) != ast.nodes[*got as usize].type_ {
 								return_error!(ast.get_node(*got as u32), "Expected (TODO: Print type here), got (TODO: Print type here)");
 							}
 						}
@@ -280,18 +276,18 @@ impl AstTyper {
 				}
 				NodeKind::BinaryOperator { left, right, operator } => {
 					if operator != Operator::Assign {
-						if self.types[right as usize] != self.types[left as usize] {
+						if ast.nodes[right as usize].type_ != ast.nodes[left as usize].type_ {
 							return_error!(node, "This operator needs both operands to be of the same type");
 						}
 					}
 
-					self.types[right as usize]
+					ast.nodes[right as usize].type_
 				},
 				NodeKind::UnaryOperator { operand, .. } => {
-					self.types[operand as usize]
+					ast.nodes[operand as usize].type_
 				},
 				NodeKind::Declaration { variable_name, value } => {
-					if let Some(type_) = self.types[value as usize] {
+					if let Some(type_) = ast.nodes[value as usize].type_ {
 						scopes.member_mut(variable_name).type_ = Some(type_);
 					} else {
 						return_error!(node, "Cannot assign nothing to a variable");
@@ -299,7 +295,7 @@ impl AstTyper {
 					None
 				}
 				NodeKind::Block { ref contents, label } => {
-					let type_ = self.types[*contents.last().unwrap() as usize];
+					let type_ = ast.nodes[*contents.last().unwrap() as usize].type_;
 
 					if let Some(label) = label {
 						if let Some(label_type) = self.label_types.get(&label) {
@@ -318,14 +314,14 @@ impl AstTyper {
 				}
 				NodeKind::Skip { label, value } => {
 					if let Some(label_type) = self.label_types.get(&label) {
-						if value.map(|value| self.types[value as usize]).flatten() != *label_type {
+						if value.map(|value| ast.nodes[value as usize].type_).flatten() != *label_type {
 							return_error!(node, "Incompatible types, block doesn't return this type");
 						}
 					} else {
 						self.label_types.insert(
 							label, 
 							match value {
-								Some(value) => self.types[value as usize],
+								Some(value) => ast.nodes[value as usize].type_,
 								None => Some(types.insert(Type::new(TypeKind::EmptyType))),
 							}
 						);
@@ -335,7 +331,7 @@ impl AstTyper {
 				},
 			};
 
-			self.types.push(type_kind);
+			ast.nodes[self.node_id].type_ = type_kind;
 
 			self.node_id += 1;
 		}

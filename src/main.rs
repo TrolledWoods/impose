@@ -10,7 +10,7 @@ mod prelude {
 		operator::Operator,
 		lexer::{ self, Token, TokenKind }, 
 		parser::{ NodeKind, Ast, AstNodeId, Scopes, ScopeMemberId, ScopeMemberKind },
-		types::{ self, TypeId, TypeHandle, Types, AstTyper, PrimitiveKind, TypeKind, Type },
+		types::{ self, TypeId, Types, AstTyper, PrimitiveKind, TypeKind, Type },
 		id::IdVec,
 	};
 }
@@ -58,6 +58,7 @@ mod code_gen;
 mod run;
 mod resource;
 mod stack_frame;
+mod align;
 
 use std::fmt;
 
@@ -73,94 +74,6 @@ fn main() {
 	let mut resources = Resources::new();
 	let mut types = Types::new();
 
-	// -- DEFINE STANDARD VALUES --
-	fn print_func(resources: &Resources, arguments: &[i64]) -> i64 {
-		assert_eq!(arguments.len(), 1);
-		use crate::id::Id;
-		let resource = resources.resource(ResourceId::create(arguments[0] as u32));
-		if let ResourceKind::String(ref value) = resource.kind {
-			print!("{}", value);
-			use std::io::Write;
-			std::io::stdout().lock().flush().unwrap();
-			return 0;
-		} else {
-			panic!("What was passed was not a string resource: {}", arguments[0]);
-		}
-	}
-
-	let string_type = types.insert(Type::new(TypeKind::String));
-	let u64_id = types.u64();
-	let func_type = types.insert_function(vec![string_type], u64_id);
-	let string_function = resources.insert(Resource::new_with_type(
-		CodeLoc {
-			file: std::rc::Rc::new(String::from("no_file thanks")),
-			line: 1, 
-			column: 1,
-		},
-		ResourceKind::ExternalFunction {
-			func: Box::new(print_func),
-		},
-		func_type,
-	));
-	scopes.declare_member(
-		scopes.super_scope, 
-		String::from("print"), 
-		None, 
-		ScopeMemberKind::Constant(string_function)
-	).unwrap();
-
-	fn read_int(_resources: &Resources, arguments: &[i64]) -> i64 {
-		assert_eq!(arguments.len(), 0);
-		let mut input = String::new();
-		std::io::stdin().read_line(&mut input).unwrap();
-		return input.trim().parse::<i64>().expect("Expected integer");
-	}
-
-	let u64_id = types.u64();
-	let func_type = types.insert_function(vec![], u64_id);
-	let read_int_function = resources.insert(Resource::new_with_type(
-		CodeLoc {
-			file: std::rc::Rc::new(String::from("no_file thanks")),
-			line: 1, 
-			column: 1,
-		},
-		ResourceKind::ExternalFunction {
-			func: Box::new(read_int),
-		},
-		func_type,
-	));
-	scopes.declare_member(
-		scopes.super_scope, 
-		String::from("input_num"), 
-		None, 
-		ScopeMemberKind::Constant(read_int_function)
-	).unwrap();
-	
-	fn print_num_func(_resources: &Resources, arguments: &[i64]) -> i64 {
-		assert_eq!(arguments.len(), 1);
-		print!("{}", arguments[0]);
-		return arguments[0];
-	}
-
-	let func_type = types.insert_function(vec![types::U64_TYPE_ID], types::U64_TYPE_ID);
-	let print_num_function = resources.insert(Resource::new_with_type(
-		CodeLoc {
-			file: std::rc::Rc::new(String::from("no_file thanks")),
-			line: 1, 
-			column: 1,
-		},
-		ResourceKind::ExternalFunction {
-			func: Box::new(print_num_func),
-		},
-		func_type,
-	));
-	scopes.declare_member(
-		scopes.super_scope, 
-		String::from("print_num"), 
-		None, 
-		ScopeMemberKind::Constant(print_num_function)
-	).unwrap();
-
 	// -- COMPILE STUFF --
 	let code = std::fs::read_to_string("test.im").unwrap();
 
@@ -173,7 +86,7 @@ fn main() {
 		}
 	};
 
-	resources.insert(Resource::new(
+	let id = resources.insert(Resource::new(
 		ast.nodes[0].loc.clone(),
 		ResourceKind::Value {
 			code: ast,
@@ -193,6 +106,16 @@ fn main() {
 	} {}
 
 	resources.check_completion(&code);
+
+	if let ResourceKind::Value { value: Some(ref value), .. } = resources.resource(id).kind {
+		print!("Result: ");
+		for b in value.iter() {
+			print!("{:X} ", b);
+		}
+		println!();
+	} else {
+		println!("Don't know the value");
+	}
 }
 
 fn print_location(code: &str, loc: &CodeLoc, message: &str) {
