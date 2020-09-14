@@ -524,7 +524,7 @@ fn parse_expression_rec(
 			let b = parse_expression_rec(context.borrow(), priority)?;
 			
 			a = context.ast.insert_node(Node::new(
-				context.tokens, 
+				loc,
 				context.scope,
 				NodeKind::BinaryOperator { operator, left: a, right: b }
 			));
