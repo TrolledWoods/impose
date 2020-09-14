@@ -427,6 +427,14 @@ fn parse_block(mut context: Context, expect_brackets: bool, is_runnable: bool)
 	Ok(context.ast.insert_node(Node::new(&loc, context.scope, NodeKind::Block { contents: commands, label } )))
 }
 
+fn parse_type_expr(
+	mut context: Context
+) -> Result<AstNodeId> {
+	let expr = parse_type_expr_value(context.borrow())?;
+	let expr_loc = context.ast.nodes[expr as usize].loc.clone();
+	Ok(context.ast.insert_node(Node::new(&expr_loc, context.scope, NodeKind::GetType(expr))))
+}
+
 fn parse_type_expr_value(
 	mut context: Context
 ) -> Result<AstNodeId> {
@@ -454,6 +462,7 @@ fn parse_type_expr_function_ptr(
 	// Parse the function arguments.
 	let token = context.tokens.peek().unwrap();
 	let (loc, args) = if token.kind == TokenKind::Operator(Operator::Or) {
+		context.tokens.next();
 		(token.loc.clone(), vec![])
 	} else {
 		try_parse_list(
@@ -505,7 +514,7 @@ fn parse_function(
 	if let TokenKind::Operator(Operator::BitwiseOrOrLambda) = token.kind {
 		try_parse_list(
 			context.borrow(), 
-			|context| {
+			|mut context| {
 				let value = context.tokens.expect_next(|| "Expected function argument name")?;
 				if let Token { loc, kind: TokenKind::Identifier(name) } = value {
 					let (mut dependants, arg) = context.scopes.declare_member(
@@ -517,17 +526,21 @@ fn parse_function(
 					context.resources.resolve_dependencies(&mut dependants);
 					args.push(arg);
 
-					let node_id = context.ast.insert_node(
-						Node::new_meta(loc, sub_scope, NodeKind::Type(TypeKind::Primitive(PrimitiveKind::U64)))
-					);
-					context.ast.insert_node(Node::new(loc, sub_scope, 
-						NodeKind::DeclareFunctionArgument {
-							variable_name: arg,
-							type_node: node_id,
-						}
-					));
+					let colon = context.tokens.next();
+					if matches!(colon, Some(Token { kind: TokenKind::Colon, .. })) {
+						let type_node = parse_type_expr_value(context.borrow())?;
 
-					Ok(())
+						context.ast.insert_node(Node::new(loc, sub_scope, 
+							NodeKind::DeclareFunctionArgument {
+								variable_name: arg,
+								type_node,
+							}
+						));
+
+						Ok(())
+					} else {
+						Err(error!(value, "Expected ':' for function argument type"))
+					}
 				} else {
 					Err(error!(value, "Expected function argument name"))
 				}

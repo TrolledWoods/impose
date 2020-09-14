@@ -54,6 +54,13 @@ impl Types {
 		type_.map(|type_| self.types.get(type_))
 	}
 
+	pub fn print_types(&self) {
+		for (id, _) in self.types.iter_ids() {
+			self.print(id);
+			println!();
+		}
+	}
+
 	pub fn print(&self, type_: TypeId) {
 		match self.types.get(type_).kind {
 			TypeKind::EmptyType => print!("Empty"),
@@ -288,7 +295,10 @@ impl AstTyper {
 
 						for (wanted, got) in args.iter().zip(arg_list) {
 							if Some(*wanted) != ast.nodes[*got as usize].type_ {
-								return_error!(ast.get_node(*got as u32), "Expected (TODO: Print type here), got (TODO: Print type here)");
+								return_error!(ast.get_node(*got as u32), "Expected {:?}, got {:?}",
+									wanted, 
+									ast.nodes[*got as usize].type_
+								);
 							}
 						}
 
@@ -368,10 +378,27 @@ impl AstTyper {
 								if type_ != TYPE_TYPE_ID {
 									return_error!(node, "A Type identifier has to contain a type!");
 								}
-
-								Some(TYPE_TYPE_ID)
 							} else {
 								return Ok(Some(Dependency::Type(id)));
+							}
+
+							match resources.resource(id).kind {
+								ResourceKind::Value { value: Some(ref value), .. } => {
+									if let &[a, b, c, d, e, f, g, h] = value.as_slice() {
+										use crate::id::Id;
+										let id = usize::from_le_bytes([a, b, c, d, e, f, g, h]);
+										if id >= types.types.len() {
+											return_error!(node, "Invalid type id");
+										}
+										Some(TypeId::create(id as u32))
+									} else {
+										unreachable!("The value of a type has to be a 64 bit value");
+									}
+								}
+								ResourceKind::Value { value: None, .. } => {
+									return Ok(Some(Dependency::Value(id)));
+								}
+								_ => return_error!(node, "A Type identifier has to contain a type!"),
 							}
 						}
 						_ => return_error!(node, "A Type identifier has to be constant"), 

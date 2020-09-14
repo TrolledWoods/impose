@@ -1,7 +1,7 @@
 #![feature(assoc_char_funcs)]
 #![feature(drain_filter)]
 
-pub const DEBUG: bool = false;
+pub const DEBUG: bool = true;
 
 mod prelude {
 	pub(crate) use crate::{ 
@@ -125,10 +125,14 @@ fn main() {
 		}
 	} {}
 
+	println!("\n\n --- TYPES --- ");
+	types.print_types();
+
 	resources.check_completion(&code);
 
 	if let ResourceKind::Value { value: Some(ref value), .. } = resources.resource(id).kind {
-		print!("Result: ");
+		println!("\n\n --- RESULT ---");
+		print!(" > ");
 		for b in value.iter() {
 			print!("{:X} ", b);
 		}

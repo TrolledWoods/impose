@@ -1,4 +1,5 @@
-MyType      :: type |U64, U64| -> U64;
-MyOtherType :: type |U64, U64| -> U64;
+my_func :: |callback: || -> MyType| callback();
 
-MyType - MyOtherType
+MyType :: U64;
+
+my_func(|| 6)

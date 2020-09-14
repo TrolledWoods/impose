@@ -44,15 +44,10 @@ impl Resources {
 					instructions: ref mut resource_instructions,
 					typer: ref mut resource_typer,
 				} => {
-					// TODO: Figure out the types of all the arguments.
-					// TODO: Ping all of the things depending on the type of the function that
-					// we are done here.
-					// We are going to assume at first that all arguments are of type U64.
 					// TODO: The return type should be figured out based on an '->', and not
 					// implicitly.
-					let arg_types = resource_arguments.iter()
-						.map(|_| types.insert(Type::new(TypeKind::Primitive(PrimitiveKind::U64))))
-						.collect();
+					// TODO: Ping all of the things depending on the type of the function that
+					// we are done here.
 
 					if !resource_code.is_typed {
 						if resource_typer.is_none() {
@@ -69,6 +64,10 @@ impl Resources {
 								}
 								None => {}
 							}
+
+							let arg_types = resource_arguments.iter().map(|&arg| {
+								scopes.member(arg).type_.unwrap()
+							}).collect();
 
 							*resource_type = resource_code.nodes.last().unwrap().type_.map(|return_type| {
 								types.insert(Type::new(TypeKind::FunctionPointer {
