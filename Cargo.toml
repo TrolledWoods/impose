@@ -8,3 +8,4 @@ edition = "2018"
 
 [dependencies]
 smallvec = { version = "1.4.2", features = ["union"] }
+ustr = "0.7.0"

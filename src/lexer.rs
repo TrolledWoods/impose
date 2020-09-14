@@ -2,20 +2,20 @@ use crate::{ CodeLoc, Location, Error, Result };
 use crate::operator::{ OPERATORS, Operator };
 
 #[derive(Debug, Clone)]
-pub struct Token<'a> {
+pub struct Token {
 	pub loc: CodeLoc,
-	pub kind: TokenKind<'a>,
+	pub kind: TokenKind,
 }
 
-impl<'a> Token<'a> {
-	fn new(loc: CodeLoc, kind: TokenKind<'a>) -> Self { 
+impl Token {
+	fn new(loc: CodeLoc, kind: TokenKind) -> Self { 
 		Token { loc, kind }
 	}
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum TokenKind<'a> {
-	Identifier(&'a str),
+pub enum TokenKind {
+	Identifier(ustr::Ustr),
 	Keyword(&'static str),
 	Operator(Operator),
 	Semicolon,
@@ -27,7 +27,7 @@ pub enum TokenKind<'a> {
 	StringLiteral(String),
 }
 
-impl Location for Token<'_> {
+impl Location for Token {
 	fn get_location(&self) -> CodeLoc { self.loc.clone() }
 }
 
@@ -124,7 +124,7 @@ pub fn lex_code(code: &str) -> Result<(CodeLoc, Vec<Token>)> {
 				}
 
 				if !found_keyword {
-					tokens.push(Token::new(location, TokenKind::Identifier(identifier)));
+					tokens.push(Token::new(location, TokenKind::Identifier(ustr::ustr(identifier))));
 				}
 			}
 			_ if c.is_digit(10) => {

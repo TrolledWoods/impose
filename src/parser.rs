@@ -176,7 +176,7 @@ pub enum NodeKind {
 }
 
 struct TokenStream<'a> {
-	tokens: &'a [Token<'a>],
+	tokens: &'a [Token],
 	index: usize,
 	last_location: CodeLoc,
 }
@@ -188,45 +188,45 @@ impl Location for TokenStream<'_> {
 }
 
 impl<'a> TokenStream<'a> {
-	fn new(tokens: &'a [Token<'a>], last_location: CodeLoc) -> Self { 
+	fn new(tokens: &'a [Token], last_location: CodeLoc) -> Self { 
 		TokenStream { tokens, index: 0, last_location } 
 	}
 
-	fn peek(&self) -> Option<&'a Token<'a>> {
+	fn peek(&self) -> Option<&'a Token> {
 		self.tokens.get(self.index)
 	}
 
-	// fn peek_nth(&self, n: usize) -> Option<&'a Token<'a>> {
+	// fn peek_nth(&self, n: usize) -> Option<&'a Token> {
 	// 	self.tokens.get(self.index + n)
 	// }
 
-	fn peek_nth_kind(&self, n: usize) -> Option<&'a TokenKind<'a>> {
+	fn peek_nth_kind(&self, n: usize) -> Option<&'a TokenKind> {
 		self.tokens.get(self.index + n).map(|v| &v.kind)
 	}
 
 	fn expect_peek<'b, D: std::fmt::Display>(&'b mut self, message: impl FnOnce() -> D) 
-		-> Result<&'a Token<'a>> 
+		-> Result<&'a Token> 
 	{
 		self.tokens.get(self.index).ok_or_else(|| error!(self, "{}", message()))
 	}
 
-	fn peek_kind(&self) -> Option<&'a TokenKind<'a>> {
+	fn peek_kind(&self) -> Option<&'a TokenKind> {
 		self.tokens.get(self.index).map(|v| &v.kind)
 	}
 
-	fn next(&mut self) -> Option<&'a Token<'a>> {
+	fn next(&mut self) -> Option<&'a Token> {
 		self.index += 1;
 		self.tokens.get(self.index - 1)
 	}
 
 	fn expect_next<'b, D: std::fmt::Display>(&mut self, message: impl FnOnce() -> D) 
-		-> Result<&'a Token<'a>> 
+		-> Result<&'a Token> 
 	{
 		self.index += 1;
 		self.tokens.get(self.index - 1).ok_or_else(|| error!(self, "{}", message()))
 	}
 
-	fn next_kind(&mut self) -> Option<&'a TokenKind<'a>> {
+	fn next_kind(&mut self) -> Option<&'a TokenKind> {
 		self.index += 1;
 		self.tokens.get(self.index - 1).map(|v| &v.kind)
 	}
@@ -242,7 +242,7 @@ fn try_parse_create_label(
 			Some(TokenKind::Identifier(name)) => {
 				let (mut depenendants, id) = context.scopes.declare_member(
 					context.scope, 
-					name.to_string(),
+					ustr::ustr(name),
 					Some(&loc),
 					ScopeMemberKind::Label,
 				)?;
@@ -266,7 +266,7 @@ fn try_parse_label(
 			Some(TokenKind::Identifier(name)) => {
 				let id = context.scopes.find_member(
 					context.scope, 
-					name,
+					*name,
 				).ok_or_else(|| error!(loc, "Unknown label"))?;
 
 				if context.scopes.member(id).kind != ScopeMemberKind::Label {
@@ -331,7 +331,7 @@ fn parse_block(mut context: Context, expect_brackets: bool, is_runnable: bool)
 				let value = parse_expression(context.borrow())?;
 				let (mut dependants, variable_name) = context.scopes.declare_member(
 					context.scope, 
-					name.to_string(), 
+					ustr::ustr(name), 
 					Some(ident_loc), 
 					ScopeMemberKind::LocalVariable
 				)?;
@@ -378,7 +378,7 @@ fn parse_block(mut context: Context, expect_brackets: bool, is_runnable: bool)
 
 				context.scopes.declare_member(
 					context.scope, 
-					name.to_string(), 
+					*name,
 					Some(ident_loc), 
 					ScopeMemberKind::Constant(resource_id)
 				)?;
@@ -433,7 +433,7 @@ fn parse_function(
 				if let Token { loc, kind: TokenKind::Identifier(name) } = value {
 					let (mut dependants, arg) = context.scopes.declare_member(
 						sub_scope,
-						name.to_string(),
+						ustr::ustr(name),
 						Some(loc),
 						ScopeMemberKind::FunctionArgument,
 					)?;
@@ -862,7 +862,7 @@ impl Scopes {
 		self.members.get_mut(member)
 	}
 
-	fn find_member(&self, mut scope_id: ScopeId, name: &str) -> Option<ScopeMemberId> {
+	fn find_member(&self, mut scope_id: ScopeId, name: ustr::Ustr) -> Option<ScopeMemberId> {
 		loop {
 			for member_id in self.scopes.get(scope_id).members.iter() {
 				// This does not use the ``member`` function on purpose, because the member function
@@ -901,11 +901,11 @@ impl Scopes {
 		}
 	}
 
-	pub fn find_or_create_temp(&mut self, scope: ScopeId, name: &str) -> Result<ScopeMemberId> {
+	pub fn find_or_create_temp(&mut self, scope: ScopeId, name: ustr::Ustr) -> Result<ScopeMemberId> {
 		if let Some(member_id) = self.find_member(scope, name) {
 			return Ok(member_id);
 		} else {
-			let (mut dependants, id) = self.declare_member(scope, name.to_string(), None, ScopeMemberKind::UndefinedDependency(Vec::new()))?;
+			let (mut dependants, id) = self.declare_member(scope, name, None, ScopeMemberKind::UndefinedDependency(Vec::new()))?;
 			if let ScopeMemberKind::UndefinedDependency(ref mut vec) = self.member_mut(id).kind {
 				vec.append(&mut dependants);
 			} else { unreachable!(); }
@@ -919,7 +919,7 @@ impl Scopes {
 		scope: ScopeId, 
 		// TODO: Make this a slice, not a string, because a temporary may already have an 
 		// allocated string for the name
-		name: String, 
+		name: ustr::Ustr, 
 		loc: Option<&CodeLoc>,
 		kind: ScopeMemberKind,
 	) -> Result<(Vec<ResourceId>, ScopeMemberId)> {
@@ -1028,7 +1028,7 @@ pub enum ScopeMemberKind {
 
 #[derive(Debug)]
 pub struct ScopeMember {
-	pub name: String,
+	pub name: ustr::Ustr,
 	pub kind: ScopeMemberKind,
 	pub declaration_location: Option<CodeLoc>,
 	pub type_: Option<TypeId>,
