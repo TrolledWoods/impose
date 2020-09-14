@@ -289,6 +289,25 @@ pub fn compile_expression(
 					}
 				}
 			}
+			NodeKind::MemberAccess(member, sub_name) => {
+				let id = ast.nodes[member as usize].type_.unwrap();
+				let type_kind = &types.get(id).kind;
+
+				let value = node_values[member as usize].clone().unwrap();
+
+				match type_kind {
+					TypeKind::Primitive(PrimitiveKind::U64) => {
+						if sub_name == "low" {
+							node_values.push(Some(value.get_sub_value(0, 4, 4)));
+						} else if sub_name == "high" {
+							node_values.push(Some(value.get_sub_value(4, 4, 4)));
+						} else {
+							panic!("bleh");
+						}
+					}
+					_ => panic!("bleh"),
+				}
+			}
 			NodeKind::Number(num) => {
 				// TODO: Check that the number fits, although I guess this should
 				// be down further up in the pipeline
@@ -364,6 +383,19 @@ pub fn compile_expression(
 			NodeKind::Resource(id) => {
 				node_values.push(Some(get_resource_constant(resources, id)?))
 			}
+
+			// Get the type of some value as a constant.
+			NodeKind::GetType(node) => {
+				let type_ = ast.nodes[node as usize].type_.unwrap().into_index() as u64;
+				node_values.push(Some(Value::Constant(type_.to_le_bytes().into())));
+			}
+
+			// Type expressions evaluate types with the typing system at typing type, we do not
+			// need to generate any instructions for them.
+			NodeKind::TypeIdentifier(_) => {
+				node_values.push(None);
+			}
+
 			_ => todo!()
 		}
 	}

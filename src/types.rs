@@ -2,8 +2,10 @@ use crate::prelude::*;
 use crate::parser::ScopeMemberId;
 use std::collections::HashMap;
 
-pub const U64_TYPE_ID:    TypeId = TypeId::create_raw(0);
-pub const STRING_TYPE_ID: TypeId = TypeId::create_raw(1);
+pub const TYPE_TYPE_ID:   TypeId = TypeId::create_raw(0);
+pub const U64_TYPE_ID:    TypeId = TypeId::create_raw(1);
+pub const U32_TYPE_ID:    TypeId = TypeId::create_raw(2);
+pub const STRING_TYPE_ID: TypeId = TypeId::create_raw(3);
 
 create_id!(TypeId);
 
@@ -14,7 +16,9 @@ pub struct Types {
 impl Types {
 	pub fn new() -> Self {
 		let mut types = IdVec::new();
+		assert_eq!(types.push(Type::new(TypeKind::Type)), TYPE_TYPE_ID);
 		assert_eq!(types.push(Type::new(TypeKind::Primitive(PrimitiveKind::U64))), U64_TYPE_ID);
+		assert_eq!(types.push(Type::new(TypeKind::Primitive(PrimitiveKind::U32))), U32_TYPE_ID);
 		assert_eq!(types.push(Type::new(TypeKind::String)), STRING_TYPE_ID);
 		Self { types }
 	}
@@ -53,6 +57,7 @@ impl Types {
 	pub fn print(&self, type_: TypeId) {
 		match self.types.get(type_).kind {
 			TypeKind::EmptyType => print!("Empty"),
+			TypeKind::Type => print!("Type"),
 			TypeKind::Struct { ref members } => {
 				print!("struct{{ ");
 				for (i, (name, offset, member)) in members.iter().enumerate() {
@@ -108,13 +113,15 @@ impl Type {
 				let mut align = 1;
 				let mut size = 0;
 				for &(_, offset, handle) in members {
-					size  = size.max(offset + handle.size);
 					align = align.max(handle.align);
+					size  = crate::align::to_aligned(align, size.max(offset + handle.size));
 				}
 				(size, align)
 			}
 			TypeKind::EmptyType => (0, 1),
+			TypeKind::Type => (8, 8),
 			TypeKind::Primitive(PrimitiveKind::U64) => (8, 8),
+			TypeKind::Primitive(PrimitiveKind::U32) => (4, 4),
 			TypeKind::String => (8, 8),
 			TypeKind::FunctionPointer { .. } => (8, 8),
 		};
@@ -143,12 +150,14 @@ pub enum TypeKind {
 		args: Vec<TypeId>,
 		returns: TypeId,
 	},
+	Type,
 	String,
 	Primitive(PrimitiveKind),
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum PrimitiveKind {
+	U32,
 	U64,
 }
 
@@ -185,13 +194,27 @@ impl AstTyper {
 				NodeKind::Number(_) => {
 					Some(types.insert(Type::new(TypeKind::Primitive(PrimitiveKind::U64))))
 				}
-				NodeKind::Type(ref kind) => {
-					Some(types.insert(Type::new(kind.clone())))
-				}
 				NodeKind::DeclareFunctionArgument { variable_name, type_node } => {
 					scopes.member_mut(variable_name).type_ 
 						= Some(ast.nodes[type_node as usize].type_.unwrap());
 					None
+				}
+				NodeKind::MemberAccess(member, sub_name) => {
+					let id = ast.nodes[member as usize].type_.unwrap();
+					let type_kind = &types.get(id).kind;
+					
+					match type_kind {
+						TypeKind::Primitive(PrimitiveKind::U64) => {
+							if sub_name == "low" {
+								Some(U32_TYPE_ID)
+							} else if sub_name == "high" {
+								Some(U32_TYPE_ID)
+							} else {
+								return_error!(node, "This member does not exist on U64");
+							}
+						}
+						_ => todo!("Only U64's can have members at the moment"),
+					}
 				}
 				NodeKind::LocationMarker => None,
 				NodeKind::Loop { .. } => {
@@ -329,6 +352,31 @@ impl AstTyper {
 
 					None
 				},
+
+				// --- Type expressions ---
+				NodeKind::Type(ref kind) => {
+					Some(types.insert(Type::new(kind.clone())))
+				}
+				NodeKind::GetType(_) => {
+					Some(TYPE_TYPE_ID)
+				}
+				NodeKind::TypeIdentifier(member) => {
+					let member = scopes.member(member);
+					match member.kind {
+						ScopeMemberKind::Constant(id) => {
+							if let Some(type_) = resources.resource(id).type_ {
+								if type_ != TYPE_TYPE_ID {
+									return_error!(node, "A Type identifier has to contain a type!");
+								}
+
+								Some(TYPE_TYPE_ID)
+							} else {
+								return Ok(Some(Dependency::Type(id)));
+							}
+						}
+						_ => return_error!(node, "A Type identifier has to be constant"), 
+					}
+				}
 			};
 
 			ast.nodes[self.node_id].type_ = type_kind;

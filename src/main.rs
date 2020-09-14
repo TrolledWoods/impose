@@ -74,6 +74,26 @@ fn main() {
 	let mut resources = Resources::new();
 	let mut types = Types::new();
 
+	// -- NICE CONSTANTS --
+	scopes.insert_root_value(
+		&mut resources, 
+		ustr::ustr("Type"), 
+		types::TYPE_TYPE_ID, 
+		(types::TYPE_TYPE_ID.into_index() as u64).to_le_bytes().into(),
+	);
+	scopes.insert_root_value(
+		&mut resources, 
+		ustr::ustr("U32"), 
+		types::TYPE_TYPE_ID, 
+		(types::U32_TYPE_ID.into_index() as u64).to_le_bytes().into(),
+	);
+	scopes.insert_root_value(
+		&mut resources, 
+		ustr::ustr("U64"), 
+		types::TYPE_TYPE_ID, 
+		(types::U64_TYPE_ID.into_index() as u64).to_le_bytes().into(),
+	);
+
 	// -- COMPILE STUFF --
 	let code = std::fs::read_to_string("test.im").unwrap();
 

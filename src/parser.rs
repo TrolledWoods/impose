@@ -114,18 +114,19 @@ impl Location for Node {
 #[derive(Debug)]
 pub enum NodeKind {
 	Temporary,
-
 	/// A Member of some other node, to allow for more specific behaviour
 	Member {
 		child_of: AstNodeId,
 		contains: AstNodeId,
 		id: u8,
 	},
-
+	MemberAccess(AstNodeId, ustr::Ustr),
 	Number(i128),
 	Type(TypeKind),
 	EmptyLiteral,
+
 	Identifier(ScopeMemberId),
+
 	Resource(ResourceId),
 	FunctionCall {
 		function_pointer: AstNodeId,
@@ -172,7 +173,14 @@ pub enum NodeKind {
 	Skip {
 		label: ScopeMemberId,
 		value: Option<AstNodeId>,
-	}
+	},
+
+	/// Returns the type of a type expression as a value instead of a type.
+	GetType(AstNodeId),
+
+	// Type expressions
+	/// Exactly the same as an identifier but it is a type expression.
+	TypeIdentifier(ScopeMemberId),
 }
 
 struct TokenStream<'a> {
@@ -408,6 +416,23 @@ fn parse_block(mut context: Context, expect_brackets: bool, is_runnable: bool)
 	Ok(context.ast.insert_node(Node::new(&loc, context.scope, NodeKind::Block { contents: commands, label } )))
 }
 
+fn parse_type_expr_value(
+	mut context: Context
+) -> Result<AstNodeId> {
+	let token = context.tokens.expect_next(|| "Expected type expression")?;
+	match token.kind {
+		TokenKind::Identifier(name) => {
+			let member = context.scopes.find_or_create_temp(context.scope, name)?;
+			Ok(context.ast.insert_node(Node::new(
+				token, 
+				context.scope, 
+				NodeKind::TypeIdentifier(member),
+			)))
+		}
+		_ => return_error!(token, "Expected type expression!"),
+	}
+}
+
 fn parse_function(
 	parent_context: Context
 ) -> Result<ResourceId> {
@@ -482,18 +507,31 @@ fn parse_expression(
 	mut context: Context,
 ) -> Result<AstNodeId> {
 	let token = context.tokens.expect_peek(|| "Expected expression")?;
-	if let TokenKind::Operator(Operator::BitwiseOrOrLambda) 
-		| TokenKind::Operator(Operator::Or) = token.kind 
-	{
-		let id = parse_function(context.borrow())?;
-		return Ok(context.ast.insert_node(Node::new(
-			token, 
-			context.scope, 
-			NodeKind::Resource(id),
-		)));
-	}
 
-	parse_expression_rec(context, 0)
+	// We sometime have special behaviour at the beginning of an expression. For example,
+	// type expressions and function declarations can only occur here, at the root of an expression.
+	match token.kind {
+		TokenKind::Operator(Operator::BitwiseOrOrLambda) 
+		| TokenKind::Operator(Operator::Or) => {
+			let id = parse_function(context.borrow())?;
+			Ok(context.ast.insert_node(Node::new(
+				token, 
+				context.scope, 
+				NodeKind::Resource(id),
+			)))
+		}
+		TokenKind::Keyword("type") => {
+			context.tokens.next();
+			let id = parse_type_expr_value(context.borrow())?;
+			
+			Ok(context.ast.insert_node(Node::new(
+				token, 
+				context.scope, 
+				NodeKind::GetType(id),
+			)))
+		}
+		_ => parse_expression_rec(context, 0),
+	}
 }
 
 /// Parse an expression recursively
@@ -520,6 +558,25 @@ fn parse_expression_rec(
 
 		if (priority + if left_to_right { 0 } else { 1 }) > min_priority {
 			context.tokens.next();
+
+			// Do '.' member access. We have to write special code here, because this does not
+			// become an Operator node, it because a MemberAccess node.
+			if operator == Operator::Member {
+				let identifier = match context.tokens
+					.expect_next(|| "Expected an identifier for the . operator")?
+				{
+					Token { loc, kind: TokenKind::Identifier(name) } => *name,
+					Token { loc, .. } => return_error!(loc, 
+						"Expected an identifier for the . operator"),
+				};
+
+				a = context.ast.insert_node(Node::new(
+					loc,
+					context.scope,
+					NodeKind::MemberAccess(a, identifier),
+				));
+				continue;
+			}
 
 			let b = parse_expression_rec(context.borrow(), priority)?;
 			
@@ -819,6 +876,32 @@ impl Scopes {
 			members: IdVec::new(),
 			super_scope,
 		}
+	}
+
+	pub fn insert_root_value(
+		&mut self, 
+		resources: &mut Resources,
+		name: ustr::Ustr, 
+		type_: TypeId, 
+		value: crate::stack_frame::ConstBuffer,
+	) {
+		let loc = CodeLoc { file: std::rc::Rc::new(format!("no")), line: 0, column: 0 };
+		let mut ast = Ast::new();
+		ast.is_typed = true;
+		let id = resources.insert_done(Resource::new_with_type(
+			loc.clone(),
+			ResourceKind::Value {
+				code: ast,
+				typer: None,
+				depending_on_type: Vec::new(),
+				value: Some(value),
+				depending_on_value: Vec::new(),
+			},
+			type_,
+		));
+
+		let scope = self.super_scope;
+		self.declare_member(scope, name, None, ScopeMemberKind::Constant(id));
 	}
 
 	#[allow(unused)]

@@ -399,4 +399,4 @@ fn lex_identifier<'a>(lexer: &mut Lexer<'a>) -> (CodeLoc, &'a str) {
 	(location, start)
 }
 
-const KEYWORDS:  &[&str] = &["if", "else", "loop", "skip"];
+const KEYWORDS:  &[&str] = &["if", "else", "loop", "skip", "type"];

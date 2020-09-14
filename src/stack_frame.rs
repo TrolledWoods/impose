@@ -9,6 +9,32 @@ pub enum Value {
 	Constant(ConstBuffer),
 }
 
+impl Value {
+	pub fn get_sub_value(&self, offset: usize, size: usize, align: usize) -> Value {
+		match self {
+			Value::Local(handle) => {
+				debug_assert!(offset + size <= handle.size);
+
+				// Check that our align is aligned if the handle is aligned.
+				debug_assert!(crate::align::is_aligned(align, handle.align));
+				debug_assert!(crate::align::is_aligned(align, offset));
+
+				Value::Local(LocalHandle {
+					offset: handle.offset + offset,
+					// TODO: Check if align is really necessary to have as a member here.
+					align,
+					size,
+					id: handle.id,
+				})
+			}
+			Value::Constant(buffer) => {
+				// Align here doesn't matter
+				Value::Constant(ConstBuffer::from(&buffer[offset..offset + size]))
+			}
+		}
+	}
+}
+
 impl From<usize> for Value {
 	fn from(other: usize) -> Self {
 		Self::Constant(ConstBuffer::from_slice(&other.to_le_bytes()))
@@ -177,7 +203,7 @@ impl StackFrameInstance {
 
 				// SAFETY: The position should be aligned to 4 bytes.
 				unsafe {
-					*(&self.buffer_bytes()[pos] as *const u8 as *const u32)
+					*(&self.bytes()[pos] as *const u8 as *const u32)
 				}
 			}
 			Value::Constant(vector) => {
@@ -200,7 +226,7 @@ impl StackFrameInstance {
 
 				// SAFETY: The position should be aligned to 8 bytes.
 				unsafe {
-					*(&self.buffer_bytes()[pos] as *const u8 as *const u64)
+					*(&self.bytes()[pos] as *const u8 as *const u64)
 				}
 			}
 			Value::Constant(vector) => {
@@ -217,7 +243,7 @@ impl StackFrameInstance {
 		match value {
 			Value::Local(local) => {
 				let (pos, size) = self.layout.local_pos_and_size(*local);
-				ConstBuffer::from_slice(&self.buffer_bytes()[pos..pos + size])
+				ConstBuffer::from_slice(&self.bytes()[pos..pos + size])
 			}
 			Value::Constant(vector) => vector.clone(),
 		}
@@ -227,7 +253,7 @@ impl StackFrameInstance {
 		match value {
 			Value::Local(local) => {
 				let (pos, size) = self.layout.local_pos_and_size(*local);
-				&self.buffer_bytes()[pos..pos + size]
+				&self.bytes()[pos..pos + size]
 			}
 			Value::Constant(vector) => vector.as_slice(),
 		}
@@ -240,7 +266,7 @@ impl StackFrameInstance {
 				let (from_pos, from_size) = self.layout.local_pos_and_size(*from_local);
 				assert_eq!(from_size, to_size);
 
-				self.buffer_bytes_mut().copy_within(from_pos..from_pos + from_size, to_pos);
+				self.bytes_mut().copy_within(from_pos..from_pos + from_size, to_pos);
 			}
 			Value::Constant(ref values) => 
 				self.insert_into_local(local, values),
@@ -253,14 +279,14 @@ impl StackFrameInstance {
 	/// If the data is not the same size as the local
 	pub fn insert_into_local(&mut self, local: LocalHandle, data: &[u8]) {
 		let (pos, size) = self.layout.local_pos_and_size(local);
-		self.buffer_bytes_mut()[pos..pos + size].copy_from_slice(data);
+		self.bytes_mut()[pos..pos + size].copy_from_slice(data);
 	}
 
 	pub fn insert_into_index(&mut self, index: usize, data: &[u8]) {
-		self.buffer_bytes_mut()[index..index + data.len()].copy_from_slice(data);
+		self.bytes_mut()[index..index + data.len()].copy_from_slice(data);
 	}
 
-	fn buffer_bytes(&self) -> &[u8] {
+	fn bytes(&self) -> &[u8] {
 		let slice_ptr = self.buffer.as_ptr();
 
 		// SAFETY:
@@ -278,11 +304,11 @@ impl StackFrameInstance {
 		}
 	}
 
-	fn buffer_bytes_mut(&mut self) -> &mut [u8] {
+	fn bytes_mut(&mut self) -> &mut [u8] {
 		let slice_ptr = self.buffer.as_mut_ptr();
 
 		// SAFETY:
-		// This is safe for the exact same reasons buffer_bytes is safe.
+		// This is safe for the exact same reasons bytes is safe.
 		//
 		// Also, there will not ever be two mutable references to the buffer because that would
 		// require two mutable references to self.

@@ -25,6 +25,10 @@ impl Resources {
 		self.compute_queue.push_back(id);
 		id
 	}
+	
+	pub fn insert_done(&mut self, resource: Resource) -> ResourceId {
+		self.members.push(resource)
+	}
 
 	/// Tries to compute one value. Returns an error if there is an error, or if
 	/// the compute_queue is empty but there are still uncomputed resources
