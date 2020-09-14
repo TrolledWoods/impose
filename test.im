@@ -1,8 +1,32 @@
-print_num32 :: |number: U32| {
-    temp := 0;
-    temp.low = number;
-    print_num(temp);
+result := {:loop_block
+	loop {
+		my_num := input_num_with_query("Please enter a number\n");
+
+		if my_num - 0 { 2 }
+		else {
+			print("Since you entered zero we are quitting");
+			skip :loop_block (42);
+			5
+		};
+
+		print(return_query(my_num)());
+	};
+
+	0
 };
 
-x := 500.low;
-print_num32(x);
+input_num_with_query :: |message: String| {
+	print(message);
+	print(" > ");
+	input()
+};
+
+return_query :: |num: U64| {
+	if num - 20 {
+		|| "Wow, that's really quite a cool thing!\n"
+	} else {
+		|| "Wow, that's a huge pile of shit!\n"
+	}
+};
+
+result

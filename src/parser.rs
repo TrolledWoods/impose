@@ -449,9 +449,7 @@ fn parse_type_expr_value(
 				NodeKind::TypeIdentifier(member),
 			)))
 		}
-		TokenKind::Operator(Operator::BitwiseOrOrLambda) 
-		| TokenKind::Operator(Operator::Or) => 
-			parse_type_expr_function_ptr(context),
+		TokenKind::Bracket('(') => parse_type_expr_function_ptr(context),
 		_ => return_error!(token, "Expected type expression!"),
 	}
 }
@@ -461,17 +459,12 @@ fn parse_type_expr_function_ptr(
 ) -> Result<AstNodeId> {
 	// Parse the function arguments.
 	let token = context.tokens.peek().unwrap();
-	let (loc, args) = if token.kind == TokenKind::Operator(Operator::Or) {
-		context.tokens.next();
-		(token.loc.clone(), vec![])
-	} else {
-		try_parse_list(
-			context.borrow(),
-			parse_type_expr_value,
-			&TokenKind::Operator(Operator::BitwiseOrOrLambda),
-			&TokenKind::Operator(Operator::BitwiseOrOrLambda),
-		)?.ok_or_else(|| error!(token, "Expected parameter list"))?
-	};
+	let (loc, args) = try_parse_list(
+		context.borrow(),
+		parse_type_expr_value,
+		&TokenKind::Bracket('('),
+		&TokenKind::ClosingBracket(')'),
+	)?.ok_or_else(|| error!(token, "Expected parameter list"))?;
 
 	// Do we have a return type?
 	let return_type = if let Some(Token { loc: _, kind: TokenKind::Operator(Operator::Function) }) =
@@ -482,7 +475,6 @@ fn parse_type_expr_function_ptr(
 	} else {
 		None
 	};
-
 
 	Ok(context.ast.insert_node(Node::new(
 		token, 
