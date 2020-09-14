@@ -1,3 +1,4 @@
-MyType :: type U64;
+MyType      :: type |U64, U64| -> U64;
+MyOtherType :: type |U64, U64| -> U64;
 
-
+MyType - MyOtherType

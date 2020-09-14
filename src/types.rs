@@ -377,6 +377,18 @@ impl AstTyper {
 						_ => return_error!(node, "A Type identifier has to be constant"), 
 					}
 				}
+				NodeKind::TypeFunctionPointer { ref arg_list, return_type } => {
+					let kind = TypeKind::FunctionPointer {
+						args: arg_list.iter().map(|&v| ast.nodes[v as usize].type_.unwrap())
+							.collect(),
+						returns: match return_type {
+							Some(v) => ast.nodes[v as usize].type_.unwrap(),
+							None => types.insert(Type::new(TypeKind::EmptyType)),
+						}
+					};
+
+					Some(types.insert(Type::new(kind)))
+				}
 			};
 
 			ast.nodes[self.node_id].type_ = type_kind;

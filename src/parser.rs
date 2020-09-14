@@ -179,8 +179,19 @@ pub enum NodeKind {
 	GetType(AstNodeId),
 
 	// Type expressions
+	// Type expressions have all their data in their types, and are never turned into bytecode.
+	// The 'type' that they have is not the type of the value, but the value itself. I.e.,
+	// the type of a TypeIdentifier produced from U64 is U64, as opposed to
+	// Identifier from U64 which would be of type Type.
+	//
+	// GetType makes the type of a typeexpression node into a constant value, to make it
+	// usable for other nodes.
 	/// Exactly the same as an identifier but it is a type expression.
 	TypeIdentifier(ScopeMemberId),
+	TypeFunctionPointer {
+		arg_list: Vec<AstNodeId>,
+		return_type: Option<AstNodeId>,
+	},
 }
 
 struct TokenStream<'a> {
@@ -419,9 +430,10 @@ fn parse_block(mut context: Context, expect_brackets: bool, is_runnable: bool)
 fn parse_type_expr_value(
 	mut context: Context
 ) -> Result<AstNodeId> {
-	let token = context.tokens.expect_next(|| "Expected type expression")?;
+	let token = context.tokens.expect_peek(|| "Expected type expression")?;
 	match token.kind {
 		TokenKind::Identifier(name) => {
+			context.tokens.next();
 			let member = context.scopes.find_or_create_temp(context.scope, name)?;
 			Ok(context.ast.insert_node(Node::new(
 				token, 
@@ -429,8 +441,48 @@ fn parse_type_expr_value(
 				NodeKind::TypeIdentifier(member),
 			)))
 		}
+		TokenKind::Operator(Operator::BitwiseOrOrLambda) 
+		| TokenKind::Operator(Operator::Or) => 
+			parse_type_expr_function_ptr(context),
 		_ => return_error!(token, "Expected type expression!"),
 	}
+}
+
+fn parse_type_expr_function_ptr(
+	mut context: Context
+) -> Result<AstNodeId> {
+	// Parse the function arguments.
+	let token = context.tokens.peek().unwrap();
+	let (loc, args) = if token.kind == TokenKind::Operator(Operator::Or) {
+		(token.loc.clone(), vec![])
+	} else {
+		try_parse_list(
+			context.borrow(),
+			parse_type_expr_value,
+			&TokenKind::Operator(Operator::BitwiseOrOrLambda),
+			&TokenKind::Operator(Operator::BitwiseOrOrLambda),
+		)?.ok_or_else(|| error!(token, "Expected parameter list"))?
+	};
+
+	// Do we have a return type?
+	let return_type = if let Some(Token { loc: _, kind: TokenKind::Operator(Operator::Function) }) =
+		context.tokens.peek() 
+	{
+		context.tokens.next();
+		Some(parse_type_expr_value(context.borrow())?)
+	} else {
+		None
+	};
+
+
+	Ok(context.ast.insert_node(Node::new(
+		token, 
+		context.scope, 
+		NodeKind::TypeFunctionPointer {
+			arg_list: args,
+			return_type,
+		},
+	)))
 }
 
 fn parse_function(
