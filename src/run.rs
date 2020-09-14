@@ -111,12 +111,18 @@ pub fn run_instructions(
 						instructions: Some((ref sub_scope, ref instructions, ref return_value)), 
 						..
 					} => {
-						let mut sub_local_data = sub_scope.create_instance();
+						let mut sub_stack_frame_instance = 
+							sub_scope.create_instance_with_func_args(
+								args.iter().map(|(index, value)| (
+									*index,
+									stack_frame_instance.get_value(value),
+								))
+							);
 
 						let return_value = run_instructions(
 							instructions,
 							return_value.as_ref(),
-							&mut sub_local_data,
+							&mut sub_stack_frame_instance,
 							resources,
 						);
 

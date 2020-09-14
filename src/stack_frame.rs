@@ -113,6 +113,7 @@ impl Locals {
 	}
 }
 
+// TODO: Add a special system for function arguments to make them less jank.
 /// A stack frame layout maps from local ids to locations in the stack frame.
 pub struct StackFrameLayout {
 	total_size: usize,
@@ -125,6 +126,22 @@ impl StackFrameLayout {
 			self.local_positions[local.id.into_index()] + local.offset,
 			local.size,
 		)
+	}
+
+	pub fn create_instance_with_func_args<'a>(
+		self: &std::sync::Arc<Self>,
+		mut args: impl Iterator<Item = (usize, &'a [u8])> + 'a,
+	) -> StackFrameInstance {
+		let mut instance = StackFrameInstance {
+			buffer: vec![ForceAlignment([0; STACK_FRAME_ALIGNMENT]); self.total_size],
+			layout: self.clone(),
+		};
+
+		for (offset, value) in args {
+			instance.insert_into_index(offset, value);
+		}
+
+		instance
 	}
 
 	pub fn create_instance(self: &std::sync::Arc<Self>) -> StackFrameInstance {
@@ -206,6 +223,16 @@ impl StackFrameInstance {
 		}
 	}
 
+	pub fn get_value<'a>(&'a self, value: &'a Value) -> &'a [u8] {
+		match value {
+			Value::Local(local) => {
+				let (pos, size) = self.layout.local_pos_and_size(*local);
+				&self.buffer_bytes()[pos..pos + size]
+			}
+			Value::Constant(vector) => vector.as_slice(),
+		}
+	}
+
 	pub fn insert_value_into_local(&mut self, local: LocalHandle, value: &Value) {
 		match value {
 			Value::Local(from_local) => {
@@ -227,6 +254,10 @@ impl StackFrameInstance {
 	pub fn insert_into_local(&mut self, local: LocalHandle, data: &[u8]) {
 		let (pos, size) = self.layout.local_pos_and_size(local);
 		self.buffer_bytes_mut()[pos..pos + size].copy_from_slice(data);
+	}
+
+	pub fn insert_into_index(&mut self, index: usize, data: &[u8]) {
+		self.buffer_bytes_mut()[index..index + data.len()].copy_from_slice(data);
 	}
 
 	fn buffer_bytes(&self) -> &[u8] {

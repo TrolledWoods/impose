@@ -29,7 +29,7 @@ pub enum Instruction {
 	Call {
 		calling: Value, 
 		returns: LocalHandle, 
-		args: Vec<Value>,
+		args: Vec<(usize, Value)>,
 	},
 }
 
@@ -334,7 +334,7 @@ pub fn compile_expression(
 			}
 			NodeKind::FunctionCall { function_pointer, ref arg_list } => {
 				// Get the type of the function
-				let (_arg_types, return_type) = match types.get(
+				let (arg_types, return_type) = match types.get(
 					ast.nodes[function_pointer as usize].type_.unwrap()
 				).kind {
 					TypeKind::FunctionPointer { ref args, returns } => (args, returns),
@@ -346,7 +346,15 @@ pub fn compile_expression(
 				let returns = locals.allocate(types.handle(return_type));
 
 				// TODO: If I have zst:s, this won't handle them properly.
-				let args = arg_list.iter().map(|arg| node_values[*arg as usize].clone().unwrap()).collect();
+				let mut offset_ctr = 0;
+				let args = arg_list.iter().zip(arg_types)
+					.map(|(arg, type_)| {
+						let type_handle = types.handle(*type_);
+						let offset = crate::align::to_aligned(type_handle.align, offset_ctr);
+						offset_ctr = offset + type_handle.size;
+						(offset, node_values[*arg as usize].clone().unwrap())
+					})
+					.collect();
 				let calling = node_values[function_pointer as usize].clone().unwrap();
 
 				push_instr!(instructions, Instruction::Call { calling, returns, args });
