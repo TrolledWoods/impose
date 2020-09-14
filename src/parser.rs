@@ -969,6 +969,26 @@ impl Scopes {
 		self.declare_member(scope, name, None, ScopeMemberKind::Constant(id));
 	}
 
+	pub fn insert_root_resource(
+		&mut self, 
+		resources: &mut Resources,
+		name: ustr::Ustr, 
+		type_: TypeId, 
+		kind: ResourceKind,
+	) {
+		let loc = CodeLoc { file: std::rc::Rc::new(format!("no")), line: 0, column: 0 };
+		let mut ast = Ast::new();
+		ast.is_typed = true;
+		let id = resources.insert_done(Resource::new_with_type(
+			loc.clone(),
+			kind,
+			type_,
+		));
+
+		let scope = self.super_scope;
+		self.declare_member(scope, name, None, ScopeMemberKind::Constant(id));
+	}
+
 	#[allow(unused)]
 	pub fn debug(&self, scope_id: ScopeId, indent: usize) {
 		println!("{}Scope {:?}:", "\t".repeat(indent), scope_id);

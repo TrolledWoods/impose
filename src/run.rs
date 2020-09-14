@@ -128,9 +128,18 @@ pub fn run_instructions(
 
 						stack_frame_instance.insert_into_local(returns, &return_value);
 					}
-					ResourceKind::ExternalFunction { ref func, .. } => {
-						todo!();
-						// func(resources, &args);
+					ResourceKind::ExternalFunction { ref func, n_arg_bytes, n_return_bytes } => {
+						let mut arg_buffer = vec![0; n_arg_bytes];
+						let mut return_buffer = vec![0; n_return_bytes]; 
+
+						for (index, value) in args {
+							let value_buffer = stack_frame_instance.get_value(value);
+
+							arg_buffer[*index..*index + value_buffer.len()].copy_from_slice(value_buffer);
+						}
+
+						func(resources, &arg_buffer, &mut return_buffer);
+						stack_frame_instance.insert_into_local(returns, &return_buffer);
 					}
 					_ => {
 						unreachable!(

@@ -1,5 +1,8 @@
-my_func :: |callback: || -> MyType| callback();
+print_num32 :: |number: U32| {
+    temp := 0;
+    temp.low = number;
+    print_num(temp);
+};
 
-MyType :: U64;
-
-my_func(|| 6)
+x := 500.low;
+print_num32(x);

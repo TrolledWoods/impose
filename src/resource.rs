@@ -320,6 +320,8 @@ pub enum ResourceKind {
 	ExternalFunction {
 		// TODO: Make a more advanced interface to call external functions
 		func: Box<dyn Fn(&Resources, &[u8], &mut [u8])>,
+		n_arg_bytes: usize,
+		n_return_bytes: usize,
 	},
 	Function {
 		// argument_type_defs: Vec<Ast>,

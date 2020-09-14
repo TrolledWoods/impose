@@ -1,7 +1,7 @@
 #![feature(assoc_char_funcs)]
 #![feature(drain_filter)]
 
-pub const DEBUG: bool = true;
+pub const DEBUG: bool = false;
 
 mod prelude {
 	pub(crate) use crate::{ 
@@ -93,6 +93,78 @@ fn main() {
 		types::TYPE_TYPE_ID, 
 		(types::U64_TYPE_ID.into_index() as u64).to_le_bytes().into(),
 	);
+	scopes.insert_root_value(
+		&mut resources, 
+		ustr::ustr("String"), 
+		types::TYPE_TYPE_ID, 
+		(types::STRING_TYPE_ID.into_index() as u64).to_le_bytes().into(),
+	);
+
+	let print_type_id = types.insert(Type::new(TypeKind::FunctionPointer {
+		args: vec![types::STRING_TYPE_ID],
+		returns: types::EMPTY_TYPE_ID,
+	}));
+	scopes.insert_root_resource(
+		&mut resources, 
+		ustr::ustr("print"), 
+		print_type_id, 
+		ResourceKind::ExternalFunction {
+			func: Box::new(|resources, args, _| {
+				if let &[a, b, c, d, e, f, g, h] = args {
+					use crate::id::Id;
+					let id = ResourceId::create(usize::from_le_bytes([a, b, c, d, e, f, g, h]) as u32);
+					if let ResourceKind::String(ref string) = resources.resource(id).kind {
+						use std::io::Write;
+						print!("{}", string);
+						std::io::stdout().lock().flush();
+					}else { panic!("bad"); }
+				} else { panic!("bad"); }
+			}),
+			n_arg_bytes: 8,
+			n_return_bytes: 0,
+		}
+	);
+
+	let print_type_id = types.insert(Type::new(TypeKind::FunctionPointer {
+		args: vec![types::U64_TYPE_ID],
+		returns: types::EMPTY_TYPE_ID,
+	}));
+	scopes.insert_root_resource(
+		&mut resources, 
+		ustr::ustr("print_num"), 
+		print_type_id, 
+		ResourceKind::ExternalFunction {
+			func: Box::new(|resources, args, _| {
+				if let &[a, b, c, d, e, f, g, h] = args {
+					print!("{}", i64::from_le_bytes([a, b, c, d, e, f, g, h]));
+				} else { panic!("bad"); }
+			}),
+			n_arg_bytes: 8,
+			n_return_bytes: 0,
+		}
+	);
+
+	let print_type_id = types.insert(Type::new(TypeKind::FunctionPointer {
+		args: vec![],
+		returns: types::U64_TYPE_ID,
+	}));
+	scopes.insert_root_resource(
+		&mut resources, 
+		ustr::ustr("input"), 
+		print_type_id, 
+		ResourceKind::ExternalFunction {
+			func: Box::new(|resources, _, returns| {
+				let mut input = String::new();
+
+				std::io::stdin().read_line(&mut input);
+
+				let num: i64 = input.trim().parse().unwrap();
+				returns[0..8].copy_from_slice(&num.to_le_bytes());
+			}),
+			n_arg_bytes: 0,
+			n_return_bytes: 8,
+		}
+	);
 
 	// -- COMPILE STUFF --
 	let code = std::fs::read_to_string("test.im").unwrap();
@@ -125,8 +197,10 @@ fn main() {
 		}
 	} {}
 
-	println!("\n\n --- TYPES --- ");
-	types.print_types();
+	if DEBUG {
+		println!("\n\n --- TYPES --- ");
+		types.print_types();
+	}
 
 	resources.check_completion(&code);
 

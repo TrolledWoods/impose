@@ -6,6 +6,7 @@ pub const TYPE_TYPE_ID:   TypeId = TypeId::create_raw(0);
 pub const U64_TYPE_ID:    TypeId = TypeId::create_raw(1);
 pub const U32_TYPE_ID:    TypeId = TypeId::create_raw(2);
 pub const STRING_TYPE_ID: TypeId = TypeId::create_raw(3);
+pub const EMPTY_TYPE_ID:  TypeId = TypeId::create_raw(4);
 
 create_id!(TypeId);
 
@@ -20,6 +21,7 @@ impl Types {
 		assert_eq!(types.push(Type::new(TypeKind::Primitive(PrimitiveKind::U64))), U64_TYPE_ID);
 		assert_eq!(types.push(Type::new(TypeKind::Primitive(PrimitiveKind::U32))), U32_TYPE_ID);
 		assert_eq!(types.push(Type::new(TypeKind::String)), STRING_TYPE_ID);
+		assert_eq!(types.push(Type::new(TypeKind::EmptyType)), EMPTY_TYPE_ID);
 		Self { types }
 	}
 
@@ -308,10 +310,8 @@ impl AstTyper {
 					}
 				}
 				NodeKind::BinaryOperator { left, right, operator } => {
-					if operator != Operator::Assign {
-						if ast.nodes[right as usize].type_ != ast.nodes[left as usize].type_ {
-							return_error!(node, "This operator needs both operands to be of the same type");
-						}
+					if ast.nodes[right as usize].type_ != ast.nodes[left as usize].type_ {
+						return_error!(node, "This operator needs both operands to be of the same type");
 					}
 
 					ast.nodes[right as usize].type_
