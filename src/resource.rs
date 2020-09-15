@@ -7,14 +7,16 @@ use crate::code_loc::*;
 use crate::scopes::*;
 use crate::id::*;
 use crate::error::*;
+use crate::run::*;
 use crate::DEBUG;
 
 create_id!(ResourceId);
 
+#[derive(Debug)]
 pub struct Resources {
 	compute_queue: VecDeque<ResourceId>,
 	uncomputed_resources: HashSet<ResourceId>,
-	pub members: IdVec<Resource, ResourceId>,
+	pub members: IdVec<Option<Resource>, ResourceId>,
 }
 
 impl Resources {
@@ -27,14 +29,15 @@ impl Resources {
 	}
 
 	pub fn insert(&mut self, resource: Resource) -> ResourceId {
-		let id = self.members.push(resource);
+		let id = self.members.push(Some(resource));
 		self.uncomputed_resources.insert(id);
 		self.compute_queue.push_back(id);
+
 		id
 	}
 	
 	pub fn insert_done(&mut self, resource: Resource) -> ResourceId {
-		self.members.push(resource)
+		self.members.push(Some(resource))
 	}
 
 	/// Tries to compute one value. Returns an error if there is an error, or if
@@ -62,14 +65,18 @@ impl Resources {
 						}
 
 						if let Some(mut typer) = resource_typer.take() {
-							match typer.try_type_ast(types, resource_code, scopes, self)? {
-								Some(dependency) => {
+							match typer.try_type_ast(types, resource_code, scopes, self) {
+								Ok(Some(dependency)) => {
 									self.add_dependency(member_id, dependency, scopes);
 									*resource_typer = Some(typer);
+									member.depending_on = Some(dependency);
 									self.return_resource(member_id, member);
 									return Ok(true);
 								}
-								None => {}
+								Ok(None) => {}
+								Err(()) => {
+									return Ok(true);
+								}
 							}
 
 							let arg_types = resource_arguments.iter().map(|&arg| {
@@ -93,6 +100,7 @@ impl Resources {
 						Ok(value) => value,
 						Err(dependency) => {
 							self.add_dependency(member_id, dependency, scopes);
+							member.depending_on = Some(dependency);
 							self.return_resource(member_id, member);
 							return Ok(true);
 						}
@@ -132,6 +140,7 @@ impl Resources {
 								Ok(Some(dependency)) => {
 									self.add_dependency(member_id, dependency, scopes);
 									*resource_typer = Some(typer);
+									member.depending_on = Some(dependency);
 									self.return_resource(member_id, member);
 									return Ok(true);
 								}
@@ -152,13 +161,14 @@ impl Resources {
 						Ok(value) => value,
 						Err(dependency) => {
 							self.add_dependency(member_id, dependency, scopes);
+							member.depending_on = Some(dependency);
 							self.return_resource(member_id, member);
 							return Ok(true);
 						}
 					};
 
 					// TODO: Go through the type, and change any pointers into resource pointers.
-					*resource_value = Some(crate::run::run_instructions(
+					*resource_value = Some(run_instructions(
 						&instructions,
 						return_value.as_ref(),
 						&mut std::sync::Arc::new(stack_layout).create_instance(),
@@ -183,7 +193,6 @@ impl Resources {
 						println!("Value: {:?}", resource_value.as_ref().unwrap());
 					}
 				}
-				ResourceKind::CurrentlyUsed => panic!("CurrentlyUsed stuff, fix this later"),
 				ResourceKind::String(ref content) => { 
 					if DEBUG {
 						println!("\n\n--- Resource {} (string) has finished computing! ---", member_id);
@@ -206,41 +215,59 @@ impl Resources {
 			for uncomputed_resource_id in self.uncomputed_resources.iter().copied() {
 				let resource = self.resource(uncomputed_resource_id);
 
-				warning!(&resource.loc, "Resource cannot be computed");
+				match resource.depending_on {
+					Some(Dependency::Constant(loc, _)) => {
+						error_value!(loc, "Unknown identifier");
+					}
+					Some(Dependency::Type(loc, depending_on)) => {
+						info!(self.resource(depending_on).loc, "Type of this is needed");
+						error_value!(loc, "Needs a type that cannot be calculated");
+					}
+					Some(Dependency::Value(loc, depending_on)) => {
+						info!(self.resource(depending_on).loc, "Value of this is needed");
+						error_value!(loc, "Needs a value that cannot be calculated");
+					}
+					None => {
+						error_value!(resource.loc, "Value cannot be computed, got forgotten for some reason");
+					}
+				}
 			}
 		}
 	}
 
 	/// Adds a dependency on something for a resource. Once that dependency is resolved, the
 	/// dependant will be pushed onto the compute queue again to resume evaluation.
+	///
+	/// This function DOES NOT set the depending_on value, because this function may be called
+	/// while a resource is taken, and in that case it can't set that flag.
 	fn add_dependency(&mut self, dependant: ResourceId, dependency: Dependency, scopes: &mut Scopes) {
 		match dependency {
-			Dependency::Constant(scope_member_id) => {
+			Dependency::Constant(_, scope_member_id) => {
 				if let ScopeMemberKind::UndefinedDependency(ref mut dependants) =
 					scopes.member_mut(scope_member_id).kind
 				{
 					dependants.push(dependant);
-					self.resource_mut(dependant).depending_on = Some(dependency);
 				} else {
 					self.compute_queue.push_back(dependant);
+					return;
 				}
 			}
-			Dependency::Type(resource_id) => {
+			Dependency::Type(_, resource_id) => {
 				let depending_on = self.resource_mut(resource_id);
 				if depending_on.type_.is_none() {
 					depending_on.waiting_on_type.push(dependant);
-					self.resource_mut(dependant).depending_on = Some(dependency);
 				} else {
 					self.compute_queue.push_back(dependant);
+					return;
 				}
 			}
-			Dependency::Value(resource_id) => {
+			Dependency::Value(_, resource_id) => {
 				let depending_on = self.resource_mut(resource_id);
 				if let Some(ref mut waiting_on_value) = depending_on.waiting_on_value {
 					waiting_on_value.push(dependant);
-					self.resource_mut(dependant).depending_on = Some(dependency);
 				} else {
 					self.compute_queue.push_back(dependant);
+					return;
 				}
 			}
 		}
@@ -255,21 +282,21 @@ impl Resources {
 
 	pub fn use_resource(&mut self, id: ResourceId) -> Resource {
 		let resource = self.members.get_mut(id);
-		let loc = resource.loc.clone();
-		std::mem::replace(resource, Resource::new(loc, ResourceKind::CurrentlyUsed))
+		resource.take().expect("Resource is taken")
 	}
 
 	pub fn return_resource(&mut self, id: ResourceId, resource: Resource) {
-		assert!(matches!(self.members.get(id).kind, ResourceKind::CurrentlyUsed));
-		*self.members.get_mut(id) = resource;
+		let member = self.members.get_mut(id);
+		assert!(member.is_none(), "Cannot return resource when member is not taken");
+		*member = Some(resource);
 	}
 
 	pub fn resource(&self, id: ResourceId) -> &Resource {
-		self.members.get(id)
+		self.members.get(id).as_ref().expect("Resource is taken")
 	}
 
 	pub fn resource_mut(&mut self, id: ResourceId) -> &mut Resource {
-		self.members.get_mut(id)
+		self.members.get_mut(id).as_mut().expect("Resource is taken")
 	}
 }
 
@@ -277,11 +304,12 @@ impl Resources {
 pub enum Dependency {
 	/// We depend on some ScopeMember that isn't defined yet, presumably a constant, but it could
 	/// be a local too if all we want is the type.
-	Constant(ScopeMemberId),
-	Type(ResourceId),
-	Value(ResourceId),
+	Constant(CodeLoc, ScopeMemberId),
+	Type(CodeLoc, ResourceId),
+	Value(CodeLoc, ResourceId),
 }
 
+#[derive(Debug)]
 pub struct Resource {
 	pub depending_on: Option<Dependency>,
 	pub loc: CodeLoc,
@@ -326,7 +354,6 @@ impl Resource {
 
 // TODO: Make resource states encoded in an enum, to make things much simpler.
 pub enum ResourceKind {
-	CurrentlyUsed,
 	ExternalFunction {
 		// TODO: Make a more advanced interface to call external functions
 		func: Box<dyn Fn(&Resources, &[u8], &mut [u8])>,
@@ -358,7 +385,6 @@ pub enum ResourceKind {
 impl std::fmt::Debug for ResourceKind {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		match self {
-			ResourceKind::CurrentlyUsed => write!(f, "currently used"),
 			ResourceKind::ExternalFunction { .. } => write!(f, "extern func"),
 			ResourceKind::Function { .. } => write!(f, "func"),
 			ResourceKind::String(_) => write!(f, "string"),

@@ -153,7 +153,9 @@ fn main() {
 	));
 
 	while match resources.compute_one(&mut types, &mut scopes) {
-		Ok(should_continue) => should_continue,
+		Ok(should_continue) => {
+			should_continue
+		}
 		Err(()) => {
 			false
 		}

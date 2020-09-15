@@ -7,6 +7,7 @@ use crate::scopes::*;
 use crate::resource::*;
 use crate::stack_frame::*;
 use crate::operator::*;
+use crate::code_loc::*;
 
 macro_rules! push_instr {
 	($instrs:expr, $instr:expr) => {{
@@ -113,7 +114,7 @@ pub fn compile_expression(
 						node_values.push(Some(Value::Local(member)));
 					}
 					ScopeMemberKind::Constant(id) => {
-						node_values.push(Some(get_resource_constant(resources, id)?));
+						node_values.push(Some(get_resource_constant(&node.loc, resources, id)?));
 					}
 					ScopeMemberKind::Label => panic!("Cannot do labels"),
 				}
@@ -411,7 +412,7 @@ pub fn compile_expression(
 				node_values.push(Some(Value::Local(returns)));
 			}
 			NodeKind::Resource(id) => {
-				node_values.push(Some(get_resource_constant(resources, id)?))
+				node_values.push(Some(get_resource_constant(&node.loc, resources, id)?))
 			}
 
 			NodeKind::UnaryOperator { operator: Operator::BitAndOrPointer, operand } => {
@@ -472,7 +473,7 @@ pub fn compile_expression(
 	Ok((locals.layout(), instructions, node_values.last().unwrap().clone()))
 }
 
-fn get_resource_constant(resources: &Resources, id: ResourceId) 
+fn get_resource_constant(loc: &CodeLoc, resources: &Resources, id: ResourceId) 
 	-> Result<Value, Dependency>
 {
 	let resource = resources.resource(id);
@@ -481,13 +482,11 @@ fn get_resource_constant(resources: &Resources, id: ResourceId)
 		ResourceKind::Function { .. } | 
 		ResourceKind::String(_) =>
 			Ok(id.into_index().into()),
-		ResourceKind::CurrentlyUsed => 
-			todo!("Deal with CurrentlyUsed resources in code_gen"),
 		ResourceKind::Value { ref value, .. } => {
 			if let Some(value) = value {
 				Ok(Value::Constant(value.clone()))
 			} else {
-				Err(Dependency::Value(id))
+				Err(Dependency::Value(*loc, id))
 			}
 		}
 	}

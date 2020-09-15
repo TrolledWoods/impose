@@ -1,4 +1,4 @@
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct CodeLoc {
 	pub file: ustr::Ustr,
 	pub line: u32, 

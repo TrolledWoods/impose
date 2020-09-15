@@ -281,7 +281,7 @@ impl AstTyper {
 					if let Some(type_) = resource.type_ {
 						Some(type_)
 					} else {
-						return Ok(Some(Dependency::Type(id)));
+						return Ok(Some(Dependency::Type(node.loc, id)));
 					}
 				}
 				NodeKind::EmptyLiteral => {
@@ -313,11 +313,11 @@ impl AstTyper {
 							if let Some(type_) = resources.resource(id).type_ {
 								Some(type_)
 							} else {
-								return Ok(Some(Dependency::Type(id)));
+								return Ok(Some(Dependency::Type(node.loc, id)));
 							}
 						}
 						ScopeMemberKind::UndefinedDependency(_) => {
-							return Ok(Some(Dependency::Constant(id)));
+							return Ok(Some(Dependency::Constant(node.loc, id)));
 						}
 						ScopeMemberKind::Label => {
 							return error!(node, "This is not a variable, it is a label!");
@@ -438,7 +438,7 @@ impl AstTyper {
 									return error!(node, "A Type identifier has to contain a type!");
 								}
 							} else {
-								return Ok(Some(Dependency::Type(id)));
+								return Ok(Some(Dependency::Type(node.loc, id)));
 							}
 
 							match resources.resource(id).kind {
@@ -454,7 +454,7 @@ impl AstTyper {
 									}
 								}
 								ResourceKind::Value { value: None, .. } => {
-									return Ok(Some(Dependency::Value(id)));
+									return Ok(Some(Dependency::Value(node.loc, id)));
 								}
 								_ => return error!(node, "A Type identifier has to contain a type!"),
 							}

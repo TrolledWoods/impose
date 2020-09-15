@@ -6,10 +6,6 @@
 // [ ] Assigning pointers/pointer buffers to constants, by creating other constants that contain
 //   a copy of the thing that was behind the pointer.
 
-OTHER_CONST :: {
-	y := 3;
-	y = y.low;
+Hello :: || {
+	Hello
 };
-
-x := 5;
-x = x.low;
