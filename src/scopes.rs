@@ -5,7 +5,7 @@ use crate::stack_frame::*;
 use crate::types::*;
 use crate::id::*;
 use crate::code_loc::*;
-use crate::{ Error, Result };
+use crate::error::*;
 
 /// Scopes contains all the scopes in the entire program.
 #[derive(Debug)]
@@ -34,7 +34,7 @@ impl Scopes {
 		type_: TypeId, 
 		value: ConstBuffer,
 	) {
-		let loc = CodeLoc { file: std::rc::Rc::new(format!("no")), line: 0, column: 0 };
+		let loc = CodeLoc { file: ustr::ustr("no"), line: 0, column: 0 };
 		let mut ast = Ast::new();
 		ast.is_typed = true;
 		let id = resources.insert_done(Resource::new_with_type(
@@ -59,8 +59,8 @@ impl Scopes {
 		name: ustr::Ustr, 
 		type_: TypeId, 
 		kind: ResourceKind,
-	) -> Result<()> {
-		let loc = CodeLoc { file: std::rc::Rc::new(format!("no")), line: 0, column: 0 };
+	) -> Result<(), ()> {
+		let loc = CodeLoc { file: ustr::ustr("no"), line: 0, column: 0 };
 		let mut ast = Ast::new();
 		ast.is_typed = true;
 		let id = resources.insert_done(Resource::new_with_type(
@@ -155,7 +155,7 @@ impl Scopes {
 		}
 	}
 
-	pub fn find_or_create_temp(&mut self, scope: ScopeId, name: ustr::Ustr) -> Result<ScopeMemberId> {
+	pub fn find_or_create_temp(&mut self, scope: ScopeId, name: ustr::Ustr) -> Result<ScopeMemberId, ()> {
 		if let Some(member_id) = self.find_member(scope, name) {
 			return Ok(member_id);
 		} else {
@@ -174,7 +174,7 @@ impl Scopes {
 		name: ustr::Ustr, 
 		loc: Option<&CodeLoc>,
 		kind: ScopeMemberKind,
-	) -> Result<(Vec<ResourceId>, ScopeMemberId)> {
+	) -> Result<(Vec<ResourceId>, ScopeMemberId), ()> {
 		let mut same_names_in_sub_scopes = Vec::new();
 		self.get_members_in_subscopes_with_name(scope, &name, &mut same_names_in_sub_scopes);
 
@@ -220,9 +220,15 @@ impl Scopes {
 					declared_member_id = Some((same_name_scope, same_name_id));
 				}
 			} else {
-				if let Some(ref loc) = self.member(same_name_id).declaration_location {
-					// TODO: Show where it was taken before.
-					return_error!(
+				if let Some(ref same_loc) = self.member(same_name_id).declaration_location {
+					info!(
+						same_loc,
+						"Name is taken here"
+					);
+				}
+
+				if let Some(ref loc) = loc {
+					return error!(
 						loc,
 						"Name is already taken"
 					);

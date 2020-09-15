@@ -6,7 +6,8 @@ use crate::code_gen::*;
 use crate::code_loc::*;
 use crate::scopes::*;
 use crate::id::*;
-use crate::{ DEBUG, Result };
+use crate::error::*;
+use crate::DEBUG;
 
 create_id!(ResourceId);
 
@@ -38,7 +39,7 @@ impl Resources {
 
 	/// Tries to compute one value. Returns an error if there is an error, or if
 	/// the compute_queue is empty but there are still uncomputed resources
-	pub fn compute_one(&mut self, types: &mut Types, scopes: &mut Scopes) -> Result<bool> {
+	pub fn compute_one(&mut self, types: &mut Types, scopes: &mut Scopes) -> Result<bool, ()> {
 		if let Some(member_id) = self.compute_queue.pop_front() {
 			let mut member = self.use_resource(member_id);
 			let resource_type = &mut member.type_;
@@ -197,14 +198,13 @@ impl Resources {
 		}
 	}
 
-	pub fn check_completion(&self, code: &str) {
+	pub fn check_completion(&self) {
 		if self.uncomputed_resources.len() > 0 {
 			for uncomputed_resource_id in self.uncomputed_resources.iter().copied() {
 				let resource = self.resource(uncomputed_resource_id);
 
-				crate::print_location(code, &resource.loc, "Resource cannot be computed");
+				warning!(&resource.loc, "Resource cannot be computed");
 			}
-			panic!("TODO: Allow several compiler errors");
 		}
 	}
 

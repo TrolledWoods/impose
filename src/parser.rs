@@ -1,10 +1,10 @@
 use crate::operator::Operator;
 
+use crate::error::*;
 use crate::scopes::*;
 use crate::resource::*;
 use crate::types::*;
 use crate::code_loc::*;
-use crate::{Error, Result};
 
 mod lexer;
 use lexer::*;
@@ -239,9 +239,9 @@ impl<'a> TokenStream<'a> {
 	}
 
 	fn expect_peek<'b, D: std::fmt::Display>(&'b mut self, message: impl FnOnce() -> D) 
-		-> Result<&'a Token> 
+		-> Result<&'a Token, ()> 
 	{
-		self.tokens.get(self.index).ok_or_else(|| error!(self, "{}", message()))
+		self.tokens.get(self.index).ok_or_else(|| error_value!(self, "{}", message()))
 	}
 
 	fn peek_kind(&self) -> Option<&'a TokenKind> {
@@ -254,10 +254,10 @@ impl<'a> TokenStream<'a> {
 	}
 
 	fn expect_next<'b, D: std::fmt::Display>(&mut self, message: impl FnOnce() -> D) 
-		-> Result<&'a Token> 
+		-> Result<&'a Token, ()> 
 	{
 		self.index += 1;
-		self.tokens.get(self.index - 1).ok_or_else(|| error!(self, "{}", message()))
+		self.tokens.get(self.index - 1).ok_or_else(|| error_value!(self, "{}", message()))
 	}
 
 	fn next_kind(&mut self) -> Option<&'a TokenKind> {
@@ -268,7 +268,7 @@ impl<'a> TokenStream<'a> {
 
 fn try_parse_create_label(
 	context: Context,
-) -> Result<Option<ScopeMemberId>> {
+) -> Result<Option<ScopeMemberId>, ()> {
 	if let Some(TokenKind::Colon) = context.tokens.peek_kind() {
 		context.tokens.next();
 		let loc = context.tokens.get_location();
@@ -283,7 +283,9 @@ fn try_parse_create_label(
 				context.resources.resolve_dependencies(&mut depenendants);
 				Ok(Some(id))
 			}
-			_ => return_error!(loc, "Expected label name"),
+			_ => {
+				return error!(loc, "Expected label name");
+			}
 		}
 	} else {
 		Ok(None)
@@ -292,7 +294,7 @@ fn try_parse_create_label(
 
 fn try_parse_label(
 	context: Context,
-) -> Result<Option<ScopeMemberId>> {
+) -> Result<Option<ScopeMemberId>, ()> {
 	if let Some(TokenKind::Colon) = context.tokens.peek_kind() {
 		context.tokens.next();
 		let loc = context.tokens.get_location();
@@ -301,10 +303,10 @@ fn try_parse_label(
 				let id = context.scopes.find_member(
 					context.scope, 
 					*name,
-				).ok_or_else(|| error!(loc, "Unknown label"))?;
+				).ok_or_else(|| error_value!(loc, "Unknown label"))?;
 
 				if context.scopes.member(id).kind != ScopeMemberKind::Label {
-					return_error!(
+					return error!(
 						loc, 
 						"Expected label, got variable or constant"
 					);
@@ -312,7 +314,9 @@ fn try_parse_label(
 
 				Ok(Some(id))
 			}
-			_ => return_error!(loc, "Expected label name"),
+			_ => {
+				return error!(loc, "Expected label name");
+			}
 		}
 	} else {
 		Ok(None)
@@ -320,13 +324,15 @@ fn try_parse_label(
 }
 
 fn parse_block(mut context: Context, expect_brackets: bool, is_runnable: bool) 
-	-> Result<AstNodeId>
+	-> Result<AstNodeId, ()>
 {
 	let loc = context.tokens.get_location();
 	if expect_brackets {
 		match context.tokens.next() {
 			Some(Token { kind: TokenKind::Bracket('{'), .. }) => (),
-			_ => return_error!(loc, "Expected '{{' to start block"),
+			_ => {
+				return error!(loc, "Expected '{{' to start block");
+			}
 		}
 	}
 
@@ -358,7 +364,7 @@ fn parse_block(mut context: Context, expect_brackets: bool, is_runnable: bool)
 				let declare_loc = &context.tokens.next().unwrap().loc;
 
 				if !is_runnable {
-					return_error!(ident_loc, "This scope is not runnable, so the only thing you can do is declare constants");
+					return error!(ident_loc, "This scope is not runnable, so the only thing you can do is declare constants");
 				}
 
 				// We have a declaration
@@ -419,7 +425,7 @@ fn parse_block(mut context: Context, expect_brackets: bool, is_runnable: bool)
 				let expr = parse_expression(context.borrow())?;
 				commands.push(expr);
 			} else {
-				return_error!(context.tokens, "This scope is not runnable, so the only thing you can do is declare constants");
+				return error!(context.tokens, "This scope is not runnable, so the only thing you can do is declare constants");
 			}
 		}
 
@@ -428,8 +434,10 @@ fn parse_block(mut context: Context, expect_brackets: bool, is_runnable: bool)
 			Some(Token { kind: TokenKind::ClosingBracket('}'), .. }) if expect_brackets => break,
 			Some(Token { kind: TokenKind::Semicolon, .. }) => (),
 			None if !expect_brackets => break,
-			_ => return_error!(loc, 
-				"Expected ';' or '}}', did you forget a semicolon or did you forget an operator?"),
+			_ => {
+				return error!(loc, 
+					"Expected ';' or '}}', did you forget a semicolon or did you forget an operator?");
+			}
 		}
 	}
 
@@ -438,7 +446,7 @@ fn parse_block(mut context: Context, expect_brackets: bool, is_runnable: bool)
 
 fn parse_type_expr_value(
 	mut context: Context
-) -> Result<AstNodeId> {
+) -> Result<AstNodeId, ()> {
 	let token = context.tokens.expect_peek(|| "Expected type expression")?;
 	match token.kind {
 		TokenKind::Operator(Operator::BitAndOrPointer) => {
@@ -461,13 +469,15 @@ fn parse_type_expr_value(
 		}
 		TokenKind::Bracket('{') => parse_type_expr_struct(context),
 		TokenKind::Bracket('(') => parse_type_expr_function_ptr(context),
-		_ => return_error!(token, "Expected type expression!"),
+		_ => {
+			return error!(token, "Expected type expression!");
+		}
 	}
 }
 
 fn parse_type_expr_struct(
 	mut context: Context
-) -> Result<AstNodeId> {
+) -> Result<AstNodeId, ()> {
 	let token = context.tokens.peek().unwrap();
 	let (_, args) = try_parse_list(
 		context.borrow(),
@@ -481,15 +491,15 @@ fn parse_type_expr_struct(
 
 					Ok((name, type_node))
 				} else {
-					Err(error!(value, "Expected ':' for struct member type"))
+					return error!(value, "Expected ':' for struct member type");
 				}
 			} else {
-				Err(error!(value, "Expected struct member name"))
+				return error!(value, "Expected struct member name");
 			}
 		},
 		&TokenKind::Bracket('{'),
 		&TokenKind::ClosingBracket('}'),
-	)?.ok_or_else(|| error!(token, "Expected parameter list"))?;
+	)?.ok_or_else(|| error_value!(token, "Expected parameter list"))?;
 
 	
 	Ok(context.ast.insert_node(Node::new(&context,
@@ -503,7 +513,7 @@ fn parse_type_expr_struct(
 
 fn parse_type_expr_function_ptr(
 	mut context: Context
-) -> Result<AstNodeId> {
+) -> Result<AstNodeId, ()> {
 	// Parse the function arguments.
 	let token = context.tokens.peek().unwrap();
 	let (_, args) = try_parse_list(
@@ -511,7 +521,7 @@ fn parse_type_expr_function_ptr(
 		parse_type_expr_value,
 		&TokenKind::Bracket('('),
 		&TokenKind::ClosingBracket(')'),
-	)?.ok_or_else(|| error!(token, "Expected parameter list"))?;
+	)?.ok_or_else(|| error_value!(token, "Expected parameter list"))?;
 
 	// Do we have a return type?
 	let return_type = if let Some(Token { loc: _, kind: TokenKind::Operator(Operator::Function) }) =
@@ -535,7 +545,7 @@ fn parse_type_expr_function_ptr(
 
 fn parse_function(
 	mut parent_context: Context
-) -> Result<ResourceId> {
+) -> Result<ResourceId, ()> {
 	// Lambda definition
 	let mut ast = Ast::new();
 	let mut args = Vec::new();
@@ -572,10 +582,10 @@ fn parse_function(
 
 						Ok(())
 					} else {
-						Err(error!(value, "Expected ':' for function argument type"))
+						error!(value, "Expected ':' for function argument type")?
 					}
 				} else {
-					Err(error!(value, "Expected function argument name"))
+					error!(value, "Expected function argument name")?
 				}
 			},
 			&TokenKind::Operator(Operator::BitwiseOrOrLambda),
@@ -603,7 +613,7 @@ fn parse_function(
 
 fn parse_expression(
 	mut context: Context,
-) -> Result<AstNodeId> {
+) -> Result<AstNodeId, ()> {
 	let token = context.tokens.expect_peek(|| "Expected expression")?;
 
 	// We sometime have special behaviour at the beginning of an expression. For example,
@@ -636,7 +646,7 @@ fn parse_expression(
 fn parse_expression_rec(
 	mut context: Context,
 	min_priority: u32, 
-) -> Result<AstNodeId> {
+) -> Result<AstNodeId, ()> {
 	let lvalue_starting_node = context.ast.nodes.len();
 	let mut a = parse_value(context.borrow())?;
 	
@@ -644,7 +654,7 @@ fn parse_expression_rec(
 		let (priority, _, left_to_right) = operator.data();
 
 		let priority = priority.ok_or_else(
-			|| error!(loc, "Operator is used as a binary operator, but it's not a binary operator")
+			|| error_value!(loc, "Operator is used as a binary operator, but it's not a binary operator")
 		)?;
 
 		if operator == Operator::Assign {
@@ -664,8 +674,9 @@ fn parse_expression_rec(
 					.expect_next(|| "Expected an identifier for the . operator")?
 				{
 					Token { kind: TokenKind::Identifier(name), .. } => *name,
-					Token { loc, .. } => return_error!(loc, 
-						"Expected an identifier for the . operator"),
+					Token { loc, .. } => {
+						return error!(loc, "Expected an identifier for the . operator");
+					}
 				};
 
 				a = context.ast.insert_node(Node::new(&context, 
@@ -693,18 +704,18 @@ fn parse_expression_rec(
 
 fn parse_value(
 	mut context: Context,
-) -> Result<AstNodeId> {
+) -> Result<AstNodeId, ()> {
 	let token = context.tokens.expect_peek(|| "Expected value")?;
 	let mut id = match token.kind {
 		TokenKind::Operator(Operator::BitwiseOrOrLambda) => {
-			return_error!(token, "Function declarations can only be the first thing in an expression");
+			return error!(token, "Function declarations can only be the first thing in an expression");
 		}
 		TokenKind::Operator(operator) => {
 			context.tokens.next();
 			let (_, unary_priority, _) = operator.data();
 
 			let unary_priority = unary_priority.ok_or_else(
-				|| error!(token, "Operator is not a unary operator, but it's used as one")
+				|| error_value!(token, "Operator is not a unary operator, but it's used as one")
 			)?;
 
 			let operand = parse_expression_rec(context.borrow(), unary_priority)?;
@@ -812,14 +823,18 @@ fn parse_value(
 
 			match context.tokens.next() {
 				Some(Token { kind: TokenKind::Bracket('('), .. }) => (),
-				_ => return_error!(context.tokens, "Expected '(' for argument in bit_cast"),
+				_ => {
+					return error!(context.tokens, "Expected '(' for argument in bit_cast");
+				}
 			}
 
 			let value = parse_expression(context.borrow())?;
 
 			match context.tokens.next() {
 				Some(Token { kind: TokenKind::ClosingBracket(')'), .. }) => (),
-				_ => return_error!(context.tokens, "Expected ')' for argument in bit_cast"),
+				_ => {
+					return error!(context.tokens, "Expected ')' for argument in bit_cast");
+				}
 			}
 
 			context.ast.insert_node(Node::new(&context, 
@@ -843,7 +858,9 @@ fn parse_value(
 			
 			match context.tokens.next() {
 				Some(Token { kind: TokenKind::ClosingBracket(')'), .. }) => (),
-				_ => return_error!(&token, "Parenthesis is not closed properly"),
+				_ => {
+					return error!(&token, "Parenthesis is not closed properly");
+				}
 			}
 
 			value
@@ -853,7 +870,7 @@ fn parse_value(
 
 			let loc = context.tokens.get_location();
 			let label = try_parse_label(context.borrow())?.ok_or_else(
-				|| error!(loc, "Expected label ':label_name'")
+				|| error_value!(loc, "Expected label ':label_name'")
 			)?;
 
 			// There may be some argument to the break
@@ -864,7 +881,9 @@ fn parse_value(
 				let loc = context.tokens.get_location();
 				match context.tokens.next_kind() {
 					Some(TokenKind::ClosingBracket(')')) => (),
-					_ => return_error!(loc, "Expected closing ')'"),
+					_ => {
+						return error!(loc, "Expected closing ')'");
+					}
 				}
 
 				Some(value)
@@ -875,7 +894,7 @@ fn parse_value(
 			context.ast.insert_node(Node::new(&context, token, context.scope, NodeKind::Skip { label, value }))
 		}
 		_ => {
-			return_error!(token, "Expected value");
+			return error!(token, "Expected value");
 		}
 	};
 
@@ -895,10 +914,10 @@ fn parse_value(
 fn try_parse_list<'t, V>(
 	mut context: Context<'_, 't>,
 	mut parse_value: 
-		impl for <'b> FnMut(Context<'b, 't>) -> Result<V>,
+		impl for <'b> FnMut(Context<'b, 't>) -> Result<V, ()>,
 	start_bracket: &TokenKind,
 	close_bracket: &TokenKind,
-) -> Result<Option<(CodeLoc, Vec<V>)>> {
+) -> Result<Option<(CodeLoc, Vec<V>)>, ()> {
 	if Some(start_bracket) != context.tokens.peek_kind() {
 		return Ok(None);
 	}
@@ -917,8 +936,12 @@ fn try_parse_list<'t, V>(
 		match next.map(|t| &t.kind) {
 			Some(TokenKind::Comma) => (),
 			Some(something) if something == close_bracket => break,
-			Some(_) => return_error!(next.unwrap(), "Expected ',' to separate items in list"),
-			None => return_error!(location, "List is not closed"),
+			Some(_) => {
+				return error!(next.unwrap(), "Expected ',' to separate items in list");
+			}
+			None => {
+				return error!(location, "List is not closed");
+			}
 		}
 	}
 
@@ -931,7 +954,7 @@ pub fn parse_code(
 	scopes: &mut Scopes,
 	mut scope: ScopeId,
 	is_value: bool,
-) -> Result<Ast> {
+) -> Result<Ast, ()> {
 	let (last_loc, tokens) = lex_code(code)?;
 	let mut ast = Ast::new();
 

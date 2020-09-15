@@ -6,37 +6,12 @@
 pub const DEBUG: bool = false;
 
 #[macro_use]
+extern crate lazy_static;
+
+#[macro_use]
 pub mod id;
-
-/// This is a macro to allow the compiler line and column to ergonomically be passed
-/// inside the errors that are returned(for compiler debugging)
-macro_rules! return_error {
-	($location:expr, $($format_message:tt)+) => {{
-		return Err(Error {
-			message: format!($($format_message)+),
-			source_code_location: $location.get_location(),
-			compiler_location: CodeLoc { 
-				line: line!(), 
-				column: column!(), 
-				file: std::rc::Rc::new(String::from(file!())),
-			},
-		}.into());
-	}}
-}
-
-macro_rules! error {
-	($location:expr, $($format_message:tt)+) => {{
-		Error {
-			message: format!($($format_message)+),
-			source_code_location: $location.get_location(),
-			compiler_location: CodeLoc { 
-				line: line!(), 
-				column: column!(), 
-				file: std::rc::Rc::new(String::from(file!())),
-			},
-		}
-	}}
-}
+#[macro_use]
+pub mod error;
 
 pub mod operator;
 pub mod parser;
@@ -160,8 +135,8 @@ fn main() {
 	let super_scope = scopes.super_scope;
 	let ast = match parser::parse_code(&code, &mut resources, &mut scopes, super_scope, true) {
 		Ok(value) => value,
-		Err(err) => {
-			print_error(&code, err);
+		Err(()) => {
+			error::print_output(&code);
 			return;
 		}
 	};
@@ -179,8 +154,7 @@ fn main() {
 
 	while match resources.compute_one(&mut types, &mut scopes) {
 		Ok(should_continue) => should_continue,
-		Err(err) => {
-			print_error(&code, err);
+		Err(()) => {
 			false
 		}
 	} {}
@@ -190,7 +164,9 @@ fn main() {
 		types.print_types();
 	}
 
-	resources.check_completion(&code);
+	resources.check_completion();
+
+	error::print_output(&code);
 
 	if let ResourceKind::Value { value: Some(ref value), .. } = resources.resource(id).kind {
 		println!("\n\n --- RESULT ---");
@@ -201,8 +177,6 @@ fn main() {
 		println!();
 		
 		println!("Completed compilation in {:?}", time.elapsed());
-	} else {
-		println!("Don't know the value");
 	}
 }
 
@@ -229,19 +203,3 @@ fn print_location(code: &str, loc: &code_loc::CodeLoc, message: &str) {
 		println!("After code: {}", message);
 	}
 }
-
-fn print_error(code: &str, error: Error) {
-	println!("ERROR at {:?}: {}", error.source_code_location, error.message);
-
-	print_location(code, &error.source_code_location, "");
-	println!("Compiler location: {:?}", error.compiler_location);
-}
-
-#[derive(Debug)]
-pub struct Error {	
-	pub message: String,
-	pub source_code_location: code_loc::CodeLoc,
-	pub compiler_location: code_loc::CodeLoc,
-}
-
-pub type Result<T> = std::result::Result<T, Error>;

@@ -1,6 +1,6 @@
 use crate::operator::*;
 use crate::code_loc::*;
-use crate::{ Error, Result };
+use crate::error::*;
 
 const KEYWORDS:  &[&str] = &["if", "else", "loop", "skip", "bit_cast", "type_of", "type"];
 
@@ -78,12 +78,12 @@ fn move_pos_with_char(pos: &mut CodeLoc, character: char) {
 	}
 }
 
-pub fn lex_code(code: &str) -> Result<(CodeLoc, Vec<Token>)> {
+pub fn lex_code(code: &str) -> Result<(CodeLoc, Vec<Token>), ()> {
 	let mut lexer = Lexer {
 		chars: code.char_indices(),
 		source_code_location: CodeLoc { 
 			line: 1, column: 1, 
-			file: std::rc::Rc::new(String::from("source_code.imp"))
+			file: ustr::ustr("source_code.imp"),
 		},
 	};
 
@@ -157,7 +157,7 @@ pub fn lex_code(code: &str) -> Result<(CodeLoc, Vec<Token>)> {
 				}
 
 				if !found_operator {
-					return_error!(lexer, "Invalid character {}", c);
+					return error!(lexer, "Invalid character {}", c);
 				}
 			}
 		}
@@ -189,7 +189,7 @@ fn skip_whitespace(lexer: &mut Lexer) {
 	}
 }
 
-fn lex_numeric_literal(lexer: &mut Lexer) -> Result<(CodeLoc, i128)> {
+fn lex_numeric_literal(lexer: &mut Lexer) -> Result<(CodeLoc, i128), ()> {
 	let location = lexer.source_code_location.clone();
 	let mut number: i128 = 0;
 	let mut base         = 10;
@@ -203,7 +203,7 @@ fn lex_numeric_literal(lexer: &mut Lexer) -> Result<(CodeLoc, i128)> {
 				let (num, overflow_b) = num   .overflowing_add(digit as i128);
 
 				if overflow_a || overflow_b {
-					return_error!(lexer, "Number too big");
+					return error!(lexer, "Number too big");
 				}
 
 				number = num;
@@ -219,9 +219,9 @@ fn lex_numeric_literal(lexer: &mut Lexer) -> Result<(CodeLoc, i128)> {
 			None if !has_custom_base && c.is_alphabetic() => match c {
 				'c' => {
 					if number > 36 {
-						return_error!(location, "Cannot have a base higher than 36(got {})", number);
+						return error!(location, "Cannot have a base higher than 36(got {})", number);
 					} else if number < 2 {
-						return_error!(location, "Cannot have a base less than 2(got {})", number);
+						return error!(location, "Cannot have a base less than 2(got {})", number);
 					}
 
 					lexer.next();
@@ -235,7 +235,7 @@ fn lex_numeric_literal(lexer: &mut Lexer) -> Result<(CodeLoc, i128)> {
 				}
 				'x' => {
 					if number != 0 {
-						return_error!(location, "Expected '0' before hexadecimal base specifier, got '{}'", number);
+						return error!(location, "Expected '0' before hexadecimal base specifier, got '{}'", number);
 					}
 
 					lexer.next();
@@ -248,7 +248,7 @@ fn lex_numeric_literal(lexer: &mut Lexer) -> Result<(CodeLoc, i128)> {
 				}
 				'b' => {
 					if number != 0 {
-						return_error!(location, "Expected '0' before binary base specifier, got '{}'", number);
+						return error!(location, "Expected '0' before binary base specifier, got '{}'", number);
 					}
 
 					lexer.next();
@@ -260,19 +260,19 @@ fn lex_numeric_literal(lexer: &mut Lexer) -> Result<(CodeLoc, i128)> {
 					has_digits = false;
 				}
 				_ => {
-					return_error!(lexer, "Invalid custom base character in numberic literal.\n\
+					return error!(lexer, "Invalid custom base character in numberic literal.\n\
 						If you intended to have an identifier after the number, \
 						add a space in between.");
 				}
 			}
 			None if c.is_digit(36) => {
 				if c.is_alphabetic() {
-					return_error!(
+					return error!(
 						lexer, 
 						"Digit '{}' is not a number in the given base(alphabetic character can be digits too in high bases", c
 					);
 				} else {
-					return_error!(
+					return error!(
 						lexer,
 						"Digit '{}' is not a number in the given base",
 						c
@@ -284,13 +284,13 @@ fn lex_numeric_literal(lexer: &mut Lexer) -> Result<(CodeLoc, i128)> {
 	}
 
 	if !has_digits {
-		return_error!(lexer, "Number has to have digits");
+		return error!(lexer, "Number has to have digits");
 	}
 
 	Ok((location, number))
 }
 
-fn lex_string_literal(lexer: &mut Lexer) -> Result<(CodeLoc, String)> {
+fn lex_string_literal(lexer: &mut Lexer) -> Result<(CodeLoc, String), ()> {
 	let location = lexer.source_code_location.clone();
 
 	let mut quotes = 0;
@@ -308,7 +308,7 @@ fn lex_string_literal(lexer: &mut Lexer) -> Result<(CodeLoc, String)> {
 			Some(c) => c,
 			None => {
 				// TODO: Show a note of where the string literal started.
-				return_error!(lexer, "String literal wasn't closed");
+				return error!(lexer, "String literal wasn't closed");
 			}
 		};
 		move_pos_with_char(&mut lexer.source_code_location, c);
@@ -330,7 +330,9 @@ fn lex_string_literal(lexer: &mut Lexer) -> Result<(CodeLoc, String)> {
 			// Escaped character
 			let c = match lexer.next() {
 				Some(value) => value,
-				None => return_error!(lexer, "String literal wasn't closed"),
+				None => {
+					return error!(lexer, "String literal wasn't closed");
+				}
 			};
 			move_pos_with_char(&mut lexer.source_code_location, c);
 
@@ -343,18 +345,22 @@ fn lex_string_literal(lexer: &mut Lexer) -> Result<(CodeLoc, String)> {
 
 					let number_u32: u32 = match number.try_into() {
 						Ok(n) => n,
-						Err(_) => return_error!(num_loc, "Number {} is invalid unicode", number),
+						Err(_) => {
+							return error!(num_loc, "Number {} does not fit within 32 bits, which is required for unicode values", number);
+						}
 					};
 					let unicode = match char::from_u32(number_u32) {
 						Some(unicode) => unicode,
-						None => return_error!(num_loc, "Number {} is invalid unicode", number),
+						None => {
+							return error!(num_loc, "Number {} is invalid unicode", number);
+						}
 					};
 
 					if let Some('\\') = lexer.next() {
 						lexer.source_code_location.column += 1;
 						string.push(unicode);
 					} else {
-						return_error!(
+						return error!(
 							lexer, 
 							"Expected '\\' character after unicode escape character."
 						);
@@ -366,7 +372,7 @@ fn lex_string_literal(lexer: &mut Lexer) -> Result<(CodeLoc, String)> {
 				'r'  => string.push('\r'),
 				't'  => string.push('\t'),
 				_ => {
-					return_error!(lexer, "'{}' is not a valid escape character", c);
+					return error!(lexer, "'{}' is not a valid escape character", c);
 				}
 			}
 

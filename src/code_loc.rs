@@ -1,6 +1,6 @@
 #[derive(Clone, PartialEq, Eq)]
 pub struct CodeLoc {
-	pub file: std::rc::Rc<String>,
+	pub file: ustr::Ustr,
 	pub line: u32, 
 	pub column: u32,
 }

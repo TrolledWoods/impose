@@ -7,7 +7,7 @@ use crate::id::*;
 use crate::align::*;
 use crate::code_loc::*;
 use crate::operator::*;
-use crate::{ Error, Result };
+use crate::error::*;
 
 pub const TYPE_TYPE_ID:   TypeId = TypeId::create_raw(0);
 pub const U64_TYPE_ID:    TypeId = TypeId::create_raw(1);
@@ -197,12 +197,12 @@ impl AstTyper {
 		ast: &mut Ast,
 		scopes: &mut Scopes,
 		resources: &Resources,
-	) -> Result<Option<Dependency>> {
+	) -> Result<Option<Dependency>, ()> {
 		while self.node_id < ast.nodes.len() {
 			let node = &ast.nodes[self.node_id];
 
 			let type_kind = match node.kind {
-				NodeKind::Temporary => return_error!(node, "Temporaries have to be removed in the parser, they are not to be kept around until type checking(internal compiler error)"),
+				NodeKind::Temporary => return error!(node, "Temporaries have to be removed in the parser, they are not to be kept around until type checking(internal compiler error)"),
 				NodeKind::Member { contains, .. } => {
 					ast.nodes[contains as usize].type_
 				}
@@ -225,7 +225,7 @@ impl AstTyper {
 							} else if sub_name == "high" {
 								Some(U32_TYPE_ID)
 							} else {
-								return_error!(node, "This member does not exist on U64");
+								return error!(node, "This member does not exist on U64");
 							}
 						}
 						TypeKind::Struct { ref members } => {
@@ -240,10 +240,10 @@ impl AstTyper {
 							if let Some(type_) = type_ {
 								Some(type_)
 							} else {
-								return_error!(node, "This member does not exist in struct");
+								return error!(node, "This member does not exist in struct");
 							}
 						}
-						_ => return_error!(node, "This type doesn't have members"),
+						_ => return error!(node, "This type doesn't have members"),
 					}
 				}
 				NodeKind::LocationMarker => None,
@@ -260,7 +260,7 @@ impl AstTyper {
 					// TODO: Check that condition is a boolean
 					
 					if ast.nodes[true_body as usize].type_ != ast.nodes[false_body as usize].type_ {
-						return_error!(node, "if and else blocks have to have the same types");
+						return error!(node, "if and else blocks have to have the same types");
 					}
 
 					ast.nodes[true_body as usize].type_
@@ -283,7 +283,7 @@ impl AstTyper {
 						types.handle(ast.nodes[value as usize].type_.unwrap());
 
 					if into_type_handle.size != value_type_handle.size {
-						return_error!(node, "Bit casting requires the type you're casting to and the type you're casting from to be the same size in bits");
+						return error!(node, "Bit casting requires the type you're casting to and the type you're casting from to be the same size in bits");
 					}
 
 					Some(into_type_handle.id)
@@ -295,7 +295,7 @@ impl AstTyper {
 							if let Some(type_) = member.type_ {
 								Some(type_)
 							} else {
-								return_error!(node, "Type is not assigned, is the variable not declared? (This is probably a compiler problem)");
+								return error!(node, "Type is not assigned, is the variable not declared? (This is probably a compiler problem)");
 							}
 						} 
 						ScopeMemberKind::Constant(id) => {
@@ -309,7 +309,7 @@ impl AstTyper {
 							return Ok(Some(Dependency::Constant(id)));
 						}
 						ScopeMemberKind::Label => {
-							return_error!(node, "This is not a variable, it is a label!");
+							return error!(node, "This is not a variable, it is a label!");
 						}
 						ScopeMemberKind::Indirect(_) => { 
 							unreachable!("scope.member function should never return Indirect");
@@ -324,13 +324,13 @@ impl AstTyper {
 						= func_type 
 					{
 						if arg_list.len() != args.len() {
-							return_error!(node.loc, "Expected {} arguments, got {}", 
+							return error!(node.loc, "Expected {} arguments, got {}", 
 								args.len(), arg_list.len());
 						}
 
 						for (wanted, got) in args.iter().zip(arg_list) {
 							if Some(*wanted) != ast.nodes[*got as usize].type_ {
-								return_error!(ast.get_node(*got as u32), "Expected {:?}, got {:?}",
+								return error!(ast.get_node(*got as u32), "Expected {:?}, got {:?}",
 									wanted, 
 									ast.nodes[*got as usize].type_
 								);
@@ -339,12 +339,12 @@ impl AstTyper {
 
 						Some(*returns)
 					} else {
-						return_error!(node, "This is not a function pointer, yet a function call was attemted on it");
+						return error!(node, "This is not a function pointer, yet a function call was attemted on it");
 					}
 				}
 				NodeKind::BinaryOperator { left, right, operator: _ } => {
 					if ast.nodes[right as usize].type_ != ast.nodes[left as usize].type_ {
-						return_error!(node, "This operator needs both operands to be of the same type");
+						return error!(node, "This operator needs both operands to be of the same type");
 					}
 
 					ast.nodes[right as usize].type_
@@ -360,17 +360,17 @@ impl AstTyper {
 							{
 								Some(sub_type)
 							} else {
-								return_error!(node, "Can only dereference pointers");
+								return error!(node, "Can only dereference pointers");
 							}
 						}
-						_ => return_error!(node, "Unhandled operator (compiler error)"),
+						_ => return error!(node, "Unhandled operator (compiler error)"),
 					}
 				},
 				NodeKind::Declaration { variable_name, value } => {
 					if let Some(type_) = ast.nodes[value as usize].type_ {
 						scopes.member_mut(variable_name).type_ = Some(type_);
 					} else {
-						return_error!(node, "Cannot assign nothing to a variable");
+						return error!(node, "Cannot assign nothing to a variable");
 					}
 					None
 				}
@@ -380,7 +380,7 @@ impl AstTyper {
 					if let Some(label) = label {
 						if let Some(label_type) = self.label_types.get(&label) {
 							if type_ != *label_type {
-								return_error!(
+								return error!(
 									ast.nodes[*contents.last().unwrap() as usize], 
 									"Incompatible types, block doesn't return this type"
 								);
@@ -395,7 +395,7 @@ impl AstTyper {
 				NodeKind::Skip { label, value } => {
 					if let Some(label_type) = self.label_types.get(&label) {
 						if value.map(|value| ast.nodes[value as usize].type_).flatten() != *label_type {
-							return_error!(node, "Incompatible types, block doesn't return this type");
+							return error!(node, "Incompatible types, block doesn't return this type");
 						}
 					} else {
 						self.label_types.insert(
@@ -420,7 +420,7 @@ impl AstTyper {
 						ScopeMemberKind::Constant(id) => {
 							if let Some(type_) = resources.resource(id).type_ {
 								if type_ != TYPE_TYPE_ID {
-									return_error!(node, "A Type identifier has to contain a type!");
+									return error!(node, "A Type identifier has to contain a type!");
 								}
 							} else {
 								return Ok(Some(Dependency::Type(id)));
@@ -431,7 +431,7 @@ impl AstTyper {
 									if let &[a, b, c, d, e, f, g, h] = value.as_slice() {
 										let id = usize::from_le_bytes([a, b, c, d, e, f, g, h]);
 										if id >= types.types.len() {
-											return_error!(node, "Invalid type id");
+											return error!(node, "Invalid type id");
 										}
 										Some(TypeId::create(id as u32))
 									} else {
@@ -441,10 +441,10 @@ impl AstTyper {
 								ResourceKind::Value { value: None, .. } => {
 									return Ok(Some(Dependency::Value(id)));
 								}
-								_ => return_error!(node, "A Type identifier has to contain a type!"),
+								_ => return error!(node, "A Type identifier has to contain a type!"),
 							}
 						}
-						_ => return_error!(node, "A Type identifier has to be constant"), 
+						_ => return error!(node, "A Type identifier has to be constant"), 
 					}
 				}
 				NodeKind::TypeFunctionPointer { ref arg_list, return_type } => {
