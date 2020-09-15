@@ -64,38 +64,49 @@ impl Types {
 	}
 
 	pub fn print(&self, type_: TypeId) {
-		match self.types.get(type_).kind {
-			TypeKind::EmptyType => print!("Empty"),
-			TypeKind::Type => print!("Type"),
-			TypeKind::Struct { ref members } => {
-				print!("struct{{ ");
-				for (i, (name, offset, member)) in members.iter().enumerate() {
-					if i > 0 { print!(", "); }
+		let mut buffer = Vec::new();
+		self.write_type_to_buffer(type_, &mut buffer);
+		print!("{}", String::from_utf8(buffer).unwrap());
+	}
 
-					print!("{}[{}]: ", name, offset);
-					self.print(member.id);
+	pub fn type_to_string(&self, type_: TypeId) -> String {
+		let mut buffer = Vec::new();
+		self.write_type_to_buffer(type_, &mut buffer);
+		String::from_utf8(buffer).unwrap()
+	}
+
+	pub fn write_type_to_buffer(&self, type_: TypeId, buffer: &mut impl std::io::Write) {
+		match self.types.get(type_).kind {
+			TypeKind::EmptyType => write!(buffer, "Empty").unwrap(),
+			TypeKind::Type => write!(buffer, "Type").unwrap(),
+			TypeKind::Struct { ref members } => {
+				write!(buffer, "struct{{ ").unwrap();
+				for (i, (name, offset, member)) in members.iter().enumerate() {
+					if i > 0 { write!(buffer, ", ").unwrap(); }
+
+					write!(buffer, "{}[{}]: ", name, offset).unwrap();
+					self.write_type_to_buffer(member.id, buffer);
 				}
-				print!("}}");
+				write!(buffer, "}}").unwrap();
 			}
 			TypeKind::Pointer(sub_type) => {
-				print!("&");
-				self.print(sub_type);
+				write!(buffer, "&").unwrap();
+				self.write_type_to_buffer(sub_type, buffer);
 			}
 			TypeKind::FunctionPointer { ref args, returns } => {
-				print!("(");
+				write!(buffer, "(").unwrap();
 				for (i, arg) in args.iter().enumerate() {
-					if i > 0 { print!(", "); }
-					self.print(*arg);
+					if i > 0 { write!(buffer, ", ").unwrap(); }
+					self.write_type_to_buffer(*arg, buffer);
 				}
-				print!(") -> (");
-				self.print(returns);
-				print!(")");
+				write!(buffer, ") -> ").unwrap();
+				self.write_type_to_buffer(returns, buffer);
 			}
 			TypeKind::String => {
-				print!("string");
+				write!(buffer, "string").unwrap();
 			}
 			TypeKind::Primitive(primitive_kind) => {
-				print!("{:?}", primitive_kind);
+				write!(buffer, "{:?}", primitive_kind).unwrap();
 			}
 		}
 	}
@@ -330,9 +341,9 @@ impl AstTyper {
 
 						for (wanted, got) in args.iter().zip(arg_list) {
 							if Some(*wanted) != ast.nodes[*got as usize].type_ {
-								return error!(ast.get_node(*got as u32), "Expected {:?}, got {:?}",
-									wanted, 
-									ast.nodes[*got as usize].type_
+								return error!(ast.get_node(*got as u32), "Expected '{}', got '{}'",
+									types.type_to_string(*wanted), 
+									types.type_to_string(ast.nodes[*got as usize].type_.unwrap())
 								);
 							}
 						}
