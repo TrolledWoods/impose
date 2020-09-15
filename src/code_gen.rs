@@ -27,6 +27,7 @@ pub enum Instruction {
 	WrappingMul(LocalHandle, Value, Value),
 	WrappingDiv(LocalHandle, Value, Value),
 
+	SetAddressOf(LocalHandle, LocalHandle),
 	Move(LocalHandle, Value),
 
 	JumpRel(i64),
@@ -50,6 +51,8 @@ impl fmt::Debug for Instruction {
 				write!(f, "{:?} = {:?} * {:?}", result, a, b),
 			Instruction::WrappingDiv(result, a, b) => 
 				write!(f, "{:?} = {:?} / {:?}", result, a, b),
+			Instruction::SetAddressOf(to, from) =>
+				write!(f, "({:?}) = &({:?})", to, from),
 			Instruction::Move(a, b) => write!(f, "mov {:?}, {:?}", a, b),
 			Instruction::JumpRel(a) => write!(f, "jump {:?}", a),
 			Instruction::JumpRelIfZero(value, a) => write!(f, "jump {:?} if {:?} == 0", a, value),
@@ -399,6 +402,23 @@ pub fn compile_expression(
 			}
 			NodeKind::Resource(id) => {
 				node_values.push(Some(get_resource_constant(resources, id)?))
+			}
+
+			NodeKind::UnaryOperator { operator: Operator::BitAndOrPointer, operand } => {
+				let to = locals.allocate(types.handle(node.type_.unwrap()));
+				let from = match node_values[operand as usize].clone().unwrap() {
+					Value::Local(handle) => handle,
+					value => {
+						let local = locals.allocate(types.handle(
+								ast.nodes[operand as usize].type_.unwrap()
+						));
+						push_instr!(instructions, Instruction::Move(local, value));
+						local
+					}
+				};
+
+				push_instr!(instructions, Instruction::SetAddressOf(to, from));
+				node_values.push(Some(Value::Local(to)));
 			}
 
 			// Get the type of some value as a constant.

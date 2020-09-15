@@ -7,4 +7,6 @@
 //   a copy of the thing that was behind the pointer.
 
 x := 50;
-x
+my_pointer := &x;
+
+print_num(bit_cast U64 (my_pointer));

@@ -97,6 +97,10 @@ pub fn run_instructions(
 					_ => panic!("Unknown thing"),
 				}
 			}
+			Instruction::SetAddressOf(to, from) => {
+				let bytes = (stack_frame_instance.address_of_local(from) as u64).to_le_bytes();
+				stack_frame_instance.insert_into_local(to, &bytes);
+			}
 			Instruction::Call { ref calling, returns, ref args } => {
 				// TODO: Get rid of recursion(by introducing call stack), 
 				// and don't crash if the function is not defined yet, just pause the execution

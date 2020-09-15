@@ -208,6 +208,11 @@ pub struct StackFrameInstance {
 }
 
 impl StackFrameInstance {
+	pub fn address_of_local(&self, local: LocalHandle) -> *const u8 {
+		let (pos, _) = self.layout.local_pos_and_size(local);
+		&self.bytes()[pos]
+	}
+
 	pub fn get_u32(&self, value: &Value) -> u32 {
 		if let &[a, b, c, d] = self.get_value(value) {
 			u32::from_le_bytes([a, b, c, d])
