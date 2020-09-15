@@ -1,33 +1,49 @@
-result := {:loop_block
-	loop {
-		my_num := input_num_with_query("Please enter a number\n");
+MyType :: type { 
+	sub_struct: {
+		more_members: U64,
+		even_more_member: U32,
+		even_more_member: U32,
+		even_more_member: U32,
+		even_more_member: U32,
+	},
+	y: U32,
+};
 
-		if my_num - 0 {
-			print(return_query(my_num)());
-			0 // Return something just because it's needed here for now
-		} else {
-			print("Since you entered zero we are quitting");
-			skip :loop_block (42);
-			0 // Return something just because it's needed here for now
+{:main_program
+	// Comment out line to do stuff
+	skip :main_program (0);
+
+	result := {:loop_block
+		loop {
+			my_num := input_num_with_query("Please enter a number\n");
+
+			if my_num - 0 {
+				print(return_query(my_num)());
+				0 // Return something just because it's needed here for now
+			} else {
+				print("Since you entered zero we are quitting");
+				skip :loop_block (42);
+				0 // Return something just because it's needed here for now
+			};
+
 		};
 
+		0
 	};
 
-	0
-};
+	input_num_with_query :: |message: String| {
+		print(message);
+		print(" > ");
+		input()
+	};
 
-input_num_with_query :: |message: String| {
-	print(message);
-	print(" > ");
-	input()
-};
+	return_query :: |num: U64| {
+		if num - 20 {
+			|| "Wow, that's really quite a cool thing!\n"
+		} else {
+			|| "Wow, that's a huge pile of shit!\n"
+		}
+	};
 
-return_query :: |num: U64| {
-	if num - 20 {
-		|| "Wow, that's really quite a cool thing!\n"
-	} else {
-		|| "Wow, that's a huge pile of shit!\n"
-	}
-};
-
-result
+	result
+}

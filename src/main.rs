@@ -1,7 +1,7 @@
 #![feature(assoc_char_funcs)]
 #![feature(drain_filter)]
 
-pub const DEBUG: bool = false;
+pub const DEBUG: bool = true;
 
 mod prelude {
 	pub(crate) use crate::{ 

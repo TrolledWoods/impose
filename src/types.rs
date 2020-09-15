@@ -145,7 +145,7 @@ impl Type {
 #[derive(Debug, Clone, PartialEq)]
 pub enum TypeKind {
 	Struct {
-		members: Vec<(String, usize, TypeHandle)>,
+		members: Vec<(ustr::Ustr, usize, TypeHandle)>,
 	},
 	EmptyType,
 	FunctionPointer {
@@ -402,6 +402,27 @@ impl AstTyper {
 							Some(v) => ast.nodes[v as usize].type_.unwrap(),
 							None => types.insert(Type::new(TypeKind::EmptyType)),
 						}
+					};
+
+					Some(types.insert(Type::new(kind)))
+				}
+				NodeKind::TypeStruct { ref args } => {
+					// Figure out the wanted offsets of the arguments.
+					let mut full_member_data = Vec::new();
+
+					let mut offset = 0;
+					for (name, member_type_node) in args {
+						let member_type_handle = types.handle(
+							ast.nodes[*member_type_node as usize].type_.unwrap()
+						);
+						let aligned_off = crate::align::to_aligned(member_type_handle.align, offset);
+						full_member_data.push((*name, aligned_off, member_type_handle));
+
+						offset = aligned_off + member_type_handle.size;
+					}
+
+					let kind = TypeKind::Struct {
+						members: full_member_data,
 					};
 
 					Some(types.insert(Type::new(kind)))

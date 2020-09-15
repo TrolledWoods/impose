@@ -391,6 +391,7 @@ pub fn compile_expression(
 			// Type expressions evaluate types with the typing system at typing type, we do not
 			// need to generate any instructions for them.
 			NodeKind::TypeIdentifier(_) |
+			NodeKind::TypeStruct { .. } |
 			NodeKind::TypeFunctionPointer { .. } => {
 				node_values.push(None);
 			}

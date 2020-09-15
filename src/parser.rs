@@ -194,6 +194,9 @@ pub enum NodeKind {
 		arg_list: Vec<AstNodeId>,
 		return_type: Option<AstNodeId>,
 	},
+	TypeStruct {
+		args: Vec<(ustr::Ustr, AstNodeId)>,
+	},
 }
 
 struct TokenStream<'a> {
@@ -437,9 +440,46 @@ fn parse_type_expr_value(
 				NodeKind::TypeIdentifier(member),
 			)))
 		}
+		TokenKind::Bracket('{') => parse_type_expr_struct(context),
 		TokenKind::Bracket('(') => parse_type_expr_function_ptr(context),
 		_ => return_error!(token, "Expected type expression!"),
 	}
+}
+
+fn parse_type_expr_struct(
+	mut context: Context
+) -> Result<AstNodeId> {
+	let token = context.tokens.peek().unwrap();
+	let (_, args) = try_parse_list(
+		context.borrow(),
+		|mut context| {
+			// TODO: Try to unify named list parsing somehow.
+			let value = context.tokens.expect_next(|| "Expected struct member name")?;
+			if let Token { loc: _, kind: TokenKind::Identifier(name) } = *value {
+				let colon = context.tokens.next();
+				if matches!(colon, Some(Token { kind: TokenKind::Colon, .. })) {
+					let type_node = parse_type_expr_value(context.borrow())?;
+
+					Ok((name, type_node))
+				} else {
+					Err(error!(value, "Expected ':' for struct member type"))
+				}
+			} else {
+				Err(error!(value, "Expected struct member name"))
+			}
+		},
+		&TokenKind::Bracket('{'),
+		&TokenKind::ClosingBracket('}'),
+	)?.ok_or_else(|| error!(token, "Expected parameter list"))?;
+
+	
+	Ok(context.ast.insert_node(Node::new(&context,
+		token,
+		context.scope,
+		NodeKind::TypeStruct {
+			args,
+		},
+	)))
 }
 
 fn parse_type_expr_function_ptr(
@@ -1096,8 +1136,6 @@ impl Scopes {
 					// The member we have declared is already in a scope, however, 
 					member.kind = ScopeMemberKind::Indirect(declared_member_id);
 				} else {
-					println!("Changing declaration point");
-
 					// Swap the UndefinedDependency here with the thing we are going to declare,
 					// and change the scope of it.
 
