@@ -1,12 +1,31 @@
 // ROADMAP TO POINTERS:
 //
-// - Make pointers work in a scope, but not interact with constants in any way.
-// - Allow acquiring pointers from a constant value, by adding some extra instructions.
-// - Pointer buffers, with info about how much a pointer contains
-// - Assigning pointers/pointer buffers to constants, by creating other constants that contain
+// [*] Make pointers work in a scope, but not interact with constants in any way.
+// [ ] Allow acquiring pointers from a constant value, by adding some extra instructions.
+// [ ] Pointer buffers, with info about how much a pointer contains
+// [ ] Assigning pointers/pointer buffers to constants, by creating other constants that contain
 //   a copy of the thing that was behind the pointer.
 
-x := 50;
-my_pointer := &x;
+cast_to_u32 :: |x: U64| {
+	x_ptr := &x;
 
-print_num(bit_cast U64 (my_pointer));
+	smol_x_ptr := bit_cast &U32 (x_ptr);
+	smol_x := *smol_x_ptr;
+
+	smol_x
+};
+
+cast_to_u32(0xffff)
+
+
+
+
+
+
+
+
+
+
+
+
+

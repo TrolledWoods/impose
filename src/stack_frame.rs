@@ -98,6 +98,18 @@ pub struct LocalHandle {
 	id: LocalId,
 }
 
+impl LocalHandle {
+	/// Turns the local into an indirect value pointing to that local.
+	pub fn dereference_into_pointer_value(&self) -> Value {
+		Value::Pointer {
+			pointer: self.id,
+			pointer_offset: self.offset,
+			offset: 0,
+			resulting_size: self.size,
+		}
+	}
+}
+
 create_id!(LocalId);
 
 struct Local {
@@ -244,6 +256,8 @@ impl StackFrameInstance {
 				let pointer_pos = self.layout.local_pos(pointer) + pointer_offset;
 				let from = self.get_at_index::<*const u8>(pointer_pos).wrapping_add(offset);
 
+				println!("PAUSE!!!!");
+
 				// SAFETY: Non-existant. This is for my own language(unsafe), which means some
 				// parts of the runtime has to be unsafe.
 				//
@@ -268,7 +282,7 @@ impl StackFrameInstance {
 				let (to_pos, to_size) = self.layout.local_pos_and_size(local);
 				let pointer_pos = self.layout.local_pos(pointer) + pointer_offset;
 
-				assert_eq!(to_size, resulting_size);
+				assert!(to_size <= resulting_size);
 
 				// We have to do these in this specific order, so that we do not have a &mut [u8]
 				// and a &[u8] at the same time.
@@ -301,7 +315,7 @@ impl StackFrameInstance {
 	/// Panics in debug mode if the index is not aligned to the alignment of the type,
 	/// or if the alignment of the type is bigger than the max alignment.
 	pub fn get_at_index<T>(&self, index: usize) -> T where T: Copy {
-		debug_assert!(std::mem::align_of::<T>() < STACK_FRAME_ALIGNMENT);
+		debug_assert!(std::mem::align_of::<T>() <= STACK_FRAME_ALIGNMENT);
 		debug_assert!(is_aligned(std::mem::align_of::<T>(), index));
 
 		unsafe {

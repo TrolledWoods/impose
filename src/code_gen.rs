@@ -420,6 +420,25 @@ pub fn compile_expression(
 				push_instr!(instructions, Instruction::SetAddressOf(to, from));
 				node_values.push(Some(Value::Local(to)));
 			}
+			NodeKind::UnaryOperator { operator: Operator::MulOrDeref, operand } => {
+				// Get a local, no matter what!
+				// (only 1 level indirect access, so you cannot indirectly access an indirect
+				// so to speak)
+				let from = match node_values[operand as usize].clone().unwrap() {
+					Value::Local(handle) => handle,
+					Value::Constant(_) => panic!("Derefencing cannot be done on constants yet"),
+					value => {
+						let local = locals.allocate(types.handle(
+								ast.nodes[operand as usize].type_.unwrap()
+						));
+						push_instr!(instructions, Instruction::Move(local, value));
+						local
+					}
+				};
+
+				// Make a pointer value.
+				node_values.push(Some(from.dereference_into_pointer_value()));
+			}
 
 			// Get the type of some value as a constant.
 			NodeKind::GetType(node) => {
@@ -431,7 +450,8 @@ pub fn compile_expression(
 			// need to generate any instructions for them.
 			NodeKind::TypeIdentifier(_) |
 			NodeKind::TypeStruct { .. } |
-			NodeKind::TypeFunctionPointer { .. } => {
+			NodeKind::TypeFunctionPointer { .. } |
+			NodeKind::TypePointer(_) => {
 				node_values.push(None);
 			}
 
