@@ -6,19 +6,10 @@
 // [ ] Assigning pointers/pointer buffers to constants, by creating other constants that contain
 //   a copy of the thing that was behind the pointer.
 
-print_num_line :: |num: U64| { print_num(num); print("\n"); };
-add_one :: |num: &U64| { *num = *num + 1; num };
+OTHER_CONST :: {
+	y := 3;
+	y = y.low;
+};
 
 x := 5;
-
-y := &add_one(&x);
-
-print_num_line(*y);
-
-add_one(y);
-print_num_line(*y);
-
-add_one(y);
-print_num_line(*y);
-
-print_num_line(x);
+x = x.low;

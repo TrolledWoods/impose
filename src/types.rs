@@ -354,7 +354,11 @@ impl AstTyper {
 					}
 				}
 				NodeKind::BinaryOperator { left, right, operator: _ } => {
-					if ast.nodes[right as usize].type_ != ast.nodes[left as usize].type_ {
+					let left_type = ast.nodes[left as usize].type_.unwrap();
+					let right_type = ast.nodes[right as usize].type_.unwrap();
+					if left_type != right_type {
+						info!(ast.nodes[left as usize], "This is type '{}'", types.type_to_string(left_type));
+						info!(ast.nodes[right as usize], "This is type '{}'", types.type_to_string(right_type));
 						return error!(node, "This operator needs both operands to be of the same type");
 					}
 

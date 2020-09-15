@@ -47,13 +47,11 @@ fn print_message_list<'a>(
 		print_location(code, &message.source_code_location, "");
 
 		for info in info {
-			if info.source_code_location.file == file {
-				println!("{}", info.message);
-			} else {
-				println!("{:?}: {}", info.source_code_location, info.message);
+			if info.source_code_location.file != file {
+				println!("{:?}", info.source_code_location);
 			}
 
-			print_location(code, &info.source_code_location, &message.message);
+			print_location(code, &info.source_code_location, &info.message);
 		}
 
 		println!("  compiler: {:?}", message.compiler_location);

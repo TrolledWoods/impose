@@ -128,14 +128,17 @@ impl Resources {
 						}
 
 						if let Some(mut typer) = resource_typer.take() {
-							match typer.try_type_ast(types, resource_code, scopes, self)? {
-								Some(dependency) => {
+							match typer.try_type_ast(types, resource_code, scopes, self) {
+								Ok(Some(dependency)) => {
 									self.add_dependency(member_id, dependency, scopes);
 									*resource_typer = Some(typer);
 									self.return_resource(member_id, member);
 									return Ok(true);
 								}
-								None => {}
+								Ok(None) => {}
+								Err(()) => {
+									return Ok(true);
+								}
 							}
 
 							*resource_type = resource_code.nodes.last().unwrap().type_;
