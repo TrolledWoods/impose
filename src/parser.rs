@@ -206,6 +206,7 @@ pub enum NodeKind {
 	TypeStruct {
 		args: Vec<(ustr::Ustr, AstNodeId)>,
 	},
+	TypePointer(AstNodeId),
 }
 
 struct TokenStream<'a> {
@@ -436,10 +437,19 @@ fn parse_block(mut context: Context, expect_brackets: bool, is_runnable: bool)
 }
 
 fn parse_type_expr_value(
-	context: Context
+	mut context: Context
 ) -> Result<AstNodeId> {
 	let token = context.tokens.expect_peek(|| "Expected type expression")?;
 	match token.kind {
+		TokenKind::Operator(Operator::BitAndOrPointer) => {
+			context.tokens.next();
+			let sub_type = parse_type_expr_value(context.borrow())?;
+			Ok(context.ast.insert_node(Node::new(&context, 
+				token,
+				context.scope, 
+				NodeKind::TypePointer(sub_type),
+			)))
+		}
 		TokenKind::Identifier(name) => {
 			context.tokens.next();
 			let member = context.scopes.find_or_create_temp(context.scope, name)?;

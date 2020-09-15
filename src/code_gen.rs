@@ -302,6 +302,7 @@ pub fn compile_expression(
 
 				let value = node_values[member as usize].clone().unwrap();
 
+				// TODO: We don't wanna recheck the name twice, 
 				match type_kind {
 					TypeKind::Primitive(PrimitiveKind::U64) => {
 						if sub_name == "low" {
@@ -310,6 +311,15 @@ pub fn compile_expression(
 							node_values.push(Some(value.get_sub_value(4, 4, 4)));
 						} else {
 							panic!("bleh");
+						}
+					}
+					TypeKind::Struct { ref members } => {
+						for (name, offset, handle) in members {
+							if *name == sub_name {
+								node_values.push(Some(
+									value.get_sub_value(*offset, handle.size, handle.align)
+								));
+							}
 						}
 					}
 					_ => panic!("bleh"),

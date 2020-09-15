@@ -6,6 +6,7 @@ use crate::resource::*;
 use crate::id::*;
 use crate::align::*;
 use crate::code_loc::*;
+use crate::operator::*;
 use crate::{ Error, Result };
 
 pub const TYPE_TYPE_ID:   TypeId = TypeId::create_raw(0);
@@ -76,6 +77,10 @@ impl Types {
 				}
 				print!("}}");
 			}
+			TypeKind::Pointer(sub_type) => {
+				print!("&");
+				self.print(sub_type);
+			}
 			TypeKind::FunctionPointer { ref args, returns } => {
 				print!("(");
 				for (i, arg) in args.iter().enumerate() {
@@ -126,6 +131,7 @@ impl Type {
 				}
 				(size, align)
 			}
+			TypeKind::Pointer(_) => (8, 8),
 			TypeKind::EmptyType => (0, 1),
 			TypeKind::Type => (8, 8),
 			TypeKind::Primitive(PrimitiveKind::U64) => (8, 8),
@@ -154,6 +160,7 @@ pub enum TypeKind {
 		members: Vec<(ustr::Ustr, usize, TypeHandle)>,
 	},
 	EmptyType,
+	Pointer(TypeId),
 	FunctionPointer {
 		args: Vec<TypeId>,
 		returns: TypeId,
@@ -221,7 +228,22 @@ impl AstTyper {
 								return_error!(node, "This member does not exist on U64");
 							}
 						}
-						_ => todo!("Only U64's can have members at the moment"),
+						TypeKind::Struct { ref members } => {
+							let mut type_ = None;
+							for (name, _, handle) in members {
+								if *name == sub_name {
+									type_ = Some(handle.id);
+									break;
+								}
+							}
+							
+							if let Some(type_) = type_ {
+								Some(type_)
+							} else {
+								return_error!(node, "This member does not exist in struct");
+							}
+						}
+						_ => return_error!(node, "This type doesn't have members"),
 					}
 				}
 				NodeKind::LocationMarker => None,
@@ -327,8 +349,22 @@ impl AstTyper {
 
 					ast.nodes[right as usize].type_
 				},
-				NodeKind::UnaryOperator { operand, .. } => {
-					ast.nodes[operand as usize].type_
+				NodeKind::UnaryOperator { operand, operator } => {
+					match operator {
+						Operator::BitAndOrPointer => Some(types.insert(Type::new(
+							TypeKind::Pointer(ast.nodes[operand as usize].type_.unwrap())
+						))),
+						Operator::MulOrDeref => {
+							if let TypeKind::Pointer(sub_type) 
+								= types.get(ast.nodes[operand as usize].type_.unwrap()).kind
+							{
+								Some(sub_type)
+							} else {
+								return_error!(node, "Can only dereference pointers");
+							}
+						}
+						_ => return_error!(node, "Unhandled operator (compiler error)"),
+					}
 				},
 				NodeKind::Declaration { variable_name, value } => {
 					if let Some(type_) = ast.nodes[value as usize].type_ {
@@ -443,6 +479,10 @@ impl AstTyper {
 					};
 
 					Some(types.insert(Type::new(kind)))
+				}
+				NodeKind::TypePointer(pointing_to) => {
+					let pointing_to_type = ast.nodes[pointing_to as usize].type_.unwrap();
+					Some(types.insert(Type::new(TypeKind::Pointer(pointing_to_type))))
 				}
 			};
 

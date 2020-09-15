@@ -50,6 +50,7 @@ create_operators! {
 
 	// Bitwise operators
 	BitwiseOrOrLambda; "|", true, 5, 0,
+	BitAndOrPointer; "&", true,  5, 8,
 
 	// Standard math operators
 	Add;        "+",   true,   6, 0,

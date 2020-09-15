@@ -6,8 +6,5 @@
 // - Assigning pointers/pointer buffers to constants, by creating other constants that contain
 //   a copy of the thing that was behind the pointer.
 
-print_type_id :: |type_id: Type| {
-	print_num(bit_cast U64 (type_id));
-};
-
-print_type_id(String);
+x := 50;
+x
