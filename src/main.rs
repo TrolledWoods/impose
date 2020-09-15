@@ -116,14 +116,14 @@ fn main() {
 					if let ResourceKind::String(ref string) = resources.resource(id).kind {
 						use std::io::Write;
 						print!("{}", string);
-						std::io::stdout().lock().flush();
+						std::io::stdout().lock().flush().unwrap();
 					}else { panic!("bad"); }
 				} else { panic!("bad"); }
 			}),
 			n_arg_bytes: 8,
 			n_return_bytes: 0,
 		}
-	);
+	).unwrap();
 
 	let print_type_id = types.insert(Type::new(TypeKind::FunctionPointer {
 		args: vec![types::U64_TYPE_ID],
@@ -134,7 +134,7 @@ fn main() {
 		ustr::ustr("print_num"), 
 		print_type_id, 
 		ResourceKind::ExternalFunction {
-			func: Box::new(|resources, args, _| {
+			func: Box::new(|_, args, _| {
 				if let &[a, b, c, d, e, f, g, h] = args {
 					print!("{}", i64::from_le_bytes([a, b, c, d, e, f, g, h]));
 				} else { panic!("bad"); }
@@ -142,7 +142,7 @@ fn main() {
 			n_arg_bytes: 8,
 			n_return_bytes: 0,
 		}
-	);
+	).unwrap();
 
 	let print_type_id = types.insert(Type::new(TypeKind::FunctionPointer {
 		args: vec![],
@@ -153,10 +153,10 @@ fn main() {
 		ustr::ustr("input"), 
 		print_type_id, 
 		ResourceKind::ExternalFunction {
-			func: Box::new(|resources, _, returns| {
+			func: Box::new(|_, _, returns| {
 				let mut input = String::new();
 
-				std::io::stdin().read_line(&mut input);
+				std::io::stdin().read_line(&mut input).unwrap();
 
 				let num: i64 = input.trim().parse().unwrap();
 				returns[0..8].copy_from_slice(&num.to_le_bytes());
@@ -164,7 +164,7 @@ fn main() {
 			n_arg_bytes: 0,
 			n_return_bytes: 8,
 		}
-	);
+	).unwrap();
 
 	// -- COMPILE STUFF --
 	let code = std::fs::read_to_string("test.im").unwrap();
@@ -247,7 +247,6 @@ fn print_error(code: &str, error: Error) {
 	println!("Compiler location: {:?}", error.compiler_location);
 }
 
-// TODO: Include file location in this.
 #[derive(Clone, PartialEq, Eq)]
 pub struct CodeLoc {
 	pub file: std::rc::Rc<String>,

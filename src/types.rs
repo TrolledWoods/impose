@@ -30,13 +30,6 @@ impl Types {
 		TypeHandle { id, size: type_.size, align: type_.align }
 	}
 
-	pub fn insert_function(&mut self, args: Vec<TypeId>, returns: TypeId) -> TypeId {
-		self.insert(Type::new(TypeKind::FunctionPointer {
-			args,
-			returns,
-		}))
-	}
-
 	pub fn insert(&mut self, type_: Type) -> TypeId {
 		// Try to find a type that is already the same.
 		for (id, self_type) in self.types.iter_ids() {
@@ -309,7 +302,7 @@ impl AstTyper {
 						return_error!(node, "This is not a function pointer, yet a function call was attemted on it");
 					}
 				}
-				NodeKind::BinaryOperator { left, right, operator } => {
+				NodeKind::BinaryOperator { left, right, operator: _ } => {
 					if ast.nodes[right as usize].type_ != ast.nodes[left as usize].type_ {
 						return_error!(node, "This operator needs both operands to be of the same type");
 					}
@@ -364,9 +357,6 @@ impl AstTyper {
 				},
 
 				// --- Type expressions ---
-				NodeKind::Type(ref kind) => {
-					Some(types.insert(Type::new(kind.clone())))
-				}
 				NodeKind::GetType(_) => {
 					Some(TYPE_TYPE_ID)
 				}

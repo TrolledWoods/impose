@@ -2,14 +2,15 @@ result := {:loop_block
 	loop {
 		my_num := input_num_with_query("Please enter a number\n");
 
-		if my_num - 0 { 2 }
-		else {
+		if my_num - 0 {
+			print(return_query(my_num)());
+			0 // Return something just because it's needed here for now
+		} else {
 			print("Since you entered zero we are quitting");
 			skip :loop_block (42);
-			5
+			0 // Return something just because it's needed here for now
 		};
 
-		print(return_query(my_num)());
 	};
 
 	0

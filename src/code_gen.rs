@@ -57,8 +57,6 @@ impl fmt::Debug for Instruction {
 
 				Ok(())
 			}
-			// TODO: Make this proper
-			_ => write!(f, "some arithmetic instrution"),
 		}
 	}
 }

@@ -7,9 +7,21 @@ struct Context<'a, 't> {
 	scope: ScopeId, 
 	tokens: &'a mut TokenStream<'t>,
 	resources: &'a mut Resources,
+	is_meta: bool,
 }
 
 impl<'a, 't> Context<'a, 't> {
+	fn new_stackframe<'b>(&'b mut self, ast: &'b mut Ast, scope: ScopeId) -> Context<'b, 't> {
+		Context {
+			ast,
+			scopes: self.scopes,
+			scope,
+			tokens: self.tokens,
+			resources: self.resources,
+			is_meta: self.is_meta,
+		}
+	}
+
 	fn borrow<'b>(&'b mut self) -> Context<'b, 't> {
 		Context {
 			ast: self.ast,
@@ -17,6 +29,7 @@ impl<'a, 't> Context<'a, 't> {
 			scope: self.scope,
 			tokens: self.tokens,
 			resources: self.resources,
+			is_meta: self.is_meta,
 		}
 	}
 
@@ -28,6 +41,7 @@ impl<'a, 't> Context<'a, 't> {
 			scope: sub_scope,
 			tokens: self.tokens,
 			resources: self.resources,
+			is_meta: self.is_meta,
 		}
 	}
 }
@@ -82,24 +96,13 @@ pub struct Node {
 }
 
 impl Node {
-	fn new(location: &impl Location, scope: ScopeId, kind: NodeKind) -> Self {
+	fn new(context: &Context, location: &impl Location, scope: ScopeId, kind: NodeKind) -> Self {
 		Node { 
 			loc: location.get_location(), 
 			kind, 
 			scope, 
 			is_lvalue: false, 
-			is_meta_data: false,
-			type_: None,
-		}
-	}
-
-	fn new_meta(location: &impl Location, scope: ScopeId, kind: NodeKind) -> Self {
-		Node { 
-			loc: location.get_location(), 
-			kind, 
-			scope, 
-			is_lvalue: false, 
-			is_meta_data: true,
+			is_meta_data: context.is_meta,
 			type_: None,
 		}
 	}
@@ -122,9 +125,8 @@ pub enum NodeKind {
 	},
 	MemberAccess(AstNodeId, ustr::Ustr),
 	Number(i128),
-	Type(TypeKind),
-	EmptyLiteral,
 
+	EmptyLiteral,
 	Identifier(ScopeMemberId),
 
 	Resource(ResourceId),
@@ -208,7 +210,7 @@ impl Location for TokenStream<'_> {
 
 impl<'a> TokenStream<'a> {
 	fn new(tokens: &'a [Token], last_location: CodeLoc) -> Self { 
-		TokenStream { tokens, index: 0, last_location } 
+		TokenStream { tokens: tokens, index: 0, last_location } 
 	}
 
 	fn peek(&self) -> Option<&'a Token> {
@@ -323,12 +325,12 @@ fn parse_block(mut context: Context, expect_brackets: bool, is_runnable: bool)
 	loop {
 		match context.tokens.peek() {
 			Some(Token { loc, kind: TokenKind::ClosingBracket('}') }) if expect_brackets => {
-				commands.push(context.ast.insert_node(Node::new(loc, context.scope, NodeKind::EmptyLiteral)));
+				commands.push(context.ast.insert_node(Node::new(&context, loc, context.scope, NodeKind::EmptyLiteral)));
 				context.tokens.next();
 				break;
 			}
 			None if !expect_brackets => {
-				commands.push(context.ast.insert_node(Node::new(context.tokens, context.scope, NodeKind::EmptyLiteral)));
+				commands.push(context.ast.insert_node(Node::new(&context, context.tokens, context.scope, NodeKind::EmptyLiteral)));
 				context.tokens.next();
 				break;
 			}
@@ -356,7 +358,7 @@ fn parse_block(mut context: Context, expect_brackets: bool, is_runnable: bool)
 				)?;
 				context.resources.resolve_dependencies(&mut dependants);
 				commands.push(context.ast.insert_node(
-					Node::new(declare_loc, context.scope, NodeKind::Declaration {
+					Node::new(&context, declare_loc, context.scope, NodeKind::Declaration {
 						variable_name, value,
 					})
 				));
@@ -374,13 +376,7 @@ fn parse_block(mut context: Context, expect_brackets: bool, is_runnable: bool)
 				let mut ast = Ast::new();
 				let sub_scope = context.scopes.create_scope(Some(context.scope));
 
-				let mut sub_context = Context {
-					ast: &mut ast,
-					scopes: context.scopes,
-					scope: sub_scope,
-					tokens: context.tokens,
-					resources: context.resources,
-				};
+				let mut sub_context = context.new_stackframe(&mut ast, sub_scope);
 
 				parse_expression(sub_context.borrow())?;
 
@@ -424,26 +420,18 @@ fn parse_block(mut context: Context, expect_brackets: bool, is_runnable: bool)
 		}
 	}
 
-	Ok(context.ast.insert_node(Node::new(&loc, context.scope, NodeKind::Block { contents: commands, label } )))
-}
-
-fn parse_type_expr(
-	mut context: Context
-) -> Result<AstNodeId> {
-	let expr = parse_type_expr_value(context.borrow())?;
-	let expr_loc = context.ast.nodes[expr as usize].loc.clone();
-	Ok(context.ast.insert_node(Node::new(&expr_loc, context.scope, NodeKind::GetType(expr))))
+	Ok(context.ast.insert_node(Node::new(&context, &loc, context.scope, NodeKind::Block { contents: commands, label } )))
 }
 
 fn parse_type_expr_value(
-	mut context: Context
+	context: Context
 ) -> Result<AstNodeId> {
 	let token = context.tokens.expect_peek(|| "Expected type expression")?;
 	match token.kind {
 		TokenKind::Identifier(name) => {
 			context.tokens.next();
 			let member = context.scopes.find_or_create_temp(context.scope, name)?;
-			Ok(context.ast.insert_node(Node::new(
+			Ok(context.ast.insert_node(Node::new(&context, 
 				token, 
 				context.scope, 
 				NodeKind::TypeIdentifier(member),
@@ -459,7 +447,7 @@ fn parse_type_expr_function_ptr(
 ) -> Result<AstNodeId> {
 	// Parse the function arguments.
 	let token = context.tokens.peek().unwrap();
-	let (loc, args) = try_parse_list(
+	let (_, args) = try_parse_list(
 		context.borrow(),
 		parse_type_expr_value,
 		&TokenKind::Bracket('('),
@@ -476,7 +464,7 @@ fn parse_type_expr_function_ptr(
 		None
 	};
 
-	Ok(context.ast.insert_node(Node::new(
+	Ok(context.ast.insert_node(Node::new(&context, 
 		token, 
 		context.scope, 
 		NodeKind::TypeFunctionPointer {
@@ -487,20 +475,14 @@ fn parse_type_expr_function_ptr(
 }
 
 fn parse_function(
-	parent_context: Context
+	mut parent_context: Context
 ) -> Result<ResourceId> {
 	// Lambda definition
 	let mut ast = Ast::new();
 	let mut args = Vec::new();
 	let sub_scope = parent_context.scopes.create_scope(Some(parent_context.scope));
 
-	let mut context = Context {
-		ast: &mut ast,
-		scopes: parent_context.scopes,
-		scope: sub_scope,
-		tokens: parent_context.tokens,
-		resources: parent_context.resources,
-	};
+	let mut context = parent_context.new_stackframe(&mut ast, sub_scope);
 
 	let token = context.tokens.peek().expect("Don't call parse_function without a '|' to start");
 	if let TokenKind::Operator(Operator::BitwiseOrOrLambda) = token.kind {
@@ -522,7 +504,7 @@ fn parse_function(
 					if matches!(colon, Some(Token { kind: TokenKind::Colon, .. })) {
 						let type_node = parse_type_expr_value(context.borrow())?;
 
-						context.ast.insert_node(Node::new(loc, sub_scope, 
+						context.ast.insert_node(Node::new(&context, loc, sub_scope, 
 							NodeKind::DeclareFunctionArgument {
 								variable_name: arg,
 								type_node,
@@ -571,7 +553,7 @@ fn parse_expression(
 		TokenKind::Operator(Operator::BitwiseOrOrLambda) 
 		| TokenKind::Operator(Operator::Or) => {
 			let id = parse_function(context.borrow())?;
-			Ok(context.ast.insert_node(Node::new(
+			Ok(context.ast.insert_node(Node::new(&context, 
 				token, 
 				context.scope, 
 				NodeKind::Resource(id),
@@ -581,7 +563,7 @@ fn parse_expression(
 			context.tokens.next();
 			let id = parse_type_expr_value(context.borrow())?;
 			
-			Ok(context.ast.insert_node(Node::new(
+			Ok(context.ast.insert_node(Node::new(&context, 
 				token, 
 				context.scope, 
 				NodeKind::GetType(id),
@@ -622,12 +604,12 @@ fn parse_expression_rec(
 				let identifier = match context.tokens
 					.expect_next(|| "Expected an identifier for the . operator")?
 				{
-					Token { loc, kind: TokenKind::Identifier(name) } => *name,
+					Token { kind: TokenKind::Identifier(name), .. } => *name,
 					Token { loc, .. } => return_error!(loc, 
 						"Expected an identifier for the . operator"),
 				};
 
-				a = context.ast.insert_node(Node::new(
+				a = context.ast.insert_node(Node::new(&context, 
 					loc,
 					context.scope,
 					NodeKind::MemberAccess(a, identifier),
@@ -637,7 +619,7 @@ fn parse_expression_rec(
 
 			let b = parse_expression_rec(context.borrow(), priority)?;
 			
-			a = context.ast.insert_node(Node::new(
+			a = context.ast.insert_node(Node::new(&context, 
 				loc,
 				context.scope,
 				NodeKind::BinaryOperator { operator, left: a, right: b }
@@ -667,11 +649,11 @@ fn parse_value(
 			)?;
 
 			let operand = parse_expression_rec(context.borrow(), unary_priority)?;
-			context.ast.insert_node(Node::new(token, context.scope, NodeKind::UnaryOperator { operator, operand }))
+			context.ast.insert_node(Node::new(&context, token, context.scope, NodeKind::UnaryOperator { operator, operand }))
 		}
 		TokenKind::NumericLiteral(number) => {
 			context.tokens.next();
-			context.ast.insert_node(Node::new(token, context.scope, NodeKind::Number(number)))
+			context.ast.insert_node(Node::new(&context, token, context.scope, NodeKind::Number(number)))
 		}
 		TokenKind::StringLiteral(ref string) => {
 			context.tokens.next();
@@ -684,17 +666,17 @@ fn parse_value(
 					types::STRING_TYPE_ID
 				)
 			);
-			context.ast.insert_node(Node::new(token, context.scope, NodeKind::Resource(id)))
+			context.ast.insert_node(Node::new(&context, token, context.scope, NodeKind::Resource(id)))
 		}
 		TokenKind::Keyword("loop") => {
 			context.tokens.next();
 
 			let start_location = context.ast.insert_node(
-				Node::new(token, context.scope, NodeKind::LocationMarker)
+				Node::new(&context, token, context.scope, NodeKind::LocationMarker)
 			);
 			let body = parse_expression(context.borrow())?;
 
-			context.ast.insert_node(Node::new(token, context.scope, NodeKind::Loop {
+			context.ast.insert_node(Node::new(&context, token, context.scope, NodeKind::Loop {
 				body,
 				start_location,
 			}))
@@ -704,21 +686,21 @@ fn parse_value(
 
 			let condition = parse_expression(context.borrow())?;
 			let condition_marker = 
-				context.ast.insert_node(Node::new(token, context.scope, NodeKind::Temporary));
+				context.ast.insert_node(Node::new(&context, token, context.scope, NodeKind::Temporary));
 
 			let true_body = parse_block(context.borrow(), true, true)?;
 			let true_body_marker =
-				context.ast.insert_node(Node::new(token, context.scope, NodeKind::Temporary));
+				context.ast.insert_node(Node::new(&context, token, context.scope, NodeKind::Temporary));
 
 			if let Some(TokenKind::Keyword("else")) = context.tokens.peek_kind() {
 				context.tokens.next();
 
 				let false_body = parse_block(context.borrow(), true, true)?;
 				let false_body_marker = 
-					context.ast.insert_node(Node::new(token, context.scope, NodeKind::Temporary));
+					context.ast.insert_node(Node::new(&context, token, context.scope, NodeKind::Temporary));
 
 				let if_statement = context.ast.insert_node(
-					Node::new(token, context.scope, NodeKind::IfWithElse {
+					Node::new(&context, token, context.scope, NodeKind::IfWithElse {
 						condition: condition_marker,
 						true_body: true_body_marker,
 						false_body: false_body_marker,
@@ -744,7 +726,7 @@ fn parse_value(
 				if_statement
 			} else {
 				let if_statement = context.ast.insert_node(
-					Node::new(token, context.scope, NodeKind::If {
+					Node::new(&context, token, context.scope, NodeKind::If {
 						condition: condition_marker,
 						body: true_body_marker,
 					})
@@ -768,7 +750,7 @@ fn parse_value(
 			context.tokens.next();
 			let member = context.scopes.find_or_create_temp(context.scope, name)?;
 
-			context.ast.insert_node(Node::new(token, context.scope, NodeKind::Identifier(member)))
+			context.ast.insert_node(Node::new(&context, token, context.scope, NodeKind::Identifier(member)))
 		}
 		TokenKind::Bracket('{') => {
 			parse_block(context.borrow(), true, true)?
@@ -808,7 +790,7 @@ fn parse_value(
 				None
 			};
 
-			context.ast.insert_node(Node::new(token, context.scope, NodeKind::Skip { label, value }))
+			context.ast.insert_node(Node::new(&context, token, context.scope, NodeKind::Skip { label, value }))
 		}
 		_ => {
 			return_error!(token, "Expected value");
@@ -819,7 +801,7 @@ fn parse_value(
 		context.borrow(), parse_expression, 
 		&TokenKind::Bracket('('), &TokenKind::ClosingBracket(')')
 	)? {
-		id = context.ast.insert_node(Node::new(&location, context.scope, NodeKind::FunctionCall {
+		id = context.ast.insert_node(Node::new(&context, &location, context.scope, NodeKind::FunctionCall {
 			function_pointer: id,
 			arg_list,
 		}));
@@ -871,7 +853,6 @@ pub fn parse_code(
 	let (last_loc, tokens) = lexer::lex_code(code)?;
 	let mut ast = Ast::new();
 
-
 	if is_value {
 		scope = scopes.create_scope(Some(scope));
 	}
@@ -884,6 +865,7 @@ pub fn parse_code(
 		scope,
 		tokens: &mut stream,
 		resources,
+		is_meta: false,
 	};
 	parse_block(context, false, is_value)?;
 
@@ -958,7 +940,7 @@ impl Scopes {
 		));
 
 		let scope = self.super_scope;
-		self.declare_member(scope, name, None, ScopeMemberKind::Constant(id));
+		self.declare_member(scope, name, None, ScopeMemberKind::Constant(id)).unwrap();
 	}
 
 	pub fn insert_root_resource(
@@ -967,7 +949,7 @@ impl Scopes {
 		name: ustr::Ustr, 
 		type_: TypeId, 
 		kind: ResourceKind,
-	) {
+	) -> Result<()> {
 		let loc = CodeLoc { file: std::rc::Rc::new(format!("no")), line: 0, column: 0 };
 		let mut ast = Ast::new();
 		ast.is_typed = true;
@@ -978,7 +960,9 @@ impl Scopes {
 		));
 
 		let scope = self.super_scope;
-		self.declare_member(scope, name, None, ScopeMemberKind::Constant(id));
+		self.declare_member(scope, name, None, ScopeMemberKind::Constant(id))?;
+
+		Ok(())
 	}
 
 	#[allow(unused)]

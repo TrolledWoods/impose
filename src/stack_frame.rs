@@ -110,17 +110,6 @@ impl Locals {
 		}
 	}
 
-	pub fn id_as_handle(&self, id: LocalId) -> LocalHandle {
-		let local = self.locals.get(id);
-
-		LocalHandle {
-			size: local.size,
-			align: local.align,
-			offset: 0,
-			id,
-		}
-	}
-
 	pub fn layout(&self) -> StackFrameLayout {
 		let mut total_size = 0;
 		let mut local_positions = Vec::with_capacity(self.locals.len());
@@ -156,7 +145,7 @@ impl StackFrameLayout {
 
 	pub fn create_instance_with_func_args<'a>(
 		self: &std::sync::Arc<Self>,
-		mut args: impl Iterator<Item = (usize, &'a [u8])> + 'a,
+		args: impl Iterator<Item = (usize, &'a [u8])> + 'a,
 	) -> StackFrameInstance {
 		let mut instance = StackFrameInstance {
 			buffer: vec![ForceAlignment([0; STACK_FRAME_ALIGNMENT]); self.total_size],
