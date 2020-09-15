@@ -17,6 +17,9 @@ pub fn run_instructions(
 
 		match *instruction {
 			Instruction::Temporary => panic!("Cannot run temporary instruction"),
+			Instruction::IndirectMove(into, ref from) => {
+				stack_frame_instance.insert_value_into_indirect_local(into, from);
+			}
 			Instruction::Move(into, ref from) => {
 				stack_frame_instance.insert_value_into_local(into, from);
 			}

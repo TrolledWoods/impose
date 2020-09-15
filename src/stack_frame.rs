@@ -7,15 +7,8 @@ pub type ConstBuffer = smallvec::SmallVec<[u8; 8]>;
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
 	Local(LocalHandle),
-	Pointer {
-		pointer: LocalId,
-		pointer_offset: usize,
-		offset: usize,
-		// TODO: This is not really necessary, but we have it here
-		// for now, because we do not always know the sizes we want in
-		// operations currently.
-		resulting_size: usize,
-	},
+	// TODO: Rename to indirect
+	Pointer(IndirectLocalHandle),
 	Constant(ConstBuffer),
 }
 
@@ -37,16 +30,16 @@ impl Value {
 					id: handle.id,
 				})
 			}
-			Value::Pointer { pointer, pointer_offset, offset: p_offset, resulting_size } => {
-				debug_assert!(offset + size <= resulting_size);
+			Value::Pointer(handle) => {
+				debug_assert!(offset + size <= handle.resulting_size);
 				debug_assert!(is_aligned(align, offset));
 
-				Value::Pointer {
-					pointer: pointer,
-					pointer_offset,
-					offset: p_offset + offset,
+				Value::Pointer(IndirectLocalHandle {
+					pointer: handle.pointer,
+					pointer_offset: handle.pointer_offset,
+					offset: handle.offset + offset,
 					resulting_size: size,
-				}
+				})
 			}
 			Value::Constant(ref buffer) => {
 				// Align here doesn't matter
@@ -86,6 +79,17 @@ impl From<i32> for Value {
 	}
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IndirectLocalHandle {
+	pointer: LocalId,
+	pointer_offset: usize,
+	offset: usize,
+	// TODO: This is not really necessary, but we have it here
+	// for now, because we do not always know the sizes we want in
+	// operations currently.
+	resulting_size: usize,
+}
+
 /// A handle to any subsection of a local.
 ///
 /// It cannot however contain a constant value.
@@ -100,8 +104,8 @@ pub struct LocalHandle {
 
 impl LocalHandle {
 	/// Turns the local into an indirect value pointing to that local.
-	pub fn dereference_into_pointer_value(&self) -> Value {
-		Value::Pointer {
+	pub fn indirect_local_handle_to_self(&self) -> IndirectLocalHandle {
+		IndirectLocalHandle {
 			pointer: self.id,
 			pointer_offset: self.offset,
 			offset: 0,
@@ -252,51 +256,42 @@ impl StackFrameInstance {
 				let (pos, size) = self.layout.local_pos_and_size(local);
 				&self.bytes()[pos..pos + size]
 			}
-			Value::Pointer { pointer, pointer_offset, offset, resulting_size } => {
-				let pointer_pos = self.layout.local_pos(pointer) + pointer_offset;
-				let from = self.get_at_index::<*const u8>(pointer_pos).wrapping_add(offset);
+			Value::Pointer(local) => {
+				let pointer_pos = self.layout.local_pos(local.pointer) + local.pointer_offset;
+				let from = self.get_at_index::<*const u8>(pointer_pos).wrapping_add(local.offset);
 
-				println!("PAUSE!!!!");
+				// TODO: Check that the pointer is aligned properly.
 
 				// SAFETY: Non-existant. This is for my own language(unsafe), which means some
 				// parts of the runtime has to be unsafe.
 				//
 				// TODO: Make sure that the &'a [u8] we are returning does not mutate while
 				// reading it. This shouldn't be the case, but it might be.
-				unsafe { std::slice::from_raw_parts(from, resulting_size) }
+				unsafe { std::slice::from_raw_parts(from, local.resulting_size) }
 			}
 			Value::Constant(ref vector) => vector.as_slice(),
 		}
 	}
 
+	pub fn insert_value_into_indirect_local(&mut self, local: IndirectLocalHandle, value: &Value) {
+		let pointer_pos = self.layout.local_pos(local.pointer) + local.pointer_offset;
+		let to = self.get_at_index::<*mut u8>(pointer_pos).wrapping_add(local.offset);
+
+		// SAFETY: There is no safety. The programming language we are running is not a
+		// safe programming language, which means it cannot by nature be safe.
+		unsafe {
+			std::ptr::copy(self.get_value(value).as_ptr(), to, local.resulting_size);
+		}
+	}
+
 	pub fn insert_value_into_local(&mut self, local: LocalHandle, value: &Value) {
-		match *value {
-			Value::Local(from_local) => {
-				let (to_pos, to_size) = self.layout.local_pos_and_size(local);
-				let (from_pos, from_size) = self.layout.local_pos_and_size(from_local);
-				assert_eq!(from_size, to_size);
+		let (to_pos, to_size) = self.layout.local_pos_and_size(local);
+		let to_loc = &mut self.bytes_mut()[to_pos] as *mut u8;
 
-				self.bytes_mut().copy_within(from_pos..from_pos + from_size, to_pos);
-			}
-			Value::Pointer { pointer, pointer_offset, offset, resulting_size } => {
-				let (to_pos, to_size) = self.layout.local_pos_and_size(local);
-				let pointer_pos = self.layout.local_pos(pointer) + pointer_offset;
-
-				assert!(to_size <= resulting_size);
-
-				// We have to do these in this specific order, so that we do not have a &mut [u8]
-				// and a &[u8] at the same time.
-				let to_loc = &mut self.bytes_mut()[to_pos] as *mut u8;
-				let from = self.get_at_index::<*const u8>(pointer_pos).wrapping_add(offset);
-
-				// SAFETY: There is no safety. The programming language we are running is not a
-				// safe programming language, which means it cannot by nature be safe.
-				unsafe {
-					std::ptr::copy(from, to_loc, to_size);
-				}
-			}
-			Value::Constant(ref values) => 
-				self.insert_into_local(local, values),
+		// SAFETY: There is no safety. The programming language we are running is not a
+		// safe programming language, which means it cannot by nature be safe.
+		unsafe {
+			std::ptr::copy(self.get_value(value).as_ptr(), to_loc, to_size);
 		}
 	}
 

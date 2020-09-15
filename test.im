@@ -6,26 +6,9 @@
 // [ ] Assigning pointers/pointer buffers to constants, by creating other constants that contain
 //   a copy of the thing that was behind the pointer.
 
-cast_to_u32 :: |x: U64| {
-	x_ptr := &x;
+x := 5;
+y := &x;
 
-	smol_x_ptr := bit_cast &U32 (x_ptr);
-	smol_x := *smol_x_ptr;
+*y = 2;
 
-	smol_x
-};
-
-cast_to_u32(0xffff)
-
-
-
-
-
-
-
-
-
-
-
-
-
+print_num(x);

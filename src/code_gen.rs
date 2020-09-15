@@ -28,6 +28,8 @@ pub enum Instruction {
 	WrappingDiv(LocalHandle, Value, Value),
 
 	SetAddressOf(LocalHandle, LocalHandle),
+
+	IndirectMove(IndirectLocalHandle, Value),
 	Move(LocalHandle, Value),
 
 	JumpRel(i64),
@@ -53,7 +55,8 @@ impl fmt::Debug for Instruction {
 				write!(f, "{:?} = {:?} / {:?}", result, a, b),
 			Instruction::SetAddressOf(to, from) =>
 				write!(f, "({:?}) = &({:?})", to, from),
-			Instruction::Move(a, b) => write!(f, "mov {:?}, {:?}", a, b),
+			Instruction::IndirectMove(into, from) => write!(f, "mov *({:?}) = {:?}", into, from),
+			Instruction::Move(a, b) => write!(f, "mov ({:?}) = {:?}", a, b),
 			Instruction::JumpRel(a) => write!(f, "jump {:?}", a),
 			Instruction::JumpRelIfZero(value, a) => write!(f, "jump {:?} if {:?} == 0", a, value),
 			Instruction::Call { calling, returns, ref args } => {
@@ -341,10 +344,17 @@ pub fn compile_expression(
 
 				match operator {
 					Operator::Assign => {
-						if let Value::Local(local) = a {
-							push_instr!(instructions, Instruction::Move(local, b.clone()));
-						} else {
-							todo!("Left hand side of assignment cannot be constant atm");
+						match a {
+							Value::Local(local) => {
+								push_instr!(instructions, Instruction::Move(local, b.clone()));
+							}
+							Value::Pointer(local) => {
+								push_instr!(
+									instructions, 
+									Instruction::IndirectMove(local, b.clone())
+								);
+							}
+							_ => todo!("Left hand side of assignment cannot be constant atm"),
 						}
 
 						// TODO: Check if the result is used eventually, we will have a flag for if
@@ -437,7 +447,7 @@ pub fn compile_expression(
 				};
 
 				// Make a pointer value.
-				node_values.push(Some(from.dereference_into_pointer_value()));
+				node_values.push(Some(Value::Pointer(from.indirect_local_handle_to_self())));
 			}
 
 			// Get the type of some value as a constant.
