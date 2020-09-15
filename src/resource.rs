@@ -1,6 +1,12 @@
-use crate::prelude::*;
-use crate::code_gen;
 use std::collections::{ VecDeque, HashSet };
+
+use crate::parser::*;
+use crate::types::*;
+use crate::code_gen::*;
+use crate::code_loc::*;
+use crate::scopes::*;
+use crate::id::*;
+use crate::{ DEBUG, Result };
 
 create_id!(ResourceId);
 
@@ -81,7 +87,7 @@ impl Resources {
 					}
 
 					let (locals, instructions, return_value) 
-						= match code_gen::compile_expression(resource_code, scopes, self, types) 
+						= match compile_expression(resource_code, scopes, self, types) 
 					{
 						Ok(value) => value,
 						Err(dependency) => {
@@ -137,7 +143,7 @@ impl Resources {
 					}
 
 					let (stack_layout, instructions, return_value) 
-						= match code_gen::compile_expression(resource_code, scopes, self, types) 
+						= match compile_expression(resource_code, scopes, self, types) 
 					{
 						Ok(value) => value,
 						Err(dependency) => {
@@ -331,7 +337,7 @@ pub enum ResourceKind {
 		typer: Option<AstTyper>,
 		instructions: Option<(
 			std::sync::Arc<crate::stack_frame::StackFrameLayout>,
-			Vec<code_gen::Instruction>, 
+			Vec<Instruction>, 
 			Option<crate::stack_frame::Value>,
 		)>,
 	},

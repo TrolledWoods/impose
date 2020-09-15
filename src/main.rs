@@ -1,24 +1,12 @@
 #![feature(assoc_char_funcs)]
 #![feature(drain_filter)]
 
+#![warn(unused_qualifications)]
+
 pub const DEBUG: bool = true;
 
-mod prelude {
-	pub(crate) use crate::{ 
-		DEBUG, Location, CodeLoc, Error, Result,
-		resource::{ Resource, ResourceKind, Resources, ResourceId, Dependency },
-		operator::Operator,
-		lexer::{ self, Token, TokenKind }, 
-		parser::{ NodeKind, Ast, AstNodeId, Scopes, ScopeMemberId, ScopeMemberKind },
-		types::{ self, TypeId, Types, AstTyper, PrimitiveKind, TypeKind, Type },
-		id::IdVec,
-	};
-}
-
-use prelude::*;
-
 #[macro_use]
-mod id;
+pub mod id;
 
 /// This is a macro to allow the compiler line and column to ergonomically be passed
 /// inside the errors that are returned(for compiler debugging)
@@ -50,26 +38,22 @@ macro_rules! error {
 	}}
 }
 
-mod operator;
-mod lexer;
-mod parser;
-mod types;
-mod code_gen;
-mod run;
-mod resource;
-mod stack_frame;
-mod align;
-
-use std::fmt;
-
-#[derive(Debug, Clone, Copy)]
-pub enum Primitive {
-	Type(TypeId),
-	U64(u64),
-	Pointer(ResourceId),
-}
+pub mod operator;
+pub mod parser;
+pub mod scopes;
+pub mod types;
+pub mod code_gen;
+pub mod code_loc;
+pub mod run;
+pub mod resource;
+pub mod stack_frame;
+pub mod align;
 
 fn main() {
+	use scopes::Scopes;
+	use types::{Type, Types, TypeKind};
+	use resource::{ Resource, ResourceId, ResourceKind, Resources };
+
 	let mut scopes = Scopes::new();
 	let mut resources = Resources::new();
 	let mut types = Types::new();
@@ -148,6 +132,7 @@ fn main() {
 		args: vec![],
 		returns: types::U64_TYPE_ID,
 	}));
+
 	scopes.insert_root_resource(
 		&mut resources, 
 		ustr::ustr("input"), 
@@ -216,7 +201,7 @@ fn main() {
 	}
 }
 
-fn print_location(code: &str, loc: &CodeLoc, message: &str) {
+fn print_location(code: &str, loc: &code_loc::CodeLoc, message: &str) {
 	if let Some(line) = code.lines().nth(loc.line as usize - 1) {
 		println!("{:>5} | {}", loc.line, line);
 
@@ -247,32 +232,11 @@ fn print_error(code: &str, error: Error) {
 	println!("Compiler location: {:?}", error.compiler_location);
 }
 
-#[derive(Clone, PartialEq, Eq)]
-pub struct CodeLoc {
-	pub file: std::rc::Rc<String>,
-	pub line: u32, 
-	pub column: u32,
-}
-
-impl Location for CodeLoc {
-	fn get_location(&self) -> CodeLoc { self.clone() }
-}
-
-impl fmt::Debug for CodeLoc {
-	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		write!(f, "'{}'({}:{})", self.file, self.line, self.column)
-	}
-}
-
 #[derive(Debug)]
 pub struct Error {	
 	pub message: String,
-	pub source_code_location: CodeLoc,
-	pub compiler_location: CodeLoc,
+	pub source_code_location: code_loc::CodeLoc,
+	pub compiler_location: code_loc::CodeLoc,
 }
 
-type Result<T> = std::result::Result<T, Error>;
-
-pub trait Location {
-	fn get_location(&self) -> CodeLoc;
-}
+pub type Result<T> = std::result::Result<T, Error>;

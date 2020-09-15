@@ -1,4 +1,4 @@
-use crate::id::IdVec;
+use crate::id::*;
 
 pub type ConstBuffer = smallvec::SmallVec<[u8; 8]>;
 

@@ -1,7 +1,12 @@
-use crate::prelude::*;
-use crate::stack_frame::{ Locals, Value, LocalHandle, StackFrameLayout };
-use std::fmt;
 use std::collections::HashMap;
+use std::fmt;
+
+use crate::parser::*;
+use crate::types::*;
+use crate::scopes::*;
+use crate::resource::*;
+use crate::stack_frame::*;
+use crate::operator::*;
 
 macro_rules! push_instr {
 	($instrs:expr, $instr:expr) => {{
@@ -63,12 +68,12 @@ impl fmt::Debug for Instruction {
 
 // TODO: Add a struct with data about compiling an expression, so that we can keep going
 // at the same point that we stopped if there is an undefined dependency.
-pub fn compile_expression(
+pub(crate) fn compile_expression(
 	ast: &Ast, 
 	scopes: &mut Scopes,
 	resources: &Resources,
 	types: &Types,
-) -> std::result::Result<(StackFrameLayout, Vec<Instruction>, Option<Value>), Dependency> {
+) -> Result<(StackFrameLayout, Vec<Instruction>, Option<Value>), Dependency> {
 	let mut locals = Locals::new();
 	let mut node_values: Vec<Option<Value>> = Vec::with_capacity(ast.nodes.len());
 	let mut instructions = Vec::new();
@@ -404,7 +409,7 @@ pub fn compile_expression(
 }
 
 fn get_resource_constant(resources: &Resources, id: ResourceId) 
-	-> std::result::Result<Value, Dependency>
+	-> Result<Value, Dependency>
 {
 	let resource = resources.resource(id);
 	match resource.kind {

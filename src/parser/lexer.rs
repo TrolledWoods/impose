@@ -1,5 +1,6 @@
-use crate::{ CodeLoc, Location, Error, Result };
-use crate::operator::{ OPERATORS, Operator };
+use crate::operator::*;
+use crate::code_loc::*;
+use crate::{ Error, Result };
 
 #[derive(Debug, Clone)]
 pub struct Token {

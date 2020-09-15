@@ -1,6 +1,12 @@
-use crate::prelude::*;
-use crate::parser::ScopeMemberId;
 use std::collections::HashMap;
+
+use crate::parser::*;
+use crate::scopes::*;
+use crate::resource::*;
+use crate::id::*;
+use crate::align::*;
+use crate::code_loc::*;
+use crate::{ Error, Result };
 
 pub const TYPE_TYPE_ID:   TypeId = TypeId::create_raw(0);
 pub const U64_TYPE_ID:    TypeId = TypeId::create_raw(1);
@@ -116,7 +122,7 @@ impl Type {
 				let mut size = 0;
 				for &(_, offset, handle) in members {
 					align = align.max(handle.align);
-					size  = crate::align::to_aligned(align, size.max(offset + handle.size));
+					size  = to_aligned(align, size.max(offset + handle.size));
 				}
 				(size, align)
 			}
@@ -375,7 +381,6 @@ impl AstTyper {
 							match resources.resource(id).kind {
 								ResourceKind::Value { value: Some(ref value), .. } => {
 									if let &[a, b, c, d, e, f, g, h] = value.as_slice() {
-										use crate::id::Id;
 										let id = usize::from_le_bytes([a, b, c, d, e, f, g, h]);
 										if id >= types.types.len() {
 											return_error!(node, "Invalid type id");
@@ -415,7 +420,7 @@ impl AstTyper {
 						let member_type_handle = types.handle(
 							ast.nodes[*member_type_node as usize].type_.unwrap()
 						);
-						let aligned_off = crate::align::to_aligned(member_type_handle.align, offset);
+						let aligned_off = to_aligned(member_type_handle.align, offset);
 						full_member_data.push((*name, aligned_off, member_type_handle));
 
 						offset = aligned_off + member_type_handle.size;

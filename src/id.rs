@@ -25,7 +25,7 @@ macro_rules! create_id {
 			}
 		}
 
-		impl crate::id::Id for $name {
+		impl Id for $name {
 			#[allow(unused)]
 			fn new() -> Self {
 				Self(std::num::NonZeroU32::new(1).unwrap())
@@ -57,6 +57,7 @@ macro_rules! create_id {
 			}
 		}
 
+		#[allow(unused_qualification)]
 		impl std::fmt::Display for $name {
 			fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 				write!(f, "{}", self.into_index())
