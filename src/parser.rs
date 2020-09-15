@@ -133,6 +133,11 @@ pub enum NodeKind {
 	EmptyLiteral,
 	Identifier(ScopeMemberId),
 
+	BitCast {
+		into_type: AstNodeId,
+		value: AstNodeId,
+	},
+
 	Resource(ResourceId),
 	FunctionCall {
 		function_pointer: AstNodeId,
@@ -789,6 +794,29 @@ fn parse_value(
 
 				if_statement
 			}
+		}
+		TokenKind::Keyword("bit_cast") => {
+			context.tokens.next();
+
+			let into_type = parse_type_expr_value(context.borrow())?;
+
+			match context.tokens.next() {
+				Some(Token { kind: TokenKind::Bracket('('), .. }) => (),
+				_ => return_error!(context.tokens, "Expected '(' for argument in bit_cast"),
+			}
+
+			let value = parse_expression(context.borrow())?;
+
+			match context.tokens.next() {
+				Some(Token { kind: TokenKind::ClosingBracket(')'), .. }) => (),
+				_ => return_error!(context.tokens, "Expected ')' for argument in bit_cast"),
+			}
+
+			context.ast.insert_node(Node::new(&context, 
+				token, 
+				context.scope, 
+				NodeKind::BitCast { into_type, value },
+			))
 		}
 		TokenKind::Identifier(name) => {
 			context.tokens.next();

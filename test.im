@@ -1,49 +1,13 @@
-MyType :: type { 
-	sub_struct: {
-		more_members: U64,
-		even_more_member: U32,
-		even_more_member: U32,
-		even_more_member: U32,
-		even_more_member: U32,
-	},
-	y: U32,
+// ROADMAP TO POINTERS:
+//
+// - Make pointers work in a scope, but not interact with constants in any way.
+// - Allow acquiring pointers from a constant value, by adding some extra instructions.
+// - Pointer buffers, with info about how much a pointer contains
+// - Assigning pointers/pointer buffers to constants, by creating other constants that contain
+//   a copy of the thing that was behind the pointer.
+
+print_type_id :: |type_id: Type| {
+	print_num(bit_cast U64 (type_id));
 };
 
-{:main_program
-	// Comment out line to do stuff
-	skip :main_program (0);
-
-	result := {:loop_block
-		loop {
-			my_num := input_num_with_query("Please enter a number\n");
-
-			if my_num - 0 {
-				print(return_query(my_num)());
-				0 // Return something just because it's needed here for now
-			} else {
-				print("Since you entered zero we are quitting");
-				skip :loop_block (42);
-				0 // Return something just because it's needed here for now
-			};
-
-		};
-
-		0
-	};
-
-	input_num_with_query :: |message: String| {
-		print(message);
-		print(" > ");
-		input()
-	};
-
-	return_query :: |num: U64| {
-		if num - 20 {
-			|| "Wow, that's really quite a cool thing!\n"
-		} else {
-			|| "Wow, that's a huge pile of shit!\n"
-		}
-	};
-
-	result
-}
+print_type_id(String);

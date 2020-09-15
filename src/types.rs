@@ -254,6 +254,18 @@ impl AstTyper {
 				NodeKind::EmptyLiteral => {
 					Some(types.insert(Type::new(TypeKind::EmptyType)))
 				}
+				NodeKind::BitCast { into_type, value } => {
+					let into_type_handle =
+						types.handle(ast.nodes[into_type as usize].type_.unwrap());
+					let value_type_handle =
+						types.handle(ast.nodes[value as usize].type_.unwrap());
+
+					if into_type_handle.size != value_type_handle.size {
+						return_error!(node, "Bit casting requires the type you're casting to and the type you're casting from to be the same size in bits");
+					}
+
+					Some(into_type_handle.id)
+				}
 				NodeKind::Identifier(id) => {
 					let member = scopes.member(id);
 					match member.kind {

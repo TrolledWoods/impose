@@ -2,6 +2,8 @@ use crate::operator::*;
 use crate::code_loc::*;
 use crate::{ Error, Result };
 
+const KEYWORDS:  &[&str] = &["if", "else", "loop", "skip", "bit_cast", "type_of", "type"];
+
 #[derive(Debug, Clone)]
 pub struct Token {
 	pub loc: CodeLoc,
@@ -42,12 +44,12 @@ impl Lexer<'_> {
 		self.chars.clone().next().map(|(_, c)| c)
 	}
 
-	fn n_peek(&self, n: usize) -> Option<char> {
-		self.chars.clone().nth(n).map(|(_, c)| c)
-	}
-
 	fn next(&mut self) -> Option<char> {
 		self.chars.next().map(|(_, c)| c)
+	}
+
+	fn as_str(&self) -> &str {
+		self.chars.as_str()
 	}
 
 	fn skip_if_starts_with(&mut self, text: &str) -> Option<CodeLoc> {
@@ -168,17 +170,14 @@ pub fn lex_code(code: &str) -> Result<(CodeLoc, Vec<Token>)> {
 
 fn skip_whitespace(lexer: &mut Lexer) {
 	while let Some(c) = lexer.peek() {
-		if c == '/' {
-			if let Some('/') = lexer.n_peek(1) {
-				// Skip comment lines
-				while let Some(c) = lexer.next() {
-					if c == '\n' { break; }
-				}
-
-				lexer.source_code_location.column  = 1;
-				lexer.source_code_location.line   += 1;
-				continue;
+		if c == '/' && lexer.as_str().as_bytes()[1] == b'/' {
+			while let Some(c) = lexer.next() {
+				if c == '\n' { break; }
 			}
+
+			lexer.source_code_location.column  = 1;
+			lexer.source_code_location.line   += 1;
+			continue;
 		} 
 
 		if !c.is_whitespace() {
@@ -399,5 +398,3 @@ fn lex_identifier<'a>(lexer: &mut Lexer<'a>) -> (CodeLoc, &'a str) {
 	// presented elsewhere, like in the parser for example.
 	(location, start)
 }
-
-const KEYWORDS:  &[&str] = &["if", "else", "loop", "skip", "type_of", "type"];

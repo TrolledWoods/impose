@@ -68,7 +68,7 @@ impl fmt::Debug for Instruction {
 
 // TODO: Add a struct with data about compiling an expression, so that we can keep going
 // at the same point that we stopped if there is an undefined dependency.
-pub(crate) fn compile_expression(
+pub fn compile_expression(
 	ast: &Ast, 
 	scopes: &mut Scopes,
 	resources: &Resources,
@@ -90,6 +90,10 @@ pub(crate) fn compile_expression(
 		}
 
 		match node.kind {
+			NodeKind::BitCast { into_type: _, value } => {
+				// Bit casting just reinterprets the type, we don't actually do anything :D
+				node_values.push(node_values[value as usize].clone());
+			}
 			NodeKind::Identifier(member_id) => {
 				match scopes.member(member_id).kind {
 					ScopeMemberKind::UndefinedDependency(_) => panic!("Cannot run code_gen on undefined dependencies(they have to have been caught in the typer)"),

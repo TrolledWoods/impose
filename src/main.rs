@@ -3,7 +3,7 @@
 
 #![warn(unused_qualifications)]
 
-pub const DEBUG: bool = true;
+pub const DEBUG: bool = false;
 
 #[macro_use]
 pub mod id;
@@ -50,6 +50,9 @@ pub mod stack_frame;
 pub mod align;
 
 fn main() {
+	// VERY simple benchmarking
+	let time = std::time::Instant::now();
+
 	use scopes::Scopes;
 	use types::{Type, Types, TypeKind};
 	use resource::{ Resource, ResourceId, ResourceKind, Resources };
@@ -196,6 +199,8 @@ fn main() {
 			print!("{:X} ", b);
 		}
 		println!();
+		
+		println!("Completed compilation in {:?}", time.elapsed());
 	} else {
 		println!("Don't know the value");
 	}

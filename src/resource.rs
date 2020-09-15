@@ -321,6 +321,7 @@ impl Resource {
 	}
 }
 
+// TODO: Make resource states encoded in an enum, to make things much simpler.
 pub enum ResourceKind {
 	CurrentlyUsed,
 	ExternalFunction {
