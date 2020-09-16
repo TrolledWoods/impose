@@ -59,15 +59,29 @@ impl Scopes {
 	}
 
 	pub fn create_scope(&mut self, parent: Option<ScopeId>) -> ScopeId {
+		self.create_scope_that_is_maybe_thin(parent, false)
+	}
+
+	pub fn create_scope_that_is_maybe_thin(&mut self, parent: Option<ScopeId>, is_thin: bool) 
+		-> ScopeId
+	{
 		let parent = parent.unwrap_or(self.super_scope);
-		let id = self.scopes.push(Scope { 
+
+		let scope = Scope { 
 			parent: Some(parent), 
+			is_thin,
 			.. Default::default()
-		});
+		};
 
-		self.scopes.get_mut(parent).sub_scopes.push(id);
-
-		id
+		let parent_scope = self.scopes.get_mut(parent);
+		if parent_scope.is_thin {
+			*parent_scope = scope;
+			parent
+		} else {
+			let id = self.scopes.push(scope);
+			self.scopes.get_mut(parent).sub_scopes.push(id);
+			id
+		}
 	}
 
 	pub fn member(&self, mut member: ScopeMemberId) -> &ScopeMember {
@@ -203,7 +217,7 @@ impl Scopes {
 						"Name is already taken"
 					);
 				} else {
-					panic!("Non code based identifier name clash");
+					return error!(CodeLoc { file: ustr::ustr("no"), line: 0, column: 0 }, "Compiler error; Name collisions stuff");
 				}
 			}
 		}
@@ -232,6 +246,8 @@ pub struct Scope {
 	// TODO: Add stack frame id:s to scopes, so that we can check if a local is from the current
 	// stack frame and not some other stack frame, which can cause very weird behaviour.
 	pub parent: Option<ScopeId>,
+	// A 'thin' scope gets replaced as soon as it gets a subscope.
+	pub is_thin: bool,
 	// TODO: Make this better
 	pub has_locals: bool,
 	members: Vec<ScopeMemberId>,

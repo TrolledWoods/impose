@@ -281,6 +281,7 @@ impl Resources {
 				let kind = self.turn_value_into_resource(types, pointer_type, slice_at_pointer);
 				let id = self.insert_done(Resource {
 					depending_on: None,
+					scope_inside: None,
 					loc: CodeLoc { file: ustr::ustr("no"), column: 1, line: 1, },
 					type_: Some(pointer_type),
 					waiting_on_type: Vec::new(),
@@ -405,6 +406,7 @@ pub struct Resource {
 	pub loc: CodeLoc,
 	pub kind: ResourceKind,
 	pub type_: Option<TypeId>,
+	pub scope_inside: Option<ScopeId>,
 	pub waiting_on_type: Vec<ResourceId>,
 	/// This is Some when the value has not been calculated yet,
 	/// but None when it has been calculated, so that we cannot add more dependencies
@@ -422,6 +424,19 @@ impl Resource {
 	pub fn new(loc: CodeLoc, kind: ResourceKind) -> Self {
 		Self {
 			depending_on: None,
+			scope_inside: None,
+			loc,
+			kind,
+			type_: None,
+			waiting_on_type: vec![],
+			waiting_on_value: Some(vec![]),
+		}
+	}
+
+	pub fn new_with_scope(loc: CodeLoc, scope: ScopeId, kind: ResourceKind) -> Self {
+		Self {
+			depending_on: None,
+			scope_inside: Some(scope),
 			loc,
 			kind,
 			type_: None,
@@ -433,6 +448,7 @@ impl Resource {
 	pub fn new_with_type(loc: CodeLoc, kind: ResourceKind, type_: TypeId) -> Self {
 		Self {
 			depending_on: None,
+			scope_inside: None,
 			loc,
 			kind,
 			type_: Some(type_),

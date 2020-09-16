@@ -375,19 +375,38 @@ impl AstTyper {
 
 					Some(into_type_handle.id)
 				}
-				NodeKind::Identifier(id) => {
+				NodeKind::Identifier(mut id, ref sub_members) => {
+					for sub_member_name in sub_members {
+						let member = scopes.member(id);
+						match member.kind {
+							ScopeMemberKind::Constant(constant_id) => {
+								if let Some(scope_inside) = resources.resource(constant_id).scope_inside {
+									id = scopes.find_or_create_temp(scope_inside, *sub_member_name)?;
+								} else {
+									return error!(node, "This value does not contain a scope");
+								}
+							}
+							ScopeMemberKind::UndefinedDependency(_) => {
+								return Ok(Some(Dependency::Constant(node.loc, id)));
+							}
+							_ => { 
+								return error!(node, "Can only do a constant member on a constant");
+							}
+						}
+					}
+
 					let member = scopes.member(id);
-					match member.kind {
+					let final_type = match member.kind {
 						ScopeMemberKind::LocalVariable | ScopeMemberKind::FunctionArgument => {
 							if let Some(type_) = member.type_ {
-								Some(type_)
+								type_
 							} else {
 								return error!(node, "Type is not assigned, is the variable not declared? (This is probably a compiler problem)");
 							}
 						} 
 						ScopeMemberKind::Constant(id) => {
 							if let Some(type_) = resources.resource(id).type_ {
-								Some(type_)
+								type_
 							} else {
 								return Ok(Some(Dependency::Type(node.loc, id)));
 							}
@@ -401,7 +420,12 @@ impl AstTyper {
 						ScopeMemberKind::Indirect(_) => { 
 							unreachable!("scope.member function should never return Indirect");
 						}
-					}
+					};
+
+					ast.nodes[self.node_id as usize].kind =
+						NodeKind::Identifier(id, smallvec::SmallVec::new());
+
+					Some(final_type)
 				}
 				NodeKind::FunctionCall { function_pointer, ref arg_list } => {
 					// TODO: Check if the types in the arg_list are the same as the function

@@ -131,7 +131,7 @@ pub enum NodeKind {
 	Number(i128),
 
 	EmptyLiteral,
-	Identifier(ScopeMemberId),
+	Identifier(ScopeMemberId, smallvec::SmallVec<[ustr::Ustr; 3]>),
 
 	BitCast {
 		into_type: AstNodeId,
@@ -398,14 +398,16 @@ fn parse_block(mut context: Context, expect_brackets: bool, is_runnable: bool)
 
 				// We have a constant declaration
 				let mut ast = Ast::new();
-				let sub_scope = context.scopes.create_scope(Some(context.scope));
 
+				let sub_scope = 
+					context.scopes.create_scope_that_is_maybe_thin(Some(context.scope), true);
 				let mut sub_context = context.new_stackframe(&mut ast, sub_scope);
 
 				parse_expression(sub_context.borrow())?;
 
-				let resource_id = context.resources.insert(Resource::new(
+				let resource_id = context.resources.insert(Resource::new_with_scope(
 					ident_loc.clone(),
+					sub_scope,
 					ResourceKind::Value(ResourceValue::Defined(ast)),
 				));
 
@@ -883,7 +885,20 @@ fn parse_value(
 			context.tokens.next();
 			let member = context.scopes.find_or_create_temp(context.scope, name)?;
 
-			context.ast.insert_node(Node::new(&context, token, context.scope, NodeKind::Identifier(member)))
+			let mut sub_members = smallvec::SmallVec::new();
+			while let Some(Token { kind: TokenKind::ConstMember, .. }) = context.tokens.peek() {
+				context.tokens.next();
+				match context.tokens.next() {
+					Some(Token { kind: TokenKind::Identifier(name), .. }) => {
+						sub_members.push(*name);
+					}
+					_ => {
+						return error!(context.tokens, "Expected member identifier");
+					}
+				}
+			}
+
+			context.ast.insert_node(Node::new(&context, token, context.scope, NodeKind::Identifier(member, sub_members)))
 		}
 		TokenKind::Bracket('{') => {
 			parse_block(context.borrow(), true, true)?

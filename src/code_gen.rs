@@ -101,7 +101,9 @@ pub fn compile_expression(
 				// Bit casting just reinterprets the type, we don't actually do anything :D
 				node_values.push(node_values[value as usize].clone());
 			}
-			NodeKind::Identifier(member_id) => {
+			NodeKind::Identifier(member_id, ref sub_members) => {
+				assert_eq!(sub_members.len(), 0, "Const member access should be resolved in type checking!");
+
 				match scopes.member(member_id).kind {
 					ScopeMemberKind::UndefinedDependency(_) => panic!("Cannot run code_gen on undefined dependencies(they have to have been caught in the typer)"),
 					ScopeMemberKind::Indirect(_) => unreachable!("the member function on Scopes should handle indirects and shouldn't return one of them"),

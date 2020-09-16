@@ -24,6 +24,7 @@ pub enum TokenKind {
 	Semicolon,
 	Comma,
 	Colon,
+	ConstMember,
 	Bracket(char),
 	ClosingBracket(char),
 	NumericLiteral(i128), // TODO: Make the numeric literal arbitrarily large.
@@ -112,6 +113,11 @@ pub fn lex_code(code: &str) -> Result<(CodeLoc, Vec<Token>), ()> {
 			}
 			',' => {
 				tokens.push(Token::new(lexer.source_code_location.clone(), TokenKind::Comma));
+				lexer.source_code_location.column += 1;
+				lexer.next();
+			}
+			'\\' => {
+				tokens.push(Token::new(lexer.source_code_location.clone(), TokenKind::ConstMember));
 				lexer.source_code_location.column += 1;
 				lexer.next();
 			}
