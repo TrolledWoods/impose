@@ -37,6 +37,29 @@ impl Types {
 		TypeHandle { id, size: type_.size, align: type_.align }
 	}
 
+	pub fn insert_struct(&mut self, type_: impl Iterator<Item = (ustr::Ustr, TypeId)>) -> TypeId {
+		let mut full_member_data = Vec::new();
+		let mut offset = 0;
+		for (name, member_type_id) in type_ {
+			let member_type_handle = self.handle(member_type_id);
+			let aligned_off = to_aligned(member_type_handle.align, offset);
+			full_member_data.push((name, aligned_off, member_type_handle));
+
+			offset = aligned_off + member_type_handle.size;
+		}
+
+		let type_ = Type::new(TypeKind::Struct { members: full_member_data });
+
+		// Try to find a type that is already the same.
+		for (id, self_type) in self.types.iter_ids() {
+			if *self_type == type_ {
+				return id;
+			}
+		}
+
+		self.types.push(type_)
+	}
+
 	pub fn insert(&mut self, type_: Type) -> TypeId {
 		// Try to find a type that is already the same.
 		for (id, self_type) in self.types.iter_ids() {
@@ -214,6 +237,11 @@ impl AstTyper {
 
 			let type_kind = match node.kind {
 				NodeKind::Temporary => return error!(node, "Temporaries have to be removed in the parser, they are not to be kept around until type checking(internal compiler error)"),
+				NodeKind::Struct { ref members } => {
+					Some(types.insert_struct(members.iter().map(|(name, node)|
+						(*name, ast.nodes[*node as usize].type_.unwrap())
+					)))
+				}
 				NodeKind::Member { contains, .. } => {
 					ast.nodes[contains as usize].type_
 				}
@@ -476,24 +504,9 @@ impl AstTyper {
 				}
 				NodeKind::TypeStruct { ref args } => {
 					// Figure out the wanted offsets of the arguments.
-					let mut full_member_data = Vec::new();
-
-					let mut offset = 0;
-					for (name, member_type_node) in args {
-						let member_type_handle = types.handle(
-							ast.nodes[*member_type_node as usize].type_.unwrap()
-						);
-						let aligned_off = to_aligned(member_type_handle.align, offset);
-						full_member_data.push((*name, aligned_off, member_type_handle));
-
-						offset = aligned_off + member_type_handle.size;
-					}
-
-					let kind = TypeKind::Struct {
-						members: full_member_data,
-					};
-
-					Some(types.insert(Type::new(kind)))
+					Some(types.insert_struct(args.iter().map(|(name, node)|
+						(*name, ast.nodes[*node as usize].type_.unwrap())
+					)))
 				}
 				NodeKind::TypePointer(pointing_to) => {
 					let pointing_to_type = ast.nodes[pointing_to as usize].type_.unwrap();

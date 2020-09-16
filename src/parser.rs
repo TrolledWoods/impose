@@ -175,6 +175,10 @@ pub enum NodeKind {
 		start_location: AstNodeId,
 	},
 
+	Struct {
+		members: Vec<(ustr::Ustr, AstNodeId)>,
+	},
+
 	DeclareFunctionArgument { variable_name: ScopeMemberId, type_node: AstNodeId },
 	Declaration { variable_name: ScopeMemberId, value: AstNodeId, },
 	Block {
@@ -726,6 +730,39 @@ fn parse_value(
 				)
 			);
 			context.ast.insert_node(Node::new(&context, token, context.scope, NodeKind::Resource(id)))
+		}
+		TokenKind::Keyword("struct") => {
+			context.tokens.next();
+			let (_, members) = try_parse_list(
+				context.borrow(),
+				|mut context| {
+					// TODO: Try to unify named list parsing somehow.
+					let value = context.tokens.expect_next(|| "Expected struct member name")?;
+					if let Token { loc: _, kind: TokenKind::Identifier(name) } = *value {
+						let colon = context.tokens.next();
+						if matches!(colon, Some(Token { kind: TokenKind::Colon, .. })) {
+							let expression = parse_expression(context.borrow())?;
+
+							Ok((name, expression))
+						} else {
+							return error!(value, "Expected ':' for struct member");
+						}
+					} else {
+						return error!(value, "Expected struct member name");
+					}
+				},
+				&TokenKind::Bracket('{'),
+				&TokenKind::ClosingBracket('}'),
+			)?.ok_or_else(|| error_value!(token, "Expected struct members"))?;
+
+
+			context.ast.insert_node(Node::new(&context,
+				token,
+				context.scope,
+				NodeKind::Struct {
+					members,
+				},
+			))
 		}
 		TokenKind::Keyword("loop") => {
 			context.tokens.next();

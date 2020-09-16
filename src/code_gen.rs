@@ -303,6 +303,27 @@ pub fn compile_expression(
 					}
 				}
 			}
+			NodeKind::Struct { ref members } => {
+				let id = node.type_.unwrap();
+				let handle = types.handle(id);
+				let type_kind = &types.get(id).kind;
+
+				let local = locals.allocate(handle);
+				match type_kind {
+					TypeKind::Struct { members: ref type_members } => {
+						for ((_, offset, type_handle), (_, member_node_id)) 
+							in type_members.iter().zip(members) 
+						{
+							let sub_local = 
+								local.sub_local(*offset, type_handle.size, type_handle.align);
+							push_instr!(instructions, Instruction::Move(sub_local, node_values[*member_node_id as usize].clone().unwrap()));
+						}
+					}
+					_ => unreachable!(),
+				}
+
+				node_values.push(Some(Value::Local(local)));
+			}
 			NodeKind::MemberAccess(member, sub_name) => {
 				let id = ast.nodes[member as usize].type_.unwrap();
 				let type_kind = &types.get(id).kind;
@@ -478,6 +499,7 @@ fn get_resource_constant(loc: &CodeLoc, resources: &Resources, id: ResourceId)
 {
 	let resource = resources.resource(id);
 	match resource.kind {
+		ResourceKind::Poison => panic!("Used poison. TODO: Return"),
 		ResourceKind::ExternalFunction { .. } |
 		ResourceKind::Function { .. } | 
 		ResourceKind::String(_) =>

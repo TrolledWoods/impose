@@ -112,6 +112,22 @@ impl LocalHandle {
 			resulting_size: self.size,
 		}
 	}
+
+	pub fn sub_local(&self, offset: usize, size: usize, align: usize) -> Self {
+		debug_assert!(offset + size <= self.size);
+
+		// Check that our align is aligned if the handle is aligned.
+		debug_assert!(is_aligned(align, self.align));
+		debug_assert!(is_aligned(align, offset));
+
+		LocalHandle {
+			offset: self.offset + offset,
+			// TODO: Check if align is really necessary to have as a member here.
+			align,
+			size,
+			id: self.id,
+		}
+	}
 }
 
 create_id!(LocalId);

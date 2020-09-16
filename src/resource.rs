@@ -48,6 +48,9 @@ impl Resources {
 			let resource_type = &mut member.type_;
 
 			match member.kind {
+				ResourceKind::Poison => {
+					self.return_resource(member_id, member);
+				},
 				ResourceKind::Function(ResourceFunction::Defined(ast, arguments)) => {
 					// TODO: Maybe we should get rid of this state?
 					member.kind = ResourceKind::Function(ResourceFunction::Typing(ast, AstTyper::new(), arguments));
@@ -67,6 +70,8 @@ impl Resources {
 						}
 						Ok(None) => {}
 						Err(()) => {
+							member.kind = ResourceKind::Poison;
+							self.return_resource(member_id, member);
 							return Ok(true);
 						}
 					}
@@ -150,6 +155,8 @@ impl Resources {
 						}
 						Ok(None) => { }
 						Err(()) => {
+							member.kind = ResourceKind::Poison;
+							self.return_resource(member_id, member);
 							return Ok(true);
 						}
 					}
@@ -401,6 +408,7 @@ pub enum ResourceKind {
 	Function(ResourceFunction),
 	String(String),
 	Value(ResourceValue),
+	Poison,
 }
 
 impl std::fmt::Debug for ResourceKind {
@@ -410,6 +418,7 @@ impl std::fmt::Debug for ResourceKind {
 			ResourceKind::Function { .. } => write!(f, "func"),
 			ResourceKind::String(_) => write!(f, "string"),
 			ResourceKind::Value { .. } => write!(f, "value"),
+			ResourceKind::Poison => write!(f, "poison"),
 		}
 	}
 }
