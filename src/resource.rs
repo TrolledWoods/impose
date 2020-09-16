@@ -212,7 +212,7 @@ impl Resources {
 
 					// We free the instance here so that we can turn the value into a resource
 					// first!
-					std::mem::drop(instance);
+					drop(instance);
 
 					self.return_resource(member_id, member);
 					self.uncomputed_resources.remove(&member_id);

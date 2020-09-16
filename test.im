@@ -1,23 +1,62 @@
 // ROADMAP TO POINTERS:
 //
 // [*] Make pointers work in a scope, but not interact with constants in any way.
-// [-] Allow acquiring pointers from a constant value, by adding some extra instructions.
+// [*] Allow acquiring pointers from a constant value, by adding some extra instructions.
 // [ ] Pointer buffers, with info about how much a pointer contains
 // [ ] Assigning pointers/pointer buffers to constants, by creating other constants that contain
 //   a copy of the thing that was behind the pointer.
 
-MY_CONST :: {
-	x := 42;
-	&x
+alloc_u64 :: |n_elements: U64| {
+	buffer := buffer_into_parts(alloc(n_elements * 8, 8));
+	buffer.length = n_elements;
+	buffer_from_parts(buffer.pointer, buffer.length)
 };
 
-ANOTHER_CONST :: {
-	yo := &*MY_CONST;
-	yo
+buffer_into_parts :: |buffer: &- U64| {
+	bit_cast { pointer: &U64, length: U64 } (buffer)
 };
 
-{
-	x := ANOTHER_CONST;
+buffer_from_parts :: |pointer: &U64, length: U64| {
+	bit_cast &- U64 (struct { pointer: pointer, length: length })
+};
 
-	print_num(*x);
+buffer_length :: |buffer: &- U64| 
+	buffer_into_parts(buffer).length;
+
+buffer_get :: |buffer: &- U64, index: U64| {
+	buffer_into_parts(buffer).pointer + bit_cast &U64 (index * 8)
+};
+
+my_buffer := alloc_u64(50);
+
+*buffer_get(my_buffer, 0) = 1;
+*buffer_get(my_buffer, 1) = 1;
+*buffer_get(my_buffer, 2) = 2;
+*buffer_get(my_buffer, 3) = 3;
+*buffer_get(my_buffer, 4) = 5;
+*buffer_get(my_buffer, 5) = 8;
+*buffer_get(my_buffer, 6) = 500;
+
+print("Buffer has ");
+print_num(buffer_length(my_buffer));
+print("elements\n");
+
+{:loop_skip
+	index := 0;
+	length := buffer_length(my_buffer);
+	loop {
+		if index - length {
+			0
+		} else {
+			skip :loop_skip;
+			0
+		};
+
+		print_num(index);
+		print(": ");
+		print_num(*buffer_get(my_buffer, index));
+		print("\n");
+
+		index = index + 1;
+	};
 };

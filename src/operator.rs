@@ -49,8 +49,9 @@ create_operators! {
 	Xor;        "^^",  true,   4, 0,
 
 	// Bitwise operators
-	BitwiseOrOrLambda; "|", true, 5, 0,
-	BitAndOrPointer; "&", true,  5, 8,
+	BitwiseOrOrLambda; "|",  true,  5, 0,
+	BufferPointer;     "&-", true,  0, 8,
+	BitAndOrPointer;   "&",  true,  5, 8,
 
 	// Standard math operators
 	Add;        "+",   true,   6, 0,

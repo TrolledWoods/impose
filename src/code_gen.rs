@@ -458,7 +458,7 @@ pub fn compile_expression(
 				// so to speak)
 				let from = match node_values[operand as usize].clone().unwrap() {
 					Value::Local(handle) => handle,
-					Value::Constant(_) => panic!("Derefencing cannot be done on constants yet"),
+					Value::Constant(_) => panic!("Cannot dereference constants"),
 					value => {
 						let local = locals.allocate(types.handle(
 								ast.nodes[operand as usize].type_.unwrap()
@@ -483,6 +483,7 @@ pub fn compile_expression(
 			NodeKind::TypeIdentifier(_) |
 			NodeKind::TypeStruct { .. } |
 			NodeKind::TypeFunctionPointer { .. } |
+			NodeKind::TypeBufferPointer(_) |
 			NodeKind::TypePointer(_) => {
 				node_values.push(None);
 			}

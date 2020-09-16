@@ -211,6 +211,7 @@ pub enum NodeKind {
 		args: Vec<(ustr::Ustr, AstNodeId)>,
 	},
 	TypePointer(AstNodeId),
+	TypeBufferPointer(AstNodeId),
 }
 
 struct TokenStream<'a> {
@@ -454,6 +455,15 @@ fn parse_type_expr_value(
 				token,
 				context.scope, 
 				NodeKind::TypePointer(sub_type),
+			)))
+		}
+		TokenKind::Operator(Operator::BufferPointer) => {
+			context.tokens.next();
+			let sub_type = parse_type_expr_value(context.borrow())?;
+			Ok(context.ast.insert_node(Node::new(&context, 
+				token,
+				context.scope, 
+				NodeKind::TypeBufferPointer(sub_type),
 			)))
 		}
 		TokenKind::Identifier(name) => {

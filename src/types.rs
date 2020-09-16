@@ -101,6 +101,11 @@ impl Types {
 			TypeKind::Pointer(pointer_id) => {
 				pointers_inside.push((offset, pointer_id, 1));
 			},
+			TypeKind::BufferPointer(_) => {
+				// We have to make a more advanced enum solution, because the size of buffers
+				// is unknown here.
+				todo!();
+			}
 			TypeKind::FunctionPointer { .. } => (),
 			TypeKind::Type => (),
 			TypeKind::String => (),
@@ -139,6 +144,10 @@ impl Types {
 		match self.types.get(type_).kind {
 			TypeKind::EmptyType => write!(buffer, "Empty").unwrap(),
 			TypeKind::Type => write!(buffer, "Type").unwrap(),
+			TypeKind::BufferPointer(sub_type) => {
+				write!(buffer, "&-").unwrap();
+				self.write_type_to_buffer(sub_type, buffer);
+			}
 			TypeKind::Struct { ref members } => {
 				write!(buffer, "struct{{ ").unwrap();
 				for (i, (name, offset, member)) in members.iter().enumerate() {
@@ -203,6 +212,7 @@ impl Type {
 				(size, align)
 			}
 			TypeKind::Pointer(_) => (8, 8),
+			TypeKind::BufferPointer(_) => (16, 8),
 			TypeKind::EmptyType => (0, 1),
 			TypeKind::Type => (8, 8),
 			TypeKind::Primitive(PrimitiveKind::U64) => (8, 8),
@@ -232,6 +242,7 @@ pub enum TypeKind {
 	},
 	EmptyType,
 	Pointer(TypeId),
+	BufferPointer(TypeId),
 	FunctionPointer {
 		args: Vec<TypeId>,
 		returns: TypeId,
@@ -548,6 +559,10 @@ impl AstTyper {
 				NodeKind::TypePointer(pointing_to) => {
 					let pointing_to_type = ast.nodes[pointing_to as usize].type_.unwrap();
 					Some(types.insert(Type::new(TypeKind::Pointer(pointing_to_type))))
+				}
+				NodeKind::TypeBufferPointer(pointing_to) => {
+					let pointing_to_type = ast.nodes[pointing_to as usize].type_.unwrap();
+					Some(types.insert(Type::new(TypeKind::BufferPointer(pointing_to_type))))
 				}
 			};
 
