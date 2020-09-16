@@ -9,17 +9,6 @@
 std :: import "std";
 
 main :: || {
-	buffer := std\alloc_u64(5);
-
-	*std\buffer_get(buffer, 0) = 50;
-	*std\buffer_get(buffer, 1) = 25;
-	*std\buffer_get(buffer, 2) = 50;
-	*std\buffer_get(buffer, 3) = 25;
-	*std\buffer_get(buffer, 4) = 50;
-
-	std\buffer_iterate(buffer, |index: U64, value: &U64| {
-		std\debug("index", index);
-		std\debug("value", *value);
-		print("\n");
-	});
 };
+
+main();

@@ -12,6 +12,73 @@ debug :: |name: String, value: U64| {
 	print("\n");
 };
 
+// --- VECTORS ---
+Vector :: type {
+	buffer: &- U64,
+	length: U64,
+};
+
+vector_create :: || {
+	buffer := alloc_u64(5);
+	length := 0;
+	struct { buffer: buffer, length: length }
+};
+
+vector_free :: |vec: Vector| {
+	dealloc_buffer_u64(vec.buffer);
+};
+
+/// Returns a buffer which is a subsection of the vector
+vector_slice :: |vec: &Vector, start: U64, end: U64| {
+	x := *vec;
+	pointer := buffer_into_raw(x.buffer).pointer;
+
+	pointer = pointer + bit_cast &U64 (start * 8);
+	length := end - start;
+
+	buffer_from_raw(struct { pointer: pointer, length: length })
+};
+
+vector_slice_full :: |vec: &Vector| {
+	x := *vec;
+	vector_slice(vec, 0, x.length)
+};
+
+vector_capacity :: |vec: &Vector| {
+	x := (*vec);
+	buffer_into_raw(x.buffer).length
+};
+
+vector_reserve :: |vec: &Vector, min_capacity: U64| {
+	capacity := vector_capacity(vec);
+	if capacity < min_capacity {
+		new_buffer := alloc_u64(min_capacity + 10);
+		// Copy data into new buffer
+		x := *vec;
+		buffer_iterate_any(vector_slice(vec, 0, x.length), |index: U64, value: &U64, any: &{}| {
+			new_buffer := *bit_cast & &- U64 (any);
+			*buffer_get(new_buffer, index) = *value;
+		}, bit_cast &{} (&new_buffer));
+
+		dealloc_buffer_u64(x.buffer);
+		(*vec).buffer = new_buffer;
+	};
+};
+
+vector_push :: |vec: &Vector, value: U64| {
+	x := *vec;
+	vector_reserve(vec, x.length + 1);
+	*vector_get(vec, x.length) = value;
+	(*vec).length = x.length + 1;
+};
+
+vector_get :: |vec: &Vector, index: U64| {
+	x := *vec;
+	buffer_get(x.buffer, index)
+};
+
+// --- BUFFER HANDLING ---
+
 /// A pointer buffer in a raw version.
 /// TODO: Flag this as not storable in constants!
 PointerBufferRaw :: type {
@@ -24,6 +91,11 @@ PointerBufferRaw :: type {
 alloc_u64 :: |n_elements: U64| {
 	pointer := buffer_into_raw(alloc(n_elements * 8, 8)).pointer;
 	buffer_from_raw(struct { pointer: pointer, length: n_elements })
+};
+
+dealloc_buffer_u64 :: |buffer: &- U64| {
+	raw := buffer_into_raw(buffer);
+	dealloc(raw.pointer, raw.length * 8, 8);
 };
 
 /// Turns a pointer buffer into a PointerBufferRaw.
@@ -49,23 +121,29 @@ buffer_length :: |buffer: &- U64| buffer_into_raw(buffer).length;
 /// Iterates over every element in a buffer, and runs the callback on each one,
 /// toegher with the index.
 buffer_iterate :: |buffer: &- U64, callback: (U64, &U64)| {
+	buffer_iterate_any(buffer, |a: U64, b: &U64, c: &{}| {
+		(bit_cast (U64, &U64) (c))(a, b)
+	}, bit_cast &{} (callback));
+};
+
+/// Iterate with any data attached.
+buffer_iterate_any :: |buffer: &- U64, callback: (U64, &U64, &{}), any: &{}| {
 	raw := buffer_into_raw(buffer);
-	length := raw.length;
-	index := 0;
 
-	{:end_loop
-		loop {
-			// Check equals. If tests if argument is not zero, and we don't have boolean
-			// operators yet.
-			if index - length { 0 }
-			else {
-				skip :end_loop;
-				0
+	if raw.length {
+		length := raw.length - 1;
+		index := 0;
+
+		{:end_loop
+			loop {
+				if length < index { 
+					skip :end_loop;
+				};
+
+				callback(index, raw.pointer + bit_cast &U64 (index * 8), any);
+
+				index = index + 1;
 			};
-
-			callback(index, raw.pointer + bit_cast &U64 (index * 8));
-
-			index = index + 1;
 		};
 	};
 };

@@ -121,6 +121,39 @@ fn main() {
 		}
 	).unwrap();
 
+	// (pointer, size, align)
+	let u64_pointer_type = types.insert(Type::new(TypeKind::Pointer(U64_TYPE_ID)));
+	let print_type_id = types.insert(Type::new(TypeKind::FunctionPointer {
+		args: vec![u64_pointer_type, U64_TYPE_ID, U64_TYPE_ID],
+		returns: EMPTY_TYPE_ID,
+	}));
+	scopes.insert_root_resource(
+		&mut resources, 
+		ustr::ustr("dealloc"), 
+		print_type_id, 
+		ResourceKind::ExternalFunction {
+			func: Box::new(|_, args, _| {
+				if let &[a, b, c, d, e, f, g, h] = &args[0..8] {
+					let pointer = usize::from_le_bytes([a, b, c, d, e, f, g, h]);
+					if let &[a, b, c, d, e, f, g, h] = &args[8..16] {
+						let n_elements = usize::from_le_bytes([a, b, c, d, e, f, g, h]);
+						if let &[a, b, c, d, e, f, g, h] = &args[16..24] {
+							let align = usize::from_le_bytes([a, b, c, d, e, f, g, h]);
+							unsafe { 
+								std::alloc::dealloc(
+									pointer as *mut u8, 
+									std::alloc::Layout::from_size_align(n_elements, align).unwrap(),
+								);
+							}
+						} else { panic!("bad"); }
+					} else { panic!("bad"); }
+				} else { panic!("bad"); }
+			}),
+			n_arg_bytes: 24,
+			n_return_bytes: 0,
+		}
+	).unwrap();
+
 	let print_type_id = types.insert(Type::new(TypeKind::FunctionPointer {
 		args: vec![U64_TYPE_ID],
 		returns: EMPTY_TYPE_ID,

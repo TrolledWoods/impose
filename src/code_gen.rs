@@ -28,6 +28,8 @@ pub enum Instruction {
 	WrappingMul(LocalHandle, Value, Value),
 	WrappingDiv(LocalHandle, Value, Value),
 
+	LessThan(LocalHandle, Value, Value),
+
 	SetAddressOf(LocalHandle, LocalHandle),
 
 	IndirectMove(IndirectLocalHandle, Value),
@@ -56,6 +58,8 @@ impl fmt::Debug for Instruction {
 				write!(f, "{:?} = {:?} / {:?}", result, a, b),
 			Instruction::SetAddressOf(to, from) =>
 				write!(f, "({:?}) = &({:?})", to, from),
+			Instruction::LessThan(result, a, b) =>
+				write!(f, "{:?} = {:?} < {:?}", result, a, b),
 			Instruction::IndirectMove(into, from) => write!(f, "mov *({:?}) = {:?}", into, from),
 			Instruction::Move(a, b) => write!(f, "mov ({:?}) = {:?}", a, b),
 			Instruction::JumpRel(a) => write!(f, "jump {:?}", a),
@@ -387,6 +391,8 @@ pub fn compile_expression(
 						// the return value of an AstNode is used or not
 						push_instr!(instructions, Instruction::Move(result, b));
 					}
+					Operator::Less =>
+						push_instr!(instructions, Instruction::LessThan(result, a, b)),
 					Operator::Add =>
 						push_instr!(instructions, Instruction::WrappingAdd(result, a, b)),
 					Operator::Sub =>

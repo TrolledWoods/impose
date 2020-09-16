@@ -100,6 +100,23 @@ pub fn run_instructions(
 					_ => panic!("Unknown thing"),
 				}
 			}
+			Instruction::LessThan(result, ref a, ref b) => {
+				match result.size {
+					4 => {
+						let a = stack_frame_instance.get_u32(a);
+						let b = stack_frame_instance.get_u32(b);
+
+						stack_frame_instance.insert_into_local(result, &((a < b) as u32).to_le_bytes());
+					}
+					8 => {
+						let a = stack_frame_instance.get_u64(a);
+						let b = stack_frame_instance.get_u64(b);
+
+						stack_frame_instance.insert_into_local(result, &((a < b) as u64).to_le_bytes());
+					}
+					_ => panic!("Unknown thing"),
+				}
+			}
 			Instruction::SetAddressOf(to, from) => {
 				let bytes = (stack_frame_instance.address_of_local(from) as u64).to_le_bytes();
 				stack_frame_instance.insert_into_local(to, &bytes);

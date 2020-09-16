@@ -31,7 +31,7 @@ impl Value {
 				})
 			}
 			Value::Pointer(handle) => {
-				debug_assert!(offset + size <= handle.resulting_size);
+				// debug_assert!(offset + size <= handle.resulting_size);
 				debug_assert!(is_aligned(align, offset));
 
 				Value::Pointer(IndirectLocalHandle {
