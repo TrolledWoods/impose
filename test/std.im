@@ -4,7 +4,13 @@
 
 /// Turns a pointer buffer into its raw parts, a pointer and a length.
 
-/// TODO: Make this function polymorphic.
+/// Prints out a number more easily
+debug :: |name: String, value: U64| {
+	print(name);
+	print(": ");
+	print_num(value);
+	print("\n");
+};
 
 /// A pointer buffer in a raw version.
 /// TODO: Flag this as not storable in constants!
@@ -13,10 +19,53 @@ PointerBufferRaw :: type {
 	length: U64,
 };
 
+/// Allocates a pointer buffer of u64 elements
+/// TODO: Make this function polymorphic.
+alloc_u64 :: |n_elements: U64| {
+	pointer := buffer_into_raw(alloc(n_elements * 8, 8)).pointer;
+	buffer_from_raw(struct { pointer: pointer, length: n_elements })
+};
+
+/// Turns a pointer buffer into a PointerBufferRaw.
+/// TODO: Make this generic
 buffer_into_raw :: |buffer: &- U64| {
 	bit_cast PointerBufferRaw (buffer)
 };
 
+/// Turns a PointerBufferRaw into a pointer buffer
+/// TODO: Make this generic
 buffer_from_raw :: |raw: PointerBufferRaw| {
 	bit_cast &- U64 (raw)
+};
+
+/// Gets a pointer to a specific element in a pointer buffer.
+buffer_get :: |buffer: &- U64, index: U64| {
+	pointer := buffer_into_raw(buffer).pointer;
+	pointer + bit_cast &U64 (index * 8)
+};
+
+buffer_length :: |buffer: &- U64| buffer_into_raw(buffer).length;
+
+/// Iterates over every element in a buffer, and runs the callback on each one,
+/// toegher with the index.
+buffer_iterate :: |buffer: &- U64, callback: (U64, &U64)| {
+	raw := buffer_into_raw(buffer);
+	length := raw.length;
+	index := 0;
+
+	{:end_loop
+		loop {
+			// Check equals. If tests if argument is not zero, and we don't have boolean
+			// operators yet.
+			if index - length { 0 }
+			else {
+				skip :end_loop;
+				0
+			};
+
+			callback(index, raw.pointer + bit_cast &U64 (index * 8));
+
+			index = index + 1;
+		};
+	};
 };
