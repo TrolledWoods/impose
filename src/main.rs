@@ -169,7 +169,7 @@ fn main() {
 		code_loc::CodeLoc { file: ustr::ustr("no"), line: 0, column: 0 },
 		ResourceKind::Value(ResourceValue::File {
 			scope,
-			module_folder: "".into(),
+			module_folder: "test".into(),
 			file: "test".into(),
 		}),
 	));

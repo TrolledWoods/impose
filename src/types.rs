@@ -375,7 +375,7 @@ impl AstTyper {
 
 					Some(into_type_handle.id)
 				}
-				NodeKind::Identifier(mut id, ref sub_members) => {
+				NodeKind::Identifier { source: mut id, const_members: ref sub_members, is_type } => {
 					for sub_member_name in sub_members {
 						let member = scopes.member(id);
 						match member.kind {
@@ -396,34 +396,71 @@ impl AstTyper {
 					}
 
 					let member = scopes.member(id);
-					let final_type = match member.kind {
-						ScopeMemberKind::LocalVariable | ScopeMemberKind::FunctionArgument => {
-							if let Some(type_) = member.type_ {
-								type_
-							} else {
-								return error!(node, "Type is not assigned, is the variable not declared? (This is probably a compiler problem)");
+					let final_type = if !is_type {
+						match member.kind {
+							ScopeMemberKind::LocalVariable | ScopeMemberKind::FunctionArgument => {
+								if let Some(type_) = member.type_ {
+									type_
+								} else {
+									return error!(node, "Type is not assigned, is the variable not declared? (This is probably a compiler problem)");
+								}
+							} 
+							ScopeMemberKind::Constant(id) => {
+								if let Some(type_) = resources.resource(id).type_ {
+									type_
+								} else {
+									return Ok(Some(Dependency::Type(node.loc, id)));
+								}
 							}
-						} 
-						ScopeMemberKind::Constant(id) => {
-							if let Some(type_) = resources.resource(id).type_ {
-								type_
-							} else {
-								return Ok(Some(Dependency::Type(node.loc, id)));
+							ScopeMemberKind::UndefinedDependency(_) => {
+								return Ok(Some(Dependency::Constant(node.loc, id)));
+							}
+							ScopeMemberKind::Label => {
+								return error!(node, "This is not a variable, it is a label!");
+							}
+							ScopeMemberKind::Indirect(_) => { 
+								unreachable!("scope.member function should never return Indirect");
 							}
 						}
-						ScopeMemberKind::UndefinedDependency(_) => {
-							return Ok(Some(Dependency::Constant(node.loc, id)));
-						}
-						ScopeMemberKind::Label => {
-							return error!(node, "This is not a variable, it is a label!");
-						}
-						ScopeMemberKind::Indirect(_) => { 
-							unreachable!("scope.member function should never return Indirect");
+					} else {
+						match member.kind {
+							ScopeMemberKind::Constant(id) => {
+								if let Some(type_) = resources.resource(id).type_ {
+									if type_ != TYPE_TYPE_ID {
+										return error!(node, "A Type identifier has to contain a type!");
+									}
+								} else {
+									return Ok(Some(Dependency::Type(node.loc, id)));
+								}
+
+								match resources.resource(id).kind {
+									ResourceKind::Value(ResourceValue::Value(_, ref value, _)) => {
+										if let &[a, b, c, d, e, f, g, h] = value.as_slice() {
+											let id = usize::from_le_bytes([a, b, c, d, e, f, g, h]);
+											if id >= types.types.len() {
+												return error!(node, "Invalid type id");
+											}
+											TypeId::create(id as u32)
+										} else {
+											unreachable!("The value of a type has to be a 64 bit value");
+										}
+									}
+									ResourceKind::Value(_) => {
+										return Ok(Some(Dependency::Value(node.loc, id)));
+									}
+									_ => return error!(node, "A Type identifier has to contain a type!"),
+								}
+							}
+							_ => return error!(node, "A Type identifier has to be constant"), 
 						}
 					};
 
 					ast.nodes[self.node_id as usize].kind =
-						NodeKind::Identifier(id, smallvec::SmallVec::new());
+						NodeKind::Identifier {
+							source: id,
+							const_members: smallvec::SmallVec::new(),
+							is_type,
+						};
 
 					Some(final_type)
 				}
@@ -528,39 +565,6 @@ impl AstTyper {
 				// --- Type expressions ---
 				NodeKind::GetType(_) => {
 					Some(TYPE_TYPE_ID)
-				}
-				NodeKind::TypeIdentifier(member) => {
-					let member = scopes.member(member);
-					match member.kind {
-						ScopeMemberKind::Constant(id) => {
-							if let Some(type_) = resources.resource(id).type_ {
-								if type_ != TYPE_TYPE_ID {
-									return error!(node, "A Type identifier has to contain a type!");
-								}
-							} else {
-								return Ok(Some(Dependency::Type(node.loc, id)));
-							}
-
-							match resources.resource(id).kind {
-								ResourceKind::Value(ResourceValue::Value(_, ref value, _)) => {
-									if let &[a, b, c, d, e, f, g, h] = value.as_slice() {
-										let id = usize::from_le_bytes([a, b, c, d, e, f, g, h]);
-										if id >= types.types.len() {
-											return error!(node, "Invalid type id");
-										}
-										Some(TypeId::create(id as u32))
-									} else {
-										unreachable!("The value of a type has to be a 64 bit value");
-									}
-								}
-								ResourceKind::Value(_) => {
-									return Ok(Some(Dependency::Value(node.loc, id)));
-								}
-								_ => return error!(node, "A Type identifier has to contain a type!"),
-							}
-						}
-						_ => return error!(node, "A Type identifier has to be constant"), 
-					}
 				}
 				NodeKind::TypeFunctionPointer { ref arg_list, return_type } => {
 					let kind = TypeKind::FunctionPointer {

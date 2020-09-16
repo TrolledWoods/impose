@@ -67,7 +67,7 @@ impl Scopes {
 	{
 		let parent = parent.unwrap_or(self.super_scope);
 
-		let scope = Scope { 
+		let mut scope = Scope { 
 			parent: Some(parent), 
 			is_thin,
 			.. Default::default()
@@ -75,6 +75,7 @@ impl Scopes {
 
 		let parent_scope = self.scopes.get_mut(parent);
 		if parent_scope.is_thin {
+			scope.parent = parent_scope.parent;
 			*parent_scope = scope;
 			parent
 		} else {
@@ -110,7 +111,9 @@ impl Scopes {
 				}
 			}
 
-			scope_id = self.scopes.get(scope_id).parent?;
+			let parent = self.scopes.get(scope_id).parent?;
+			assert_ne!(scope_id, parent);
+			scope_id = parent;
 		}
 	}
 

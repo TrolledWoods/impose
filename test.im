@@ -6,6 +6,5 @@
 // [/] Assigning pointers/pointer buffers to constants, by creating other constants that contain
 //   a copy of the thing that was behind the pointer.
 
-Module :: import "module";
+std :: import "std";
 
-print_num(Module\x);

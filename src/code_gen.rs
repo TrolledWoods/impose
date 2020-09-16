@@ -101,7 +101,9 @@ pub fn compile_expression(
 				// Bit casting just reinterprets the type, we don't actually do anything :D
 				node_values.push(node_values[value as usize].clone());
 			}
-			NodeKind::Identifier(member_id, ref sub_members) => {
+			NodeKind::Identifier { source: member_id, const_members: ref sub_members, is_type } => {
+				assert!(!is_type, "Identifier that is type should be meta");
+
 				assert_eq!(sub_members.len(), 0, "Const member access should be resolved in type checking!");
 
 				match scopes.member(member_id).kind {
@@ -482,7 +484,6 @@ pub fn compile_expression(
 
 			// Type expressions evaluate types with the typing system at typing type, we do not
 			// need to generate any instructions for them.
-			NodeKind::TypeIdentifier(_) |
 			NodeKind::TypeStruct { .. } |
 			NodeKind::TypeFunctionPointer { .. } |
 			NodeKind::TypeBufferPointer(_) |

@@ -1,0 +1,22 @@
+///
+/// The very very temporary and not very good impose standard libary!
+/// 
+
+/// Turns a pointer buffer into its raw parts, a pointer and a length.
+
+/// TODO: Make this function polymorphic.
+
+/// A pointer buffer in a raw version.
+/// TODO: Flag this as not storable in constants!
+PointerBufferRaw :: type {
+	pointer: &U64,
+	length: U64,
+};
+
+buffer_into_raw :: |buffer: &- U64| {
+	bit_cast PointerBufferRaw (buffer)
+};
+
+buffer_from_raw :: |raw: PointerBufferRaw| {
+	bit_cast &- U64 (raw)
+};

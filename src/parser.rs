@@ -135,7 +135,12 @@ pub enum NodeKind {
 	Number(i128),
 
 	EmptyLiteral,
-	Identifier(ScopeMemberId, smallvec::SmallVec<[ustr::Ustr; 3]>),
+	Identifier
+	{
+		source: ScopeMemberId, 
+		const_members: smallvec::SmallVec<[ustr::Ustr; 3]>,
+		is_type: bool,
+	},
 
 	BitCast {
 		into_type: AstNodeId,
@@ -206,7 +211,6 @@ pub enum NodeKind {
 	// GetType makes the type of a typeexpression node into a constant value, to make it
 	// usable for other nodes.
 	/// Exactly the same as an identifier but it is a type expression.
-	TypeIdentifier(ScopeMemberId),
 	TypeFunctionPointer {
 		arg_list: Vec<AstNodeId>,
 		return_type: Option<AstNodeId>,
@@ -472,20 +476,51 @@ fn parse_type_expr_value(
 				NodeKind::TypeBufferPointer(sub_type),
 			)))
 		}
-		TokenKind::Identifier(name) => {
-			context.tokens.next();
-			let member = context.scopes.find_or_create_temp(context.scope, name)?;
-			Ok(context.ast.insert_node(Node::new(&context, 
-				token, 
-				context.scope, 
-				NodeKind::TypeIdentifier(member),
-			)))
+		TokenKind::Identifier(_) => {
+			let old_meta = context.is_meta;
+			context.is_meta = true;
+			let id = parse_identifier(context.borrow(), true)?;
+			context.is_meta = old_meta;
+			Ok(id)
 		}
 		TokenKind::Bracket('{') => parse_type_expr_struct(context),
 		TokenKind::Bracket('(') => parse_type_expr_function_ptr(context),
 		_ => {
 			return error!(token, "Expected type expression!");
 		}
+	}
+}
+
+fn parse_identifier(
+	context: Context,
+	is_type: bool,
+) -> Result<AstNodeId, ()> {
+	let token = context.tokens.next().unwrap();
+	match token.kind {
+		TokenKind::Identifier(name) => {
+			let member = context.scopes.find_or_create_temp(context.scope, name)?;
+
+			let mut sub_members = smallvec::SmallVec::new();
+			while let Some(Token { kind: TokenKind::ConstMember, .. }) = context.tokens.peek() {
+				context.tokens.next();
+				match context.tokens.next() {
+					Some(Token { kind: TokenKind::Identifier(name), .. }) => {
+						sub_members.push(*name);
+					}
+					_ => {
+						return error!(context.tokens, "Expected member identifier");
+					}
+				}
+			}
+
+			Ok(context.ast.insert_node(Node::new(&context, token, context.scope, 
+				NodeKind::Identifier {
+					source: member,
+					const_members: sub_members,
+					is_type,
+				})))
+		}
+		_ => unreachable!("Only call parse_identifier when you have an identifier"),
 	}
 }
 
@@ -885,25 +920,7 @@ fn parse_value(
 				NodeKind::BitCast { into_type, value },
 			))
 		}
-		TokenKind::Identifier(name) => {
-			context.tokens.next();
-			let member = context.scopes.find_or_create_temp(context.scope, name)?;
-
-			let mut sub_members = smallvec::SmallVec::new();
-			while let Some(Token { kind: TokenKind::ConstMember, .. }) = context.tokens.peek() {
-				context.tokens.next();
-				match context.tokens.next() {
-					Some(Token { kind: TokenKind::Identifier(name), .. }) => {
-						sub_members.push(*name);
-					}
-					_ => {
-						return error!(context.tokens, "Expected member identifier");
-					}
-				}
-			}
-
-			context.ast.insert_node(Node::new(&context, token, context.scope, NodeKind::Identifier(member, sub_members)))
-		}
+		TokenKind::Identifier(_) => parse_identifier(context.borrow(), false)?,
 		TokenKind::Bracket('{') => {
 			parse_block(context.borrow(), true, true)?
 		}
@@ -1042,7 +1059,7 @@ pub fn parse_code(
 	code: &str,
 	resources: &mut Resources,
 	scopes: &mut Scopes,
-	mut scope: ScopeId,
+	scope: ScopeId,
 	is_value: bool,
 ) -> Result<Ast, ()> {
 	let (last_loc, tokens) = lex_code(file, code)?;
