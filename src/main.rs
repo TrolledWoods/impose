@@ -28,9 +28,9 @@ fn main() {
 	// VERY simple benchmarking
 	let time = std::time::Instant::now();
 
-	use scopes::Scopes;
-	use types::{Type, Types, TypeKind};
-	use resource::{ Resource, ResourceId, ResourceKind, Resources };
+	use scopes::*;
+	use types::*;
+	use resource::*;
 
 	let mut scopes = Scopes::new();
 	let mut resources = Resources::new();
@@ -40,31 +40,31 @@ fn main() {
 	scopes.insert_root_value(
 		&mut resources, 
 		ustr::ustr("Type"), 
-		types::TYPE_TYPE_ID, 
-		(types::TYPE_TYPE_ID.into_index() as u64).to_le_bytes().into(),
+		TYPE_TYPE_ID, 
+		(TYPE_TYPE_ID.into_index() as u64).to_le_bytes().into(),
 	);
 	scopes.insert_root_value(
 		&mut resources, 
 		ustr::ustr("U32"), 
-		types::TYPE_TYPE_ID, 
-		(types::U32_TYPE_ID.into_index() as u64).to_le_bytes().into(),
+		TYPE_TYPE_ID, 
+		(U32_TYPE_ID.into_index() as u64).to_le_bytes().into(),
 	);
 	scopes.insert_root_value(
 		&mut resources, 
 		ustr::ustr("U64"), 
-		types::TYPE_TYPE_ID, 
-		(types::U64_TYPE_ID.into_index() as u64).to_le_bytes().into(),
+		TYPE_TYPE_ID, 
+		(U64_TYPE_ID.into_index() as u64).to_le_bytes().into(),
 	);
 	scopes.insert_root_value(
 		&mut resources, 
 		ustr::ustr("String"), 
-		types::TYPE_TYPE_ID, 
-		(types::STRING_TYPE_ID.into_index() as u64).to_le_bytes().into(),
+		TYPE_TYPE_ID, 
+		(STRING_TYPE_ID.into_index() as u64).to_le_bytes().into(),
 	);
 
 	let print_type_id = types.insert(Type::new(TypeKind::FunctionPointer {
-		args: vec![types::STRING_TYPE_ID],
-		returns: types::EMPTY_TYPE_ID,
+		args: vec![STRING_TYPE_ID],
+		returns: EMPTY_TYPE_ID,
 	}));
 	scopes.insert_root_resource(
 		&mut resources, 
@@ -88,8 +88,8 @@ fn main() {
 	).unwrap();
 
 	let print_type_id = types.insert(Type::new(TypeKind::FunctionPointer {
-		args: vec![types::U64_TYPE_ID],
-		returns: types::EMPTY_TYPE_ID,
+		args: vec![U64_TYPE_ID],
+		returns: EMPTY_TYPE_ID,
 	}));
 	scopes.insert_root_resource(
 		&mut resources, 
@@ -108,7 +108,7 @@ fn main() {
 
 	let print_type_id = types.insert(Type::new(TypeKind::FunctionPointer {
 		args: vec![],
-		returns: types::U64_TYPE_ID,
+		returns: U64_TYPE_ID,
 	}));
 
 	scopes.insert_root_resource(
@@ -143,13 +143,7 @@ fn main() {
 
 	let id = resources.insert(Resource::new(
 		ast.nodes[0].loc.clone(),
-		ResourceKind::Value {
-			code: ast,
-			typer: None,
-			depending_on_type: Vec::new(),
-			value: None,
-			depending_on_value: Vec::new(),
-		}
+		ResourceKind::Value(ResourceValue::Defined(ast)),
 	));
 
 	while match resources.compute_one(&mut types, &mut scopes) {
@@ -170,7 +164,7 @@ fn main() {
 
 	error::print_output(&code);
 
-	if let ResourceKind::Value { value: Some(ref value), .. } = resources.resource(id).kind {
+	if let ResourceKind::Value(ResourceValue::Value(_, ref value)) = resources.resource(id).kind {
 		println!("\n\n --- RESULT ---");
 		print!(" > ");
 		for b in value.iter() {

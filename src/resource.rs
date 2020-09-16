@@ -48,58 +48,54 @@ impl Resources {
 			let resource_type = &mut member.type_;
 
 			match member.kind {
-				ResourceKind::Function { 
-					arguments: ref resource_arguments, 
-					code: ref mut resource_code, 
-					instructions: ref mut resource_instructions,
-					typer: ref mut resource_typer,
-				} => {
-					// TODO: The return type should be figured out based on an '->', and not
-					// implicitly.
-					// TODO: Ping all of the things depending on the type of the function that
-					// we are done here.
-
-					if !resource_code.is_typed {
-						if resource_typer.is_none() {
-							*resource_typer = Some(AstTyper::new());
+				ResourceKind::Function(ResourceFunction::Defined(ast, arguments)) => {
+					// TODO: Maybe we should get rid of this state?
+					member.kind = ResourceKind::Function(ResourceFunction::Typing(ast, AstTyper::new(), arguments));
+					self.return_resource(member_id, member);
+					self.compute_queue.push_back(member_id);
+				}
+				ResourceKind::Function(ResourceFunction::Typing(mut ast, mut typer, arguments)) => {
+					match typer.try_type_ast(types, &mut ast, scopes, self) {
+						Ok(Some(dependency)) => {
+							member.kind = ResourceKind::Function(
+								ResourceFunction::Typing(ast, typer, arguments)
+							);
+							self.add_dependency(member_id, dependency, scopes);
+							member.depending_on = Some(dependency);
+							self.return_resource(member_id, member);
+							return Ok(true);
 						}
-
-						if let Some(mut typer) = resource_typer.take() {
-							match typer.try_type_ast(types, resource_code, scopes, self) {
-								Ok(Some(dependency)) => {
-									self.add_dependency(member_id, dependency, scopes);
-									*resource_typer = Some(typer);
-									member.depending_on = Some(dependency);
-									self.return_resource(member_id, member);
-									return Ok(true);
-								}
-								Ok(None) => {}
-								Err(()) => {
-									return Ok(true);
-								}
-							}
-
-							let arg_types = resource_arguments.iter().map(|&arg| {
-								scopes.member(arg).type_.unwrap()
-							}).collect();
-
-							*resource_type = resource_code.nodes.last().unwrap().type_.map(|return_type| {
-								types.insert(Type::new(TypeKind::FunctionPointer {
-									args: arg_types,
-									returns: return_type,
-								}))
-							});
-
-							self.resolve_dependencies(&mut member.waiting_on_type);
-						} 
+						Ok(None) => {}
+						Err(()) => {
+							return Ok(true);
+						}
 					}
 
+					let arg_types = arguments.iter().map(|&arg| {
+						scopes.member(arg).type_.unwrap()
+					}).collect();
+
+					member.type_ = 
+						ast.nodes.last().unwrap().type_.map(|return_type| {
+							types.insert(Type::new(TypeKind::FunctionPointer {
+								args: arg_types,
+								returns: return_type,
+							}))
+						});
+
+					self.resolve_dependencies(&mut member.waiting_on_type);
+					member.kind = ResourceKind::Function(ResourceFunction::Typed(ast));
+					self.return_resource(member_id, member);
+					self.compute_queue.push_back(member_id);
+				}
+				ResourceKind::Function(ResourceFunction::Typed(mut ast)) => {
 					let (locals, instructions, return_value) 
-						= match compile_expression(resource_code, scopes, self, types) 
+						= match compile_expression(&mut ast, scopes, self, types) 
 					{
 						Ok(value) => value,
 						Err(dependency) => {
 							self.add_dependency(member_id, dependency, scopes);
+							member.kind = ResourceKind::Function(ResourceFunction::Typed(ast));
 							member.depending_on = Some(dependency);
 							self.return_resource(member_id, member);
 							return Ok(true);
@@ -121,59 +117,70 @@ impl Resources {
 						}
 					}
 
-					*resource_instructions = 
-						Some((std::sync::Arc::new(locals), instructions, return_value));
+					member.kind = ResourceKind::Function(
+						 ResourceFunction::Value(
+							 std::sync::Arc::new(locals),
+							 instructions,
+							 return_value
+						 )
+					);
+
+					self.uncomputed_resources.remove(&member_id);
+					self.return_resource(member_id, member);
+					self.compute_queue.push_back(member_id);
 				}
-				ResourceKind::Value {
-					code: ref mut resource_code,
-					typer: ref mut resource_typer,
-					value: ref mut resource_value,
-					..
-				} => {
-					if !resource_code.is_typed {
-						if resource_typer.is_none() {
-							*resource_typer = Some(AstTyper::new());
+				ResourceKind::Function(ResourceFunction::Value(_, _, _)) => {
+					// Do nothing here.
+					self.return_resource(member_id, member);
+				}
+
+				ResourceKind::Value(ResourceValue::Defined(ast)) => {
+					member.kind = ResourceKind::Value(ResourceValue::Typing(ast, AstTyper::new()));
+					self.return_resource(member_id, member);
+					self.compute_queue.push_back(member_id);
+				}
+				ResourceKind::Value(ResourceValue::Typing(mut ast, mut typer)) => {
+					match typer.try_type_ast(types, &mut ast, scopes, self) {
+						Ok(Some(dependency)) => {
+							self.add_dependency(member_id, dependency, scopes);
+							member.kind = ResourceKind::Value(ResourceValue::Typing(ast, typer));
+							member.depending_on = Some(dependency);
+							self.return_resource(member_id, member);
+							return Ok(true);
 						}
-
-						if let Some(mut typer) = resource_typer.take() {
-							match typer.try_type_ast(types, resource_code, scopes, self) {
-								Ok(Some(dependency)) => {
-									self.add_dependency(member_id, dependency, scopes);
-									*resource_typer = Some(typer);
-									member.depending_on = Some(dependency);
-									self.return_resource(member_id, member);
-									return Ok(true);
-								}
-								Ok(None) => {}
-								Err(()) => {
-									return Ok(true);
-								}
-							}
-
-							*resource_type = resource_code.nodes.last().unwrap().type_;
-							self.resolve_dependencies(&mut member.waiting_on_type);
-						} 
+						Ok(None) => { }
+						Err(()) => {
+							return Ok(true);
+						}
 					}
 
+					member.type_ = ast.nodes.last().unwrap().type_;
+					member.kind = ResourceKind::Value(ResourceValue::Typed(ast));
+					self.resolve_dependencies(&mut member.waiting_on_type);
+					self.return_resource(member_id, member);
+					self.compute_queue.push_back(member_id);
+				}
+				ResourceKind::Value(ResourceValue::Typed(mut ast)) => {
 					let (stack_layout, instructions, return_value) 
-						= match compile_expression(resource_code, scopes, self, types) 
+						= match compile_expression(&mut ast, scopes, self, types) 
 					{
 						Ok(value) => value,
 						Err(dependency) => {
 							self.add_dependency(member_id, dependency, scopes);
 							member.depending_on = Some(dependency);
+							member.kind = ResourceKind::Value(ResourceValue::Typed(ast));
 							self.return_resource(member_id, member);
 							return Ok(true);
 						}
 					};
 
 					// TODO: Go through the type, and change any pointers into resource pointers.
-					*resource_value = Some(run_instructions(
+					let value = run_instructions(
 						&instructions,
 						return_value.as_ref(),
 						&mut std::sync::Arc::new(stack_layout).create_instance(),
 						self,
-					));
+					);
 
 					if let Some(mut waiting_on_value) = member.waiting_on_value.take() {
 						self.resolve_dependencies(&mut waiting_on_value);
@@ -190,20 +197,30 @@ impl Resources {
 							println!("{:?}", instruction);
 						}
 
-						println!("Value: {:?}", resource_value.as_ref().unwrap());
+						println!("Value: {:?}", value);
 					}
+
+					member.kind = ResourceKind::Value(ResourceValue::Value(member.type_.unwrap(), value));
+					self.return_resource(member_id, member);
+					self.uncomputed_resources.remove(&member_id);
+				}
+				ResourceKind::Value(ResourceValue::Value(_, _)) => {
+					// Do nothing
+					self.return_resource(member_id, member);
 				}
 				ResourceKind::String(ref content) => { 
 					if DEBUG {
 						println!("\n\n--- Resource {} (string) has finished computing! ---", member_id);
 						println!("'{:?}", content);
 					}
+
+					self.return_resource(member_id, member);
 				}
-				ResourceKind::ExternalFunction { .. } => { }
+				ResourceKind::ExternalFunction { .. } => {
+					self.return_resource(member_id, member);
+				}
 			}
 
-			self.return_resource(member_id, member);
-			self.uncomputed_resources.remove(&member_id);
 			Ok(true)
 		} else {
 			Ok(false)
@@ -352,7 +369,26 @@ impl Resource {
 	}
 }
 
-// TODO: Make resource states encoded in an enum, to make things much simpler.
+pub enum ResourceValue {
+	Defined(Ast),
+	Typing(Ast, AstTyper),
+	Typed(Ast),
+	// TODO: When code generation can pause, add a state for that.
+	// TODO: When evaluating can pause, add a state for that.
+	Value(TypeId, crate::stack_frame::ConstBuffer),
+}
+
+pub enum ResourceFunction {
+	Defined(Ast, Vec<ScopeMemberId>),
+	Typing(Ast, AstTyper, Vec<ScopeMemberId>),
+	Typed(Ast),
+	Value(
+		std::sync::Arc<crate::stack_frame::StackFrameLayout>,
+		Vec<Instruction>, 
+		Option<crate::stack_frame::Value>,
+	),
+}
+
 pub enum ResourceKind {
 	ExternalFunction {
 		// TODO: Make a more advanced interface to call external functions
@@ -360,26 +396,9 @@ pub enum ResourceKind {
 		n_arg_bytes: usize,
 		n_return_bytes: usize,
 	},
-	Function {
-		// argument_type_defs: Vec<Ast>,
-		// waiting_on_type: Vec<ResourceId>,
-		arguments: Vec<ScopeMemberId>,
-		code: Ast,
-		typer: Option<AstTyper>,
-		instructions: Option<(
-			std::sync::Arc<crate::stack_frame::StackFrameLayout>,
-			Vec<Instruction>, 
-			Option<crate::stack_frame::Value>,
-		)>,
-	},
+	Function(ResourceFunction),
 	String(String),
-	Value {
-		code: Ast,
-		typer: Option<AstTyper>,
-		depending_on_type: Vec<ResourceId>,
-		value: Option<crate::stack_frame::ConstBuffer>,
-		depending_on_value: Vec<ResourceId>,
-	},
+	Value(ResourceValue),
 }
 
 impl std::fmt::Debug for ResourceKind {

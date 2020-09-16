@@ -1,6 +1,6 @@
-use crate::resource::{ ResourceKind, ResourceId, Resources };
-use crate::code_gen::Instruction;
-use crate::stack_frame::{StackFrameInstance, Value};
+use crate::resource::*;
+use crate::code_gen::*;
+use crate::stack_frame::*;
 
 // TODO: Optimize the way we return data.
 pub fn run_instructions(
@@ -8,7 +8,7 @@ pub fn run_instructions(
 	result_value: Option<&Value>, 
 	stack_frame_instance: &mut StackFrameInstance,
 	resources: &Resources
-) -> crate::stack_frame::ConstBuffer {
+) -> ConstBuffer {
 	let mut instr_pointer = 0;
 	
 	while instr_pointer < instructions.len() {
@@ -114,10 +114,7 @@ pub fn run_instructions(
 				);
 
 				match resource.kind {
-					ResourceKind::Function { 
-						instructions: Some((ref sub_scope, ref instructions, ref return_value)), 
-						..
-					} => {
+					ResourceKind::Function(ResourceFunction::Value(ref sub_scope, ref instructions, ref return_value)) => {
 						let mut sub_stack_frame_instance = 
 							sub_scope.create_instance_with_func_args(
 								args.iter().map(|(index, value)| (

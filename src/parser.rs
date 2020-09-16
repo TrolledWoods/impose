@@ -401,13 +401,7 @@ fn parse_block(mut context: Context, expect_brackets: bool, is_runnable: bool)
 
 				let resource_id = context.resources.insert(Resource::new(
 					ident_loc.clone(),
-					ResourceKind::Value {
-						code: ast,
-						typer: None,
-						depending_on_type: vec![],
-						value: None,
-						depending_on_value: vec![],
-					},
+					ResourceKind::Value(ResourceValue::Defined(ast)),
 				));
 
 				context.scopes.declare_member(
@@ -600,12 +594,7 @@ fn parse_function(
 
 	let id = parent_context.resources.insert(Resource::new(
 		token.get_location(),
-		ResourceKind::Function {
-			arguments: args,
-			code: ast,
-			instructions: None,
-			typer: None,
-		}
+		ResourceKind::Function(ResourceFunction::Defined(ast, args)),
 	));
 
 	Ok(id)

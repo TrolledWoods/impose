@@ -35,17 +35,9 @@ impl Scopes {
 		value: ConstBuffer,
 	) {
 		let loc = CodeLoc { file: ustr::ustr("no"), line: 0, column: 0 };
-		let mut ast = Ast::new();
-		ast.is_typed = true;
 		let id = resources.insert_done(Resource::new_with_type(
 			loc.clone(),
-			ResourceKind::Value {
-				code: ast,
-				typer: None,
-				depending_on_type: Vec::new(),
-				value: Some(value),
-				depending_on_value: Vec::new(),
-			},
+			ResourceKind::Value(ResourceValue::Value(type_, value)),
 			type_,
 		));
 

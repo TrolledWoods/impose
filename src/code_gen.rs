@@ -482,12 +482,9 @@ fn get_resource_constant(loc: &CodeLoc, resources: &Resources, id: ResourceId)
 		ResourceKind::Function { .. } | 
 		ResourceKind::String(_) =>
 			Ok(id.into_index().into()),
-		ResourceKind::Value { ref value, .. } => {
-			if let Some(value) = value {
-				Ok(Value::Constant(value.clone()))
-			} else {
-				Err(Dependency::Value(*loc, id))
-			}
-		}
+		ResourceKind::Value(ResourceValue::Value(_, ref value)) =>
+			Ok(Value::Constant(value.clone())),
+		ResourceKind::Value(_) =>
+			Err(Dependency::Value(*loc, id)),
 	}
 }

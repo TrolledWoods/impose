@@ -5,7 +5,7 @@
 // [ ] Pointer buffers, with info about how much a pointer contains
 // [ ] Assigning pointers/pointer buffers to constants, by creating other constants that contain
 //   a copy of the thing that was behind the pointer.
+// TODO! Make this work consistantly and not dereference invalid memory.
 
-Hello :: || {
-	Hello
-};
+ThisIsAThing :: OtherThing;
+OtherThing :: ThisIsAThing;

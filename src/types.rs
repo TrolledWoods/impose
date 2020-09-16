@@ -442,7 +442,7 @@ impl AstTyper {
 							}
 
 							match resources.resource(id).kind {
-								ResourceKind::Value { value: Some(ref value), .. } => {
+								ResourceKind::Value(ResourceValue::Value(_, ref value)) => {
 									if let &[a, b, c, d, e, f, g, h] = value.as_slice() {
 										let id = usize::from_le_bytes([a, b, c, d, e, f, g, h]);
 										if id >= types.types.len() {
@@ -453,7 +453,7 @@ impl AstTyper {
 										unreachable!("The value of a type has to be a 64 bit value");
 									}
 								}
-								ResourceKind::Value { value: None, .. } => {
+								ResourceKind::Value(_) => {
 									return Ok(Some(Dependency::Value(node.loc, id)));
 								}
 								_ => return error!(node, "A Type identifier has to contain a type!"),
