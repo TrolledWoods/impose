@@ -7,5 +7,4 @@
 //   a copy of the thing that was behind the pointer.
 // TODO! Make this work consistantly and not dereference invalid memory.
 
-ThisIsAThing :: OtherThing;
-OtherThing :: ThisIsAThing;
+print("Hello!\n");

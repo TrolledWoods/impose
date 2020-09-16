@@ -215,9 +215,11 @@ impl Resources {
 					}
 
 					self.return_resource(member_id, member);
+					self.uncomputed_resources.remove(&member_id);
 				}
 				ResourceKind::ExternalFunction { .. } => {
 					self.return_resource(member_id, member);
+					self.uncomputed_resources.remove(&member_id);
 				}
 			}
 
