@@ -9,6 +9,13 @@
 std :: import "std";
 
 main :: || {
+	vec := std\vec\create();
+
+	std\vec\push(&vec, 5);
+	std\debug("vec[0]", *std\vec\get(&vec, 0));
+
+	std\vec\free(vec);
+	vec
 };
 
 main();

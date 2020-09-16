@@ -2,7 +2,7 @@
 /// The very very temporary and not very good impose standard libary!
 /// 
 
-/// Turns a pointer buffer into its raw parts, a pointer and a length.
+vec :: import "vec";
 
 /// Prints out a number more easily
 debug :: |name: String, value: U64| {
@@ -11,73 +11,6 @@ debug :: |name: String, value: U64| {
 	print_num(value);
 	print("\n");
 };
-
-// --- VECTORS ---
-Vector :: type {
-	buffer: &- U64,
-	length: U64,
-};
-
-vector_create :: || {
-	buffer := alloc_u64(5);
-	length := 0;
-	struct { buffer: buffer, length: length }
-};
-
-vector_free :: |vec: Vector| {
-	dealloc_buffer_u64(vec.buffer);
-};
-
-/// Returns a buffer which is a subsection of the vector
-vector_slice :: |vec: &Vector, start: U64, end: U64| {
-	x := *vec;
-	pointer := buffer_into_raw(x.buffer).pointer;
-
-	pointer = pointer + bit_cast &U64 (start * 8);
-	length := end - start;
-
-	buffer_from_raw(struct { pointer: pointer, length: length })
-};
-
-vector_slice_full :: |vec: &Vector| {
-	x := *vec;
-	vector_slice(vec, 0, x.length)
-};
-
-vector_capacity :: |vec: &Vector| {
-	x := (*vec);
-	buffer_into_raw(x.buffer).length
-};
-
-vector_reserve :: |vec: &Vector, min_capacity: U64| {
-	capacity := vector_capacity(vec);
-	if capacity < min_capacity {
-		new_buffer := alloc_u64(min_capacity + 10);
-		// Copy data into new buffer
-		x := *vec;
-		buffer_iterate_any(vector_slice(vec, 0, x.length), |index: U64, value: &U64, any: &{}| {
-			new_buffer := *bit_cast & &- U64 (any);
-			*buffer_get(new_buffer, index) = *value;
-		}, bit_cast &{} (&new_buffer));
-
-		dealloc_buffer_u64(x.buffer);
-		(*vec).buffer = new_buffer;
-	};
-};
-
-vector_push :: |vec: &Vector, value: U64| {
-	x := *vec;
-	vector_reserve(vec, x.length + 1);
-	*vector_get(vec, x.length) = value;
-	(*vec).length = x.length + 1;
-};
-
-vector_get :: |vec: &Vector, index: U64| {
-	x := *vec;
-	buffer_get(x.buffer, index)
-};
-
-// --- BUFFER HANDLING ---
 
 /// A pointer buffer in a raw version.
 /// TODO: Flag this as not storable in constants!
