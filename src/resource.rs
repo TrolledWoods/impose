@@ -143,10 +143,10 @@ impl Resources {
 					// Do nothing here.
 					self.return_resource(member_id, member);
 				}
-				ResourceKind::Value(ResourceValue::File(file_path)) => {
+				ResourceKind::Value(ResourceValue::File { scope, module_folder, file }) => {
 					// Combine the paths into one coherent path.
 					let mut path = PathBuf::new();
-					for sub_path in file_path.split('\\') {
+					for sub_path in file.split('\\') {
 						path.push(sub_path);
 					}
 					path.set_extension("im");
@@ -161,25 +161,25 @@ impl Resources {
 						}
 					};
 
-					let super_scope = scopes.super_scope;
 					let ast = match parse_code(
-						file_path,
+						module_folder,
+						file,
 						&code,
 						self,
 						scopes,
-						super_scope,
+						scope,
 						true,
 					) {
 						Ok(value) => value,
 						Err(()) => {
-							self.code_cache.insert(file_path, code);
+							self.code_cache.insert(file, code);
 							member.kind = ResourceKind::Poison;
 							self.return_resource(member_id, member);
 							return Ok(true);
 						}
 					};
 
-					self.code_cache.insert(file_path, code);
+					self.code_cache.insert(file, code);
 
 					member.kind = ResourceKind::Value(ResourceValue::Defined(ast));
 					self.return_resource(member_id, member);
@@ -505,8 +505,12 @@ impl Resource {
 }
 
 pub enum ResourceValue {
-	/// Lex a file.
-	File(ustr::Ustr),
+	/// Lex a file, with a folder where sub modules go.
+	File {
+		scope: ScopeId,
+		module_folder: ustr::Ustr, 
+		file: ustr::Ustr
+	},
 	Defined(Ast),
 	Typing(Ast, AstTyper),
 	Typed(Ast),

@@ -16,6 +16,7 @@ struct Context<'a, 't> {
 	tokens: &'a mut TokenStream<'t>,
 	resources: &'a mut Resources,
 	is_meta: bool,
+	folder: ustr::Ustr,
 }
 
 impl<'a, 't> Context<'a, 't> {
@@ -27,6 +28,7 @@ impl<'a, 't> Context<'a, 't> {
 			tokens: self.tokens,
 			resources: self.resources,
 			is_meta: self.is_meta,
+			folder: self.folder,
 		}
 	}
 
@@ -38,6 +40,7 @@ impl<'a, 't> Context<'a, 't> {
 			tokens: self.tokens,
 			resources: self.resources,
 			is_meta: self.is_meta,
+			folder: self.folder,
 		}
 	}
 
@@ -50,6 +53,7 @@ impl<'a, 't> Context<'a, 't> {
 			tokens: self.tokens,
 			resources: self.resources,
 			is_meta: self.is_meta,
+			folder: self.folder,
 		}
 	}
 }
@@ -916,6 +920,39 @@ fn parse_value(
 
 			value
 		}
+		TokenKind::Keyword("import") => {
+			context.tokens.next();
+
+			if let Some(Token { kind: TokenKind::StringLiteral(module_name), loc }) 
+				= context.tokens.next()
+			{
+				if module_name.contains('\\') {
+					return error!(loc, "Module name cannot contain '\\'");
+				}
+
+				let mut file_pos = String::new();
+				file_pos.push_str(&context.folder);
+				file_pos.push('\\');
+				file_pos.push_str(module_name);
+
+				let id = context.resources.insert(Resource::new(
+					*loc,
+					ResourceKind::Value(ResourceValue::File {
+						scope: context.scope,
+						module_folder: file_pos.as_str().into(),
+						file: file_pos.as_str().into(),
+					}),
+				));
+
+				context.ast.insert_node(Node::new(&context, 
+					token, 
+					context.scope, 
+					NodeKind::Resource(id),
+				))
+			} else {
+				return error!(context.tokens, "Expected file to import");
+			}
+		}
 		TokenKind::Keyword("skip") => {
 			context.tokens.next();
 
@@ -1000,6 +1037,7 @@ fn try_parse_list<'t, V>(
 }
 
 pub fn parse_code(
+	folder: ustr::Ustr,
 	file: ustr::Ustr,
 	code: &str,
 	resources: &mut Resources,
@@ -1010,12 +1048,7 @@ pub fn parse_code(
 	let (last_loc, tokens) = lex_code(file, code)?;
 	let mut ast = Ast::new();
 
-	if is_value {
-		scope = scopes.create_scope(Some(scope));
-	}
-
 	let mut stream = TokenStream::new(&tokens, last_loc);
-
 	let context = Context {
 		ast: &mut ast,
 		scopes,
@@ -1023,6 +1056,7 @@ pub fn parse_code(
 		tokens: &mut stream,
 		resources,
 		is_meta: false,
+		folder,
 	};
 	parse_block(context, false, is_value)?;
 

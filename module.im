@@ -1,0 +1,5 @@
+SubModule :: import "submodule";
+
+x :: 50;
+
+50

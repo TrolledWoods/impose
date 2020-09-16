@@ -164,9 +164,14 @@ fn main() {
 	).unwrap();
 
 	// -- COMPILE STUFF --
+	let scope = scopes.super_scope;
 	let id = resources.insert(Resource::new(
 		code_loc::CodeLoc { file: ustr::ustr("no"), line: 0, column: 0 },
-		ResourceKind::Value(ResourceValue::File("test".into())),
+		ResourceKind::Value(ResourceValue::File {
+			scope,
+			module_folder: "".into(),
+			file: "test".into(),
+		}),
 	));
 
 	// Compute stuff until we are out of things to compute
