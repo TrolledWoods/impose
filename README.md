@@ -12,12 +12,12 @@ So just call ``cargo run`` and it will run the code in the ``test.im``.
 
 ## Hello world
 Because every language needs a hello world.
-```
+```rust
 print("Hello, World!\n");
 ```
 
 ## Syntax
-```
+```rust
 // This is a comment
 // v-- and this is a declaration.
 x := 5;
