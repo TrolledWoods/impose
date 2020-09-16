@@ -1,5 +1,6 @@
 use std::sync::{ Arc, Mutex };
 
+use crate::resource::*;
 use crate::code_loc::*;
 use crate::print_location;
 
@@ -11,19 +12,19 @@ lazy_static! {
 	}));
 }
 
-pub fn print_output(code: &str) {
+pub fn print_output(resources: &Resources) {
 	let logger = LOGGER.lock().unwrap();
 
 	if logger.errors.len() > 0 {
 		print_message_list(
 			"ERROR", 
-			code,
+			resources,
 			logger.errors.iter().map(|Error(info, message)| (info.as_slice(), message))
 		);
 	} else {
 		print_message_list(
 			"WARNING", 
-			code,
+			resources,
 			logger.warnings.iter().map(|Warning(info, message)| (info.as_slice(), message))
 		);
 	}
@@ -31,7 +32,7 @@ pub fn print_output(code: &str) {
 
 fn print_message_list<'a>(
 	name: &'a str,
-	code: &'a str,
+	resources: &Resources,
 	messages: impl Iterator<Item = (&'a [Message], &'a Message)>
 ) {
 	let mut is_first = true;
@@ -44,14 +45,22 @@ fn print_message_list<'a>(
 		println!("{} at {:?}: {}", name, message.source_code_location, message.message);
 
 		let file = message.source_code_location.file;
-		print_location(code, &message.source_code_location, "");
+		if let Some(code) = resources.code_cache.get(&file) {
+			print_location(code, &message.source_code_location, "");
+		} else {
+			println!("File does not exist!");
+		}
 
 		for info in info {
 			if info.source_code_location.file != file {
 				println!("{:?}", info.source_code_location);
 			}
 
-			print_location(code, &info.source_code_location, &info.message);
+			if let Some(code) = resources.code_cache.get(&file) {
+				print_location(code, &info.source_code_location, &info.message);
+			} else {
+				println!("File does not exist!");
+			}
 		}
 
 		println!("  compiler: {:?}", message.compiler_location);

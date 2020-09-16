@@ -1,4 +1,5 @@
-use std::collections::{ VecDeque, HashSet };
+use std::collections::{ VecDeque, HashSet, HashMap };
+use std::path::PathBuf;
 
 use crate::parser::*;
 use crate::types::*;
@@ -17,6 +18,8 @@ pub struct Resources {
 	compute_queue: VecDeque<ResourceId>,
 	uncomputed_resources: HashSet<ResourceId>,
 	pub members: IdVec<Option<Resource>, ResourceId>,
+
+	pub code_cache: HashMap<ustr::Ustr, String>,
 }
 
 impl Resources {
@@ -25,6 +28,8 @@ impl Resources {
 			members: Default::default(),
 			compute_queue: Default::default(),
 			uncomputed_resources: Default::default(),
+
+			code_cache: Default::default(),
 		}
 	}
 
@@ -138,7 +143,48 @@ impl Resources {
 					// Do nothing here.
 					self.return_resource(member_id, member);
 				}
+				ResourceKind::Value(ResourceValue::File(file_path)) => {
+					// Combine the paths into one coherent path.
+					let mut path = PathBuf::new();
+					for sub_path in file_path.split('\\') {
+						path.push(sub_path);
+					}
+					path.set_extension("im");
 
+					let code = match std::fs::read_to_string(&path) {
+						Ok(code) => code,
+						Err(err) => {
+							member.kind = ResourceKind::Poison;
+							error_value!(member, "Cannot load file, because: '{:?}'", err);
+							self.return_resource(member_id, member);
+							return Ok(true);
+						}
+					};
+
+					let super_scope = scopes.super_scope;
+					let ast = match parse_code(
+						file_path,
+						&code,
+						self,
+						scopes,
+						super_scope,
+						true,
+					) {
+						Ok(value) => value,
+						Err(()) => {
+							self.code_cache.insert(file_path, code);
+							member.kind = ResourceKind::Poison;
+							self.return_resource(member_id, member);
+							return Ok(true);
+						}
+					};
+
+					self.code_cache.insert(file_path, code);
+
+					member.kind = ResourceKind::Value(ResourceValue::Defined(ast));
+					self.return_resource(member_id, member);
+					self.compute_queue.push_back(member_id);
+				}
 				ResourceKind::Value(ResourceValue::Defined(ast)) => {
 					member.kind = ResourceKind::Value(ResourceValue::Typing(ast, AstTyper::new()));
 					self.return_resource(member_id, member);
@@ -459,6 +505,8 @@ impl Resource {
 }
 
 pub enum ResourceValue {
+	/// Lex a file.
+	File(ustr::Ustr),
 	Defined(Ast),
 	Typing(Ast, AstTyper),
 	Typed(Ast),

@@ -1000,13 +1000,14 @@ fn try_parse_list<'t, V>(
 }
 
 pub fn parse_code(
+	file: ustr::Ustr,
 	code: &str,
 	resources: &mut Resources,
 	scopes: &mut Scopes,
 	mut scope: ScopeId,
 	is_value: bool,
 ) -> Result<Ast, ()> {
-	let (last_loc, tokens) = lex_code(code)?;
+	let (last_loc, tokens) = lex_code(file, code)?;
 	let mut ast = Ast::new();
 
 	if is_value {

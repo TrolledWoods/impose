@@ -2,6 +2,8 @@
 //
 // [*] Make pointers work in a scope, but not interact with constants in any way.
 // [*] Allow acquiring pointers from a constant value, by adding some extra instructions.
-// [ ] Pointer buffers, with info about how much a pointer contains
-// [ ] Assigning pointers/pointer buffers to constants, by creating other constants that contain
+// [*] Pointer buffers, with info about how much a pointer contains
+// [/] Assigning pointers/pointer buffers to constants, by creating other constants that contain
 //   a copy of the thing that was behind the pointer.
+
+x;

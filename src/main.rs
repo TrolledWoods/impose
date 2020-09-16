@@ -7,6 +7,8 @@ pub const DEBUG: bool = false;
 
 #[macro_use]
 extern crate lazy_static;
+#[macro_use]
+extern crate smallvec;
 
 #[macro_use]
 pub mod id;
@@ -162,22 +164,12 @@ fn main() {
 	).unwrap();
 
 	// -- COMPILE STUFF --
-	let code = std::fs::read_to_string("test.im").unwrap();
-
-	let super_scope = scopes.super_scope;
-	let ast = match parser::parse_code(&code, &mut resources, &mut scopes, super_scope, true) {
-		Ok(value) => value,
-		Err(()) => {
-			error::print_output(&code);
-			return;
-		}
-	};
-
 	let id = resources.insert(Resource::new(
-		ast.nodes[0].loc.clone(),
-		ResourceKind::Value(ResourceValue::Defined(ast)),
+		code_loc::CodeLoc { file: ustr::ustr("no"), line: 0, column: 0 },
+		ResourceKind::Value(ResourceValue::File("test".into())),
 	));
 
+	// Compute stuff until we are out of things to compute
 	while match resources.compute_one(&mut types, &mut scopes) {
 		Ok(should_continue) => {
 			should_continue
@@ -192,10 +184,12 @@ fn main() {
 		types.print_types();
 	}
 
+	// See if it's ready
 	resources.check_completion();
 
-	error::print_output(&code);
+	error::print_output(&resources);
 
+	// If the value we want got completed, print the result
 	if let ResourceKind::Value(ResourceValue::Value(_, ref value, ref _pointer_members))
 		= resources.resource(id).kind
 	{

@@ -2,7 +2,8 @@ use crate::operator::*;
 use crate::code_loc::*;
 use crate::error::*;
 
-const KEYWORDS:  &[&str] = &["if", "else", "loop", "skip", "bit_cast", "type_of", "type", "struct"];
+const KEYWORDS:  &[&str] = 
+	&["if", "else", "loop", "skip", "bit_cast", "type_of", "type", "struct", "import"];
 
 #[derive(Debug, Clone)]
 pub struct Token {
@@ -79,12 +80,12 @@ fn move_pos_with_char(pos: &mut CodeLoc, character: char) {
 	}
 }
 
-pub fn lex_code(code: &str) -> Result<(CodeLoc, Vec<Token>), ()> {
+pub fn lex_code(file: ustr::Ustr, code: &str) -> Result<(CodeLoc, Vec<Token>), ()> {
 	let mut lexer = Lexer {
 		chars: code.char_indices(),
 		source_code_location: CodeLoc { 
 			line: 1, column: 1, 
-			file: ustr::ustr("source_code.imp"),
+			file,
 		},
 	};
 
