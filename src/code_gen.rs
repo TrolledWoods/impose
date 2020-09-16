@@ -114,7 +114,7 @@ pub fn compile_expression(
 						node_values.push(Some(Value::Local(member)));
 					}
 					ScopeMemberKind::Constant(id) => {
-						node_values.push(Some(get_resource_constant(&node.loc, resources, id)?));
+						node_values.push(Some(get_resource_constant(types, &mut instructions, &mut locals, &node.loc, resources, id)?))
 					}
 					ScopeMemberKind::Label => panic!("Cannot do labels"),
 				}
@@ -433,7 +433,7 @@ pub fn compile_expression(
 				node_values.push(Some(Value::Local(returns)));
 			}
 			NodeKind::Resource(id) => {
-				node_values.push(Some(get_resource_constant(&node.loc, resources, id)?))
+				node_values.push(Some(get_resource_constant(types, &mut instructions, &mut locals, &node.loc, resources, id)?))
 			}
 
 			NodeKind::UnaryOperator { operator: Operator::BitAndOrPointer, operand } => {
@@ -494,9 +494,14 @@ pub fn compile_expression(
 	Ok((locals.layout(), instructions, node_values.last().unwrap().clone()))
 }
 
-fn get_resource_constant(loc: &CodeLoc, resources: &Resources, id: ResourceId) 
-	-> Result<Value, Dependency>
-{
+fn get_resource_constant(
+	types: &Types,
+	instructions: &mut Vec<Instruction>,
+	locals: &mut Locals,
+	loc: &CodeLoc,
+	resources: &Resources,
+	id: ResourceId
+) -> Result<Value, Dependency> {
 	let resource = resources.resource(id);
 	match resource.kind {
 		ResourceKind::Poison => panic!("Used poison. TODO: Return"),
@@ -504,8 +509,32 @@ fn get_resource_constant(loc: &CodeLoc, resources: &Resources, id: ResourceId)
 		ResourceKind::Function { .. } | 
 		ResourceKind::String(_) =>
 			Ok(id.into_index().into()),
-		ResourceKind::Value(ResourceValue::Value(_, ref value)) =>
-			Ok(Value::Constant(value.clone())),
+		ResourceKind::Value(ResourceValue::Value(type_handle, ref value, ref pointer_members)) => {
+			if pointer_members.len() > 0 {
+				let local = locals.allocate(type_handle);
+				for &(offset, sub_resource_id, sub_type_handle) in pointer_members {
+					let value = 
+						get_resource_constant(types, instructions, locals, loc, resources, sub_resource_id)?;
+
+					let value_local = match value {
+						Value::Local(local) => local,
+						_ => {
+							let value_local = locals.allocate(sub_type_handle);
+							push_instr!(instructions, Instruction::Move(value_local, value));
+							value_local
+						}
+					};
+
+					push_instr!(instructions, Instruction::SetAddressOf(
+						local.sub_local(offset, 8, 8), value_local
+					));
+				}
+
+				Ok(Value::Local(local))
+			} else {
+				Ok(Value::Constant(value.clone()))
+			}
+		}
 		ResourceKind::Value(_) =>
 			Err(Dependency::Value(*loc, id)),
 	}

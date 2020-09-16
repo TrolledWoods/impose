@@ -1,5 +1,3 @@
-// TODO: Remove parser dependency here!
-use crate::parser::*;
 use crate::resource::*;
 use crate::stack_frame::*;
 use crate::types::*;
@@ -27,24 +25,6 @@ impl Scopes {
 		}
 	}
 
-	pub fn insert_root_value(
-		&mut self, 
-		resources: &mut Resources,
-		name: ustr::Ustr, 
-		type_: TypeId, 
-		value: ConstBuffer,
-	) {
-		let loc = CodeLoc { file: ustr::ustr("no"), line: 0, column: 0 };
-		let id = resources.insert_done(Resource::new_with_type(
-			loc.clone(),
-			ResourceKind::Value(ResourceValue::Value(type_, value)),
-			type_,
-		));
-
-		let scope = self.super_scope;
-		self.declare_member(scope, name, None, ScopeMemberKind::Constant(id)).unwrap();
-	}
-
 	pub fn insert_root_resource(
 		&mut self, 
 		resources: &mut Resources,
@@ -53,8 +33,6 @@ impl Scopes {
 		kind: ResourceKind,
 	) -> Result<(), ()> {
 		let loc = CodeLoc { file: ustr::ustr("no"), line: 0, column: 0 };
-		let mut ast = Ast::new();
-		ast.is_typed = true;
 		let id = resources.insert_done(Resource::new_with_type(
 			loc.clone(),
 			kind,

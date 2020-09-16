@@ -182,10 +182,11 @@ impl Resources {
 					};
 
 					// TODO: Go through the type, and change any pointers into resource pointers.
+					let mut instance = std::sync::Arc::new(stack_layout).create_instance();
 					let value = run_instructions(
 						&instructions,
 						return_value.as_ref(),
-						&mut std::sync::Arc::new(stack_layout).create_instance(),
+						&mut instance,
 						self,
 					);
 
@@ -207,11 +208,16 @@ impl Resources {
 						println!("Value: {:?}", value);
 					}
 
-					member.kind = ResourceKind::Value(ResourceValue::Value(member.type_.unwrap(), value));
+					member.kind = ResourceKind::Value(self.turn_value_into_resource(types, member.type_.unwrap(), &value));
+
+					// We free the instance here so that we can turn the value into a resource
+					// first!
+					std::mem::drop(instance);
+
 					self.return_resource(member_id, member);
 					self.uncomputed_resources.remove(&member_id);
 				}
-				ResourceKind::Value(ResourceValue::Value(_, _)) => {
+				ResourceKind::Value(ResourceValue::Value(_, _, _)) => {
 					// Do nothing
 					self.return_resource(member_id, member);
 				}
@@ -234,6 +240,63 @@ impl Resources {
 		} else {
 			Ok(false)
 		}
+	}
+
+	/// Turns a value into a resource, by making pointers into resources.
+	/// TODO: We may not want to do this in here. It's like putting a bit safety hole in the
+	/// middle of the compiler. Maybe later we should put all the unsafe stuff in some
+	/// module somewhere and thing more neatly about how to deal with it?
+	fn turn_value_into_resource(
+		&mut self, types: &Types, type_: TypeId, value: &[u8],
+	) -> ResourceValue {
+		let mut pointers_in_type = Vec::new();
+		types.get_pointers_in_type(type_, &mut pointers_in_type, 0);
+
+		let type_handle = types.handle(type_);
+
+		let mut resource_pointers = Vec::new();
+		for (offset, pointer_type, n_elements) in pointers_in_type {
+			let pointer_type_handle = types.handle(pointer_type);
+
+			for (sub_value_index, sub_value) in value.chunks_exact(type_handle.size).enumerate() {
+				// SAFETY: This may be uninitialized memory or garbage
+				// if the person writing the impose program doesn't know what they are doing.
+				// In that case, the compiler might crash!
+				let value_after_pointer = unsafe { 
+					*(&sub_value[offset] as *const u8 as *const *const u8)
+				};
+
+				// SAFETY: No safety here :/
+				let slice_at_pointer = unsafe {
+					std::slice::from_raw_parts(
+						value_after_pointer, 
+						pointer_type_handle.size * n_elements,
+					)
+				};
+
+				if DEBUG {
+					println!("Some resource has pointer to {:?}, so created resource", slice_at_pointer);
+				}
+
+				let kind = self.turn_value_into_resource(types, pointer_type, slice_at_pointer);
+				let id = self.insert_done(Resource {
+					depending_on: None,
+					loc: CodeLoc { file: ustr::ustr("no"), column: 1, line: 1, },
+					type_: Some(pointer_type),
+					waiting_on_type: Vec::new(),
+					waiting_on_value: None,
+					kind: ResourceKind::Value(kind),
+				});
+
+				if DEBUG {
+					println!("Resource is {:?}", id);
+				}
+
+				resource_pointers.push((offset + sub_value_index * type_handle.size, id, types.handle(pointer_type)));
+			}
+		}
+
+		ResourceValue::Value(types.handle(type_), value.into(), resource_pointers)
 	}
 
 	pub fn check_completion(&self) {
@@ -338,6 +401,7 @@ pub enum Dependency {
 #[derive(Debug)]
 pub struct Resource {
 	pub depending_on: Option<Dependency>,
+	// TODO: Make this option
 	pub loc: CodeLoc,
 	pub kind: ResourceKind,
 	pub type_: Option<TypeId>,
@@ -384,7 +448,16 @@ pub enum ResourceValue {
 	Typed(Ast),
 	// TODO: When code generation can pause, add a state for that.
 	// TODO: When evaluating can pause, add a state for that.
-	Value(TypeId, crate::stack_frame::ConstBuffer),
+	
+	/// The last field is a list of offsets into the ConstBuffer that are actually pointers to other
+	/// resources. These pointers should get set whenever loading the resource to appropriate
+	/// pointers(may have to be done by creating local variables).
+	/// It is a little unfortunate that we may have to do an almost full deep copy whenever loading
+	/// a constant as a pointer, but that might be necessary. Not sure how to reliably make it work
+	/// in any other way.
+	// TODO: Don't create a local variable if the value does not contain any pointers
+	// on its own.
+	Value(TypeHandle, crate::stack_frame::ConstBuffer, Vec<(usize, ResourceId, TypeHandle)>),
 }
 
 pub enum ResourceFunction {

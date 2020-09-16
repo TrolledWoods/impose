@@ -1,37 +1,23 @@
 // ROADMAP TO POINTERS:
 //
 // [*] Make pointers work in a scope, but not interact with constants in any way.
-// [ ] Allow acquiring pointers from a constant value, by adding some extra instructions.
+// [-] Allow acquiring pointers from a constant value, by adding some extra instructions.
 // [ ] Pointer buffers, with info about how much a pointer contains
 // [ ] Assigning pointers/pointer buffers to constants, by creating other constants that contain
 //   a copy of the thing that was behind the pointer.
-// TODO! Make this work consistantly and not dereference invalid memory.
 
-VecInt :: type { x: U64, y: U64 };
-
-add_vec_int :: |_a: VecInt, _b: VecInt| struct { 
-	x: _a.x + _b.x,
-	y: _a.y + _b.y,
+MY_CONST :: {
+	x := 42;
+	&x
 };
 
-print_vec_int :: |value: VecInt| {
-	print("(x: ");
-	print_num(value.x);
-	print(", y: ");
-	print_num(value.y);
-	print(")");
+ANOTHER_CONST :: {
+	yo := &*MY_CONST;
+	yo
 };
 
-add_one_x :: |vec: &VecInt| vec.x = vec.x + 1;
+{
+	x := ANOTHER_CONST;
 
-a := struct { x: 5, y: 2 };
-b := struct { x: 3, y: 50 };
-
-add_one_x(&a);
-
-print_vec_int(a);
-print(" + ");
-print_vec_int(b);
-print(" = ");
-print_vec_int(add_vec_int(a, b));
-print(" :D \n");
+	print_num(*x);
+};

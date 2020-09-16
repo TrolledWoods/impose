@@ -71,6 +71,43 @@ impl Types {
 		self.types.push(type_)
 	}
 
+	/// Pushes to the pointer_inside buffer you passed in the pointers it found inside.
+	///
+	/// The layout of the vec is like this: Vec<(
+	/// 	offset in bytes from type start,
+	/// 	id of type behind the pointer,
+	/// 	number of instances of the type behind the pointer(the number of bytes have to be
+	/// 	calculated by multiplying by the size of the type),
+	/// )>
+	pub fn get_pointers_in_type(
+		&self,
+		type_id: TypeId,
+		pointers_inside: &mut Vec<(usize, TypeId, usize)>,
+		offset: usize,
+	) {
+		let type_ = self.get(type_id);
+
+		match type_.kind {
+			TypeKind::Struct { ref members } => {
+				for (_name, member_offset, member_type_handle) in members {
+					self.get_pointers_in_type(
+						member_type_handle.id,
+						pointers_inside,
+						offset + *member_offset,
+					);
+				}
+			}
+			TypeKind::EmptyType => (),
+			TypeKind::Pointer(pointer_id) => {
+				pointers_inside.push((offset, pointer_id, 1));
+			},
+			TypeKind::FunctionPointer { .. } => (),
+			TypeKind::Type => (),
+			TypeKind::String => (),
+			TypeKind::Primitive(_) => (),
+		}
+	}
+
 	pub fn get(&self, type_: TypeId) -> &Type {
 		self.types.get(type_)
 	}
@@ -470,7 +507,7 @@ impl AstTyper {
 							}
 
 							match resources.resource(id).kind {
-								ResourceKind::Value(ResourceValue::Value(_, ref value)) => {
+								ResourceKind::Value(ResourceValue::Value(_, ref value, _)) => {
 									if let &[a, b, c, d, e, f, g, h] = value.as_slice() {
 										let id = usize::from_le_bytes([a, b, c, d, e, f, g, h]);
 										if id >= types.types.len() {
