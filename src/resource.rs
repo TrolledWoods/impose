@@ -357,7 +357,7 @@ impl Resources {
 					pointer_in_type.offset + index * type_handle.size,
 					id,
 					pointer_type_handle,
-				 ));
+				));
 			}
 		}
 

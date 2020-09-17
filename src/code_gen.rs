@@ -57,17 +57,17 @@ impl fmt::Debug for Instruction {
 			Instruction::WrappingDiv(result, a, b) => 
 				write!(f, "{:?} = {:?} / {:?}", result, a, b),
 			Instruction::SetAddressOf(to, from) =>
-				write!(f, "({:?}) = &({:?})", to, from),
+				write!(f, "{:?} = {:?}", to, from),
 			Instruction::LessThan(result, a, b) =>
 				write!(f, "{:?} = {:?} < {:?}", result, a, b),
-			Instruction::IndirectMove(into, from) => write!(f, "mov *({:?}) = {:?}", into, from),
-			Instruction::Move(a, b) => write!(f, "mov ({:?}) = {:?}", a, b),
+			Instruction::IndirectMove(into, from) => write!(f, "mov {:?} = {:?}", into, from),
+			Instruction::Move(a, b) => write!(f, "mov {:?} = {:?}", a, b),
 			Instruction::JumpRel(a) => write!(f, "jump {:?}", a),
 			Instruction::JumpRelIfZero(value, a) => write!(f, "jump {:?} if {:?} == 0", a, value),
 			Instruction::Call { calling, returns, ref args } => {
 				write!(f, "call {:?} with ", calling)?;
 				for arg in args.iter() {
-					write!(f, ", {:?}", arg)?;
+					write!(f, ", {:?}", arg.1)?;
 				}
 				write!(f, ", return into ({:?})", returns)?;
 
@@ -122,7 +122,8 @@ pub fn compile_expression(
 						node_values.push(Some(Value::Local(member)));
 					}
 					ScopeMemberKind::Constant(id) => {
-						node_values.push(Some(get_resource_constant(types, &mut instructions, &mut locals, &node.loc, resources, id)?))
+						let (_, value) = get_resource_constant(types, &mut instructions, &mut locals, &node.loc, resources, id)?;
+						node_values.push(Some(value))
 					}
 					ScopeMemberKind::Label => panic!("Cannot do labels"),
 				}
@@ -443,7 +444,8 @@ pub fn compile_expression(
 				node_values.push(Some(Value::Local(returns)));
 			}
 			NodeKind::Resource(id) => {
-				node_values.push(Some(get_resource_constant(types, &mut instructions, &mut locals, &node.loc, resources, id)?))
+				let (_, value) = get_resource_constant(types, &mut instructions, &mut locals, &node.loc, resources, id)?;
+				node_values.push(Some(value))
 			}
 
 			NodeKind::UnaryOperator { operator: Operator::BitAndOrPointer, operand } => {
@@ -511,27 +513,29 @@ fn get_resource_constant(
 	loc: &CodeLoc,
 	resources: &Resources,
 	id: ResourceId,
-) -> Result<Value, Dependency> {
+) -> Result<(usize, Value), Dependency> {
 	let resource = resources.resource(id);
 	match resource.kind {
 		ResourceKind::Poison => panic!("Used poison. TODO: Return"),
 		ResourceKind::ExternalFunction { .. } |
 		ResourceKind::Function { .. } | 
 		ResourceKind::String(_) =>
-			Ok(id.into_index().into()),
+			Ok((1, id.into_index().into())),
 		ResourceKind::Value(ResourceValue::Value(type_handle, n_values, ref value, ref pointer_members)) => {
 			if pointer_members.len() > 0 {
 				// TODO: Deal with pointers in pointer buffers.
 
 				let local = locals.allocate(type_handle);
+
 				for &(offset, sub_resource_id, sub_type_handle) in pointer_members {
-					let value = 
+					let (n_values, value) = 
 						get_resource_constant(types, instructions, locals, loc, resources, sub_resource_id)?;
 
 					let value_local = match value {
 						Value::Local(local) => local,
 						_ => {
-							let value_local = locals.allocate(sub_type_handle);
+							let value_local = locals.allocate_several(sub_type_handle, n_values);
+							println!("--- VALUE LOCAL: {:?}", value_local);
 							push_instr!(instructions, Instruction::Move(value_local, value));
 							value_local
 						}
@@ -542,9 +546,9 @@ fn get_resource_constant(
 					));
 				}
 
-				Ok(Value::Local(local))
+				Ok((n_values, Value::Local(local)))
 			} else {
-				Ok(Value::Constant(value.clone()))
+				Ok((n_values, Value::Constant(value.clone())))
 			}
 		}
 		ResourceKind::Value(_) =>

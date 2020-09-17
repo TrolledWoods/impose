@@ -1,15 +1,27 @@
 use crate::id::*;
 use crate::align::*;
 
+use std::fmt;
+
 pub type ConstBuffer = smallvec::SmallVec<[u8; 8]>;
 
 /// A Value is either a LocalHandle, or a Constant.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub enum Value {
 	Local(LocalHandle),
 	// TODO: Rename to indirect
 	Pointer(IndirectLocalHandle),
 	Constant(ConstBuffer),
+}
+
+impl fmt::Debug for Value {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		match self {
+			Value::Local(handle) => write!(f, "{:?}", handle),
+			Value::Pointer(handle) => write!(f, "{:?}", handle),
+			Value::Constant(buffer) => write!(f, "{:?}", buffer),
+		}
+	}
 }
 
 impl Value {
@@ -79,7 +91,7 @@ impl From<i32> for Value {
 	}
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct IndirectLocalHandle {
 	pointer: LocalId,
 	pointer_offset: usize,
@@ -90,16 +102,40 @@ pub struct IndirectLocalHandle {
 	resulting_size: usize,
 }
 
+impl fmt::Debug for IndirectLocalHandle {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		write!(f, "*({}", self.pointer)?;
+		if self.pointer_offset != 0 {
+			write!(f, "+{}", self.pointer_offset)?;
+		}
+		write!(f, ":{})", self.resulting_size)?;
+		if self.offset != 0 {
+			write!(f, "+{}", self.offset)?;
+		}
+		Ok(())
+	}
+}
+
 /// A handle to any subsection of a local.
 ///
 /// It cannot however contain a constant value.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq)]
 pub struct LocalHandle {
 	offset: usize,
 	// TODO: Check if align is really necessary to have as a member here.
 	align: usize,
 	pub size: usize,
 	id: LocalId,
+}
+
+impl fmt::Debug for LocalHandle {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		write!(f, "({}:{})", self.id, self.size)?;
+		if self.offset != 0 {
+			write!(f, "+{}", self.offset)?;
+		}
+		Ok(())
+	}
 }
 
 impl LocalHandle {
@@ -159,6 +195,20 @@ impl Locals {
 			id,
 			offset: 0,
 			size:  type_.size,
+			align: type_.align,
+		}
+	}
+
+	pub fn allocate_several(&mut self, type_: crate::types::TypeHandle, n: usize) -> LocalHandle {
+		let id = self.locals.push(Local {
+			size:  type_.size * n,
+			align: type_.align,
+		});
+
+		LocalHandle {
+			id,
+			offset: 0,
+			size:  type_.size * n,
 			align: type_.align,
 		}
 	}

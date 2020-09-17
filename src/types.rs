@@ -304,6 +304,12 @@ impl AstTyper {
 						(*name, ast.nodes[*node as usize].type_.unwrap())
 					)))
 				}
+				NodeKind::HeapClone(_) => {
+					todo!("Heap clone");
+				}
+				NodeKind::StackClone(_) => {
+					todo!("Stack clone");
+				}
 				NodeKind::Member { contains, .. } => {
 					ast.nodes[contains as usize].type_
 				}

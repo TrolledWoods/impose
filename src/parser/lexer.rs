@@ -3,7 +3,8 @@ use crate::code_loc::*;
 use crate::error::*;
 
 const KEYWORDS:  &[&str] = 
-	&["if", "else", "loop", "skip", "bit_cast", "type_of", "type", "struct", "import"];
+	&["if", "else", "loop", "skip", "bit_cast", "type_of",
+	  "type", "struct", "import", "heap_clone", "stack_clone"];
 
 #[derive(Debug, Clone)]
 pub struct Token {

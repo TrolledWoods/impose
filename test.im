@@ -9,6 +9,11 @@
 // BUG: This doesn't work when in unordered position. Figure out why...
 std :: import "std";
 
+// NOTE: When using a constant with a pointer in it, you have to take the fact that everything
+// in that constant is a stack pointer now, so you cannot ever free a pointer.
+//
+// That means don't push to vectors, e.t.c.
+// In the future there will be explicit ways to deal with this, but for now there isn't
 SOME_VECTOR :: {
 	vec := std\vec\create();
 	std\vec\push(&vec, 5);
@@ -21,12 +26,6 @@ SOME_VECTOR :: {
 main :: || {
 	// vec := std\vec\create();
 	vec := SOME_VECTOR;
-	// vec := std\vec\create();
-	// std\vec\push(&vec, 5);
-	// std\vec\push(&vec, 2);
-	// std\vec\push(&vec, 6);
-
-	// std\vec\minimize(&vec);
 
 	std\debug("vec[0]", *std\vec\get(&vec, 0));
 	std\debug("vec[1]", *std\vec\get(&vec, 1));
