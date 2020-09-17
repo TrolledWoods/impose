@@ -82,7 +82,7 @@ impl Types {
 	pub fn get_pointers_in_type(
 		&self,
 		type_id: TypeId,
-		pointers_inside: &mut Vec<(usize, TypeId, usize)>,
+		pointers_inside: &mut Vec<PointerInType>,
 		offset: usize,
 	) {
 		let type_ = self.get(type_id);
@@ -98,13 +98,19 @@ impl Types {
 				}
 			}
 			TypeKind::EmptyType => (),
-			TypeKind::Pointer(pointer_id) => {
-				pointers_inside.push((offset, pointer_id, 1));
+			TypeKind::Pointer(type_behind_pointer) => {
+				pointers_inside.push(PointerInType { 
+					offset,
+					type_behind_pointer,
+					size_offset: None
+				});
 			},
-			TypeKind::BufferPointer(_) => {
-				// We have to make a more advanced enum solution, because the size of buffers
-				// is unknown here.
-				todo!();
+			TypeKind::BufferPointer(type_behind_pointer) => {
+				pointers_inside.push(PointerInType { 
+					offset,
+					type_behind_pointer,
+					size_offset: Some(offset + 8)
+				});
 			}
 			TypeKind::FunctionPointer { .. } => (),
 			TypeKind::Type => (),
@@ -179,6 +185,14 @@ impl Types {
 			}
 		}
 	}
+}
+
+/// Some pointer that is in a type. This is used for deep cloning pointers in values into
+/// resources.
+pub struct PointerInType {
+	pub offset: usize,
+	pub type_behind_pointer: TypeId,
+	pub size_offset: Option<usize>,
 }
 
 /// Contains common info about a type, to avoid having to look too many things up
@@ -434,7 +448,7 @@ impl AstTyper {
 								}
 
 								match resources.resource(id).kind {
-									ResourceKind::Value(ResourceValue::Value(_, ref value, _)) => {
+									ResourceKind::Value(ResourceValue::Value(_, _, ref value, _)) => {
 										if let &[a, b, c, d, e, f, g, h] = value.as_slice() {
 											let id = usize::from_le_bytes([a, b, c, d, e, f, g, h]);
 											if id >= types.types.len() {

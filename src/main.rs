@@ -44,25 +44,25 @@ fn main() {
 		&mut resources, 
 		ustr::ustr("Type"), 
 		TYPE_TYPE_ID, 
-		ResourceKind::Value(ResourceValue::Value(type_type_handle, (TYPE_TYPE_ID.into_index() as u64).to_le_bytes().into(), vec![])),
+		ResourceKind::Value(ResourceValue::Value(type_type_handle, 1, (TYPE_TYPE_ID.into_index() as u64).to_le_bytes().into(), vec![])),
 	).unwrap();
 	scopes.insert_root_resource(
 		&mut resources, 
 		ustr::ustr("U32"), 
 		TYPE_TYPE_ID, 
-		ResourceKind::Value(ResourceValue::Value(type_type_handle, (U32_TYPE_ID.into_index() as u64).to_le_bytes().into(), vec![])),
+		ResourceKind::Value(ResourceValue::Value(type_type_handle, 1, (U32_TYPE_ID.into_index() as u64).to_le_bytes().into(), vec![])),
 	).unwrap();
 	scopes.insert_root_resource(
 		&mut resources, 
 		ustr::ustr("U64"), 
 		TYPE_TYPE_ID, 
-		ResourceKind::Value(ResourceValue::Value(type_type_handle, (U64_TYPE_ID.into_index() as u64).to_le_bytes().into(), vec![])),
+		ResourceKind::Value(ResourceValue::Value(type_type_handle, 1, (U64_TYPE_ID.into_index() as u64).to_le_bytes().into(), vec![])),
 	).unwrap();
 	scopes.insert_root_resource(
 		&mut resources, 
 		ustr::ustr("String"), 
 		TYPE_TYPE_ID, 
-		ResourceKind::Value(ResourceValue::Value(type_type_handle, (STRING_TYPE_ID.into_index() as u64).to_le_bytes().into(), vec![])),
+		ResourceKind::Value(ResourceValue::Value(type_type_handle, 1, (STRING_TYPE_ID.into_index() as u64).to_le_bytes().into(), vec![])),
 	).unwrap();
 
 	let print_type_id = types.insert(Type::new(TypeKind::FunctionPointer {
@@ -228,7 +228,7 @@ fn main() {
 	error::print_output(&resources);
 
 	// If the value we want got completed, print the result
-	if let ResourceKind::Value(ResourceValue::Value(_, ref value, ref _pointer_members))
+	if let ResourceKind::Value(ResourceValue::Value(_, _, ref value, ref _pointer_members))
 		= resources.resource(id).kind
 	{
 		// TODO: Print pointer stuff out as well.

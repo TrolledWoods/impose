@@ -510,7 +510,7 @@ fn get_resource_constant(
 	locals: &mut Locals,
 	loc: &CodeLoc,
 	resources: &Resources,
-	id: ResourceId
+	id: ResourceId,
 ) -> Result<Value, Dependency> {
 	let resource = resources.resource(id);
 	match resource.kind {
@@ -519,8 +519,10 @@ fn get_resource_constant(
 		ResourceKind::Function { .. } | 
 		ResourceKind::String(_) =>
 			Ok(id.into_index().into()),
-		ResourceKind::Value(ResourceValue::Value(type_handle, ref value, ref pointer_members)) => {
+		ResourceKind::Value(ResourceValue::Value(type_handle, n_values, ref value, ref pointer_members)) => {
 			if pointer_members.len() > 0 {
+				// TODO: Deal with pointers in pointer buffers.
+
 				let local = locals.allocate(type_handle);
 				for &(offset, sub_resource_id, sub_type_handle) in pointer_members {
 					let value = 

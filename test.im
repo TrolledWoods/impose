@@ -9,13 +9,33 @@
 // BUG: This doesn't work when in unordered position. Figure out why...
 std :: import "std";
 
-main :: || {
+SOME_VECTOR :: {
 	vec := std\vec\create();
-
 	std\vec\push(&vec, 5);
-	std\debug("vec[0]", *std\vec\get(&vec, 0));
+	std\vec\push(&vec, 2);
+	std\vec\push(&vec, 6);
+	std\vec\minimize(&vec);
+	vec
+};
 
-	std\vec\free(vec);
+main :: || {
+	// vec := std\vec\create();
+	vec := SOME_VECTOR;
+	// vec := std\vec\create();
+	// std\vec\push(&vec, 5);
+	// std\vec\push(&vec, 2);
+	// std\vec\push(&vec, 6);
+
+	// std\vec\minimize(&vec);
+
+	std\debug("vec[0]", *std\vec\get(&vec, 0));
+	std\debug("vec[1]", *std\vec\get(&vec, 1));
+	std\debug("vec[2]", *std\vec\get(&vec, 2));
+
+	// std\vec\push(&vec, 5);
+	// std\debug("vec[0]", *std\vec\get(&vec, 0));
+
+	// std\vec\free(vec);
 };
 
 main();

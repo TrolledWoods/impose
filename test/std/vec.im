@@ -41,6 +41,27 @@ capacity :: |vec: &Vector| {
 	buffer_into_raw((*vec).buffer).length
 };
 
+/// Reallocated a new buffer for the vector with exactly the right capacity
+/// to store the vector in.
+///
+/// You should run this before storing a vector in a constant, so the constant
+/// pointer code doesn't try to handle uninitialized values.
+minimize :: |vec: &Vector| {
+	raw := buffer_into_raw((*vec).buffer);
+
+	if (*vec).length < raw.length {
+		new_buffer := alloc_u64((*vec).length);
+		// Copy data into new buffer
+		buffer_iterate_any(slice(vec, 0, (*vec).length), |index: U64, value: &U64, any: &{}| {
+			new_buffer := *bit_cast & &- U64 (any);
+			*buffer_get(new_buffer, index) = *value;
+		}, bit_cast &{} (&new_buffer));
+
+		dealloc_buffer_u64((*vec).buffer);
+		(*vec).buffer = new_buffer;
+	};
+};
+
 reserve :: |vec: &Vector, min_capacity: U64| {
 	capacity := capacity(vec);
 	if capacity < min_capacity {

@@ -263,7 +263,7 @@ impl Resources {
 					self.return_resource(member_id, member);
 					self.uncomputed_resources.remove(&member_id);
 				}
-				ResourceKind::Value(ResourceValue::Value(_, _, _)) => {
+				ResourceKind::Value(ResourceValue::Value(_, _, _, _)) => {
 					// Do nothing
 					self.return_resource(member_id, member);
 				}
@@ -301,21 +301,30 @@ impl Resources {
 		let type_handle = types.handle(type_);
 
 		let mut resource_pointers = Vec::new();
-		for (offset, pointer_type, n_elements) in pointers_in_type {
-			let pointer_type_handle = types.handle(pointer_type);
+		for pointer_in_type in pointers_in_type {
+			let pointer_type_handle = types.handle(pointer_in_type.type_behind_pointer);
 
-			for (sub_value_index, sub_value) in value.chunks_exact(type_handle.size).enumerate() {
+			for (index, value) in value.chunks_exact(type_handle.size).enumerate() {
+				use std::convert::TryInto;
+
 				// SAFETY: This may be uninitialized memory or garbage
 				// if the person writing the impose program doesn't know what they are doing.
-				// In that case, the compiler might crash!
-				let value_after_pointer = unsafe { 
-					*(&sub_value[offset] as *const u8 as *const *const u8)
+				// In that case, the compiler might crash! But the language we are running is not
+				// safe, so I don't care in this case.
+				let value_after_pointer = unsafe {
+					*(&value[pointer_in_type.offset] as *const u8 as *const *const u8)
+				};
+
+				let n_elements = match pointer_in_type.size_offset {
+					Some(size_offset) =>
+						usize::from_le_bytes((&value[size_offset .. size_offset+8]).try_into().unwrap()),
+					None => 1,
 				};
 
 				// SAFETY: No safety here :/
 				let slice_at_pointer = unsafe {
 					std::slice::from_raw_parts(
-						value_after_pointer, 
+						value_after_pointer.wrapping_add(index * pointer_type_handle.size), 
 						pointer_type_handle.size * n_elements,
 					)
 				};
@@ -324,12 +333,17 @@ impl Resources {
 					println!("Some resource has pointer to {:?}, so created resource", slice_at_pointer);
 				}
 
-				let kind = self.turn_value_into_resource(types, pointer_type, slice_at_pointer);
+				let kind = self.turn_value_into_resource(
+					types,
+					pointer_in_type.type_behind_pointer,
+					slice_at_pointer
+				);
+
 				let id = self.insert_done(Resource {
 					depending_on: None,
 					scope_inside: None,
 					loc: CodeLoc { file: ustr::ustr("no"), column: 1, line: 1, },
-					type_: Some(pointer_type),
+					type_: Some(pointer_in_type.type_behind_pointer),
 					waiting_on_type: Vec::new(),
 					waiting_on_value: None,
 					kind: ResourceKind::Value(kind),
@@ -339,11 +353,17 @@ impl Resources {
 					println!("Resource is {:?}", id);
 				}
 
-				resource_pointers.push((offset + sub_value_index * type_handle.size, id, types.handle(pointer_type)));
+				resource_pointers.push((
+					pointer_in_type.offset + index * type_handle.size,
+					id,
+					pointer_type_handle,
+				 ));
 			}
 		}
 
-		ResourceValue::Value(types.handle(type_), value.into(), resource_pointers)
+		let n_sub_element = if type_handle.size > 0 { value.len() / type_handle.size } else { 0 };
+
+		ResourceValue::Value(type_handle, n_sub_element, value.into(), resource_pointers)
 	}
 
 	pub fn check_completion(&self) {
@@ -525,7 +545,7 @@ pub enum ResourceValue {
 	/// in any other way.
 	// TODO: Don't create a local variable if the value does not contain any pointers
 	// on its own.
-	Value(TypeHandle, crate::stack_frame::ConstBuffer, Vec<(usize, ResourceId, TypeHandle)>),
+	Value(TypeHandle, usize, crate::stack_frame::ConstBuffer, Vec<(usize, ResourceId, TypeHandle)>),
 }
 
 pub enum ResourceFunction {
