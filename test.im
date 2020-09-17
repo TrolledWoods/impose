@@ -1,10 +1,12 @@
 std :: import "std";
 
+to_u8 :: |num: U64| bit_cast { x: U8, _: U32 } (num).x;
+
 {
 	std\print("Hello, World!\n");
+
+	my_pointer := to_u8(90);
+
+	put_char(*&my_pointer);
+	std\print("\n");
 };
-
-
-
-
-

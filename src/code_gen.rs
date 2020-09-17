@@ -41,7 +41,7 @@ pub enum Instruction {
 	Call {
 		calling: Value, 
 		returns: LocalHandle, 
-		args: Vec<(usize, Value)>,
+		args: Vec<(usize, Value, usize)>,
 	},
 }
 
@@ -437,7 +437,7 @@ pub fn compile_expression(
 						let type_handle = types.handle(*type_);
 						let offset = crate::align::to_aligned(type_handle.align, offset_ctr);
 						offset_ctr = offset + type_handle.size;
-						(offset, node_values[*arg as usize].clone().unwrap())
+						(offset, node_values[*arg as usize].clone().unwrap(), type_handle.size)
 					})
 					.collect();
 				let calling = node_values[function_pointer as usize].clone().unwrap();
@@ -527,7 +527,7 @@ fn get_resource_pointer(
 	let resource = resources.resource(id);
 	match resource.kind {
 		ResourceKind::Value(ResourceValue::Value(_, _, _, ref pointer_members)) 
-			if pointer_members.len() == 0 && false => 
+			if pointer_members.len() == 0 => 
 		{
 			// There is an instruction for this!
 			push_instr!(instructions, Instruction::GetAddressOfResource(local, id));

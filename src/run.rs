@@ -144,7 +144,7 @@ pub fn run_instructions(
 					ResourceKind::Function(ResourceFunction::Value(ref sub_scope, ref instructions, ref return_value)) => {
 						let mut sub_stack_frame_instance = 
 							sub_scope.create_instance_with_func_args(
-								args.iter().map(|(index, value)| (
+								args.iter().map(|(index, value, _)| (
 									*index,
 									stack_frame_instance.get_value(value),
 								))
@@ -163,8 +163,8 @@ pub fn run_instructions(
 						let mut arg_buffer = vec![0; n_arg_bytes];
 						let mut return_buffer = vec![0; n_return_bytes]; 
 
-						for (index, value) in args {
-							let value_buffer = stack_frame_instance.get_value(value);
+						for (index, value, size) in args {
+							let value_buffer = &stack_frame_instance.get_value(value)[0..*size];
 
 							arg_buffer[*index..*index + value_buffer.len()].copy_from_slice(value_buffer);
 						}
