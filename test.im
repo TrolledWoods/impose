@@ -1,57 +1,11 @@
-// ROADMAP TO POINTERS:
-//
-// [*] Make pointers work in a scope, but not interact with constants in any way.
-// [*] Allow acquiring pointers from a constant value, by adding some extra instructions.
-// [*] Pointer buffers, with info about how much a pointer contains
-// [/] Assigning pointers/pointer buffers to constants, by creating other constants that contain
-//   a copy of the thing that was behind the pointer.
-
-// BUG: This doesn't work when in unordered position. Figure out why...
 std :: import "std";
 
-// NOTE: When using a constant with a pointer in it, you have to take the fact that everything
-// in that constant is a stack pointer now, so you cannot ever free a pointer.
-//
-// That means don't push to vectors, e.t.c.
-// In the future there will be explicit ways to deal with this, but for now there isn't
-SOME_VECTOR :: {
-	vec := std\vec\create();
-	std\vec\push(&vec, 5);
-	std\vec\push(&vec, 2);
-	std\vec\push(&vec, 6);
-	std\vec\minimize(&vec);
-	vec
+{
+	my_string := "x\n";
+	buffer := bit_cast { pointer: &U8, _: U64 } (my_string);
+
+	a := *(buffer.pointer + bit_cast &U8 (0));
+	put_char(a);
+	b := *(buffer.pointer + bit_cast &U8 (1));
+	put_char(b);
 };
-
-OTHER_THING :: struct {
-	vec: &{
-		buffer := bit_cast &- std\vec\Vector (struct { pointer: &SOME_VECTOR, length: 1 });
-		buffer
-	},
-	x: &32,
-	y: 50,
-};
-
-main :: || {
-	// vec := std\vec\create();
-	other_thing := OTHER_THING;
-
-	buffer := *other_thing.vec;
-	vec := *(bit_cast { hi: &std\vec\Vector, no: U64 } (buffer)).hi;
-
-	std\debug("x", *other_thing.x);
-	std\debug("y", other_thing.y);
-
-	std\debug("vec capacity", std\vec\capacity(&vec));
-	std\debug("vec length", vec.length);
-
-	std\buffer_iterate(std\vec\slice_full(&vec), |index: U64, value: &U64| {
-		print("vec[");
-		print_num(index);
-		print("]: ");
-		print_num(*value);
-		print("\n");
-	});
-};
-
-main();

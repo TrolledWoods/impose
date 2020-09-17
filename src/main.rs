@@ -48,6 +48,18 @@ fn main() {
 	).unwrap();
 	scopes.insert_root_resource(
 		&mut resources, 
+		ustr::ustr("U8"), 
+		TYPE_TYPE_ID, 
+		ResourceKind::Value(ResourceValue::Value(type_type_handle, 1, (U8_TYPE_ID.into_index() as u64).to_le_bytes().into(), vec![])),
+	).unwrap();
+	scopes.insert_root_resource(
+		&mut resources, 
+		ustr::ustr("U16"), 
+		TYPE_TYPE_ID, 
+		ResourceKind::Value(ResourceValue::Value(type_type_handle, 1, (U16_TYPE_ID.into_index() as u64).to_le_bytes().into(), vec![])),
+	).unwrap();
+	scopes.insert_root_resource(
+		&mut resources, 
 		ustr::ustr("U32"), 
 		TYPE_TYPE_ID, 
 		ResourceKind::Value(ResourceValue::Value(type_type_handle, 1, (U32_TYPE_ID.into_index() as u64).to_le_bytes().into(), vec![])),
@@ -58,34 +70,39 @@ fn main() {
 		TYPE_TYPE_ID, 
 		ResourceKind::Value(ResourceValue::Value(type_type_handle, 1, (U64_TYPE_ID.into_index() as u64).to_le_bytes().into(), vec![])),
 	).unwrap();
-	scopes.insert_root_resource(
-		&mut resources, 
-		ustr::ustr("String"), 
-		TYPE_TYPE_ID, 
-		ResourceKind::Value(ResourceValue::Value(type_type_handle, 1, (STRING_TYPE_ID.into_index() as u64).to_le_bytes().into(), vec![])),
-	).unwrap();
-
-	let print_type_id = types.insert(Type::new(TypeKind::FunctionPointer {
-		args: vec![STRING_TYPE_ID],
+	let put_char_type_id = types.insert(Type::new(TypeKind::FunctionPointer {
+		args: vec![U8_TYPE_ID],
 		returns: EMPTY_TYPE_ID,
 	}));
 	scopes.insert_root_resource(
 		&mut resources, 
-		ustr::ustr("print"), 
-		print_type_id, 
+		ustr::ustr("put_char"),
+		put_char_type_id, 
 		ResourceKind::ExternalFunction {
-			func: Box::new(|resources, args, _| {
-				if let &[a, b, c, d, e, f, g, h] = args {
-					use crate::id::Id;
-					let id = ResourceId::create(usize::from_le_bytes([a, b, c, d, e, f, g, h]) as u32);
-					if let ResourceKind::String(ref string) = resources.resource(id).kind {
-						use std::io::Write;
-						print!("{}", string);
-						std::io::stdout().lock().flush().unwrap();
-					}else { panic!("bad"); }
-				} else { panic!("bad"); }
+			func: Box::new(|_, args, _| {
+				use std::io::Write;
+				let arg = args[0];
+				std::io::stdout().lock().write(&[arg]).expect("Putchar write failed");
 			}),
-			n_arg_bytes: 8,
+			n_arg_bytes: 1,
+			n_return_bytes: 0,
+		}
+	).unwrap();
+
+	let flush_stdout_type_id = types.insert(Type::new(TypeKind::FunctionPointer {
+		args: vec![],
+		returns: EMPTY_TYPE_ID,
+	}));
+	scopes.insert_root_resource(
+		&mut resources, 
+		ustr::ustr("flush"),
+		flush_stdout_type_id, 
+		ResourceKind::ExternalFunction {
+			func: Box::new(|_, _, _| {
+				use std::io::Write;
+				std::io::stdout().lock().flush().unwrap();
+			}),
+			n_arg_bytes: 0,
 			n_return_bytes: 0,
 		}
 	).unwrap();
@@ -233,13 +250,15 @@ fn main() {
 	{
 		// TODO: Print pointer stuff out as well.
 
-		println!("\n\n --- RESULT ---");
-		print!(" > ");
-		for b in value.iter() {
-			print!("{:X} ", b);
+		if value.len() > 0 {
+			println!("\n\n --- RESULT ---");
+			print!(" > ");
+			for b in value.iter() {
+				print!("{:X} ", b);
+			}
+			println!();
 		}
-		println!();
-		
+
 		println!("Completed compilation in {:?}", time.elapsed());
 	}
 }

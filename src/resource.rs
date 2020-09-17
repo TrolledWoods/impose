@@ -167,6 +167,7 @@ impl Resources {
 						&code,
 						self,
 						scopes,
+						types,
 						scope,
 						true,
 					) {
@@ -266,15 +267,6 @@ impl Resources {
 				ResourceKind::Value(ResourceValue::Value(_, _, _, _)) => {
 					// Do nothing
 					self.return_resource(member_id, member);
-				}
-				ResourceKind::String(ref content) => { 
-					if DEBUG {
-						println!("\n\n--- Resource {} (string) has finished computing! ---", member_id);
-						println!("'{:?}", content);
-					}
-
-					self.return_resource(member_id, member);
-					self.uncomputed_resources.remove(&member_id);
 				}
 				ResourceKind::ExternalFunction { .. } => {
 					self.return_resource(member_id, member);
@@ -567,7 +559,6 @@ pub enum ResourceKind {
 		n_return_bytes: usize,
 	},
 	Function(ResourceFunction),
-	String(String),
 	Value(ResourceValue),
 	Poison,
 }
@@ -577,7 +568,6 @@ impl std::fmt::Debug for ResourceKind {
 		match self {
 			ResourceKind::ExternalFunction { .. } => write!(f, "extern func"),
 			ResourceKind::Function { .. } => write!(f, "func"),
-			ResourceKind::String(_) => write!(f, "string"),
 			ResourceKind::Value { .. } => write!(f, "value"),
 			ResourceKind::Poison => write!(f, "poison"),
 		}

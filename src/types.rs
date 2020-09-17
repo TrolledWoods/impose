@@ -12,8 +12,9 @@ use crate::error::*;
 pub const TYPE_TYPE_ID:   TypeId = TypeId::create_raw(0);
 pub const U64_TYPE_ID:    TypeId = TypeId::create_raw(1);
 pub const U32_TYPE_ID:    TypeId = TypeId::create_raw(2);
-pub const STRING_TYPE_ID: TypeId = TypeId::create_raw(3);
-pub const EMPTY_TYPE_ID:  TypeId = TypeId::create_raw(4);
+pub const U16_TYPE_ID:    TypeId = TypeId::create_raw(3);
+pub const U8_TYPE_ID:     TypeId = TypeId::create_raw(4);
+pub const EMPTY_TYPE_ID:  TypeId = TypeId::create_raw(5);
 
 create_id!(TypeId);
 
@@ -27,7 +28,8 @@ impl Types {
 		assert_eq!(types.push(Type::new(TypeKind::Type)), TYPE_TYPE_ID);
 		assert_eq!(types.push(Type::new(TypeKind::Primitive(PrimitiveKind::U64))), U64_TYPE_ID);
 		assert_eq!(types.push(Type::new(TypeKind::Primitive(PrimitiveKind::U32))), U32_TYPE_ID);
-		assert_eq!(types.push(Type::new(TypeKind::String)), STRING_TYPE_ID);
+		assert_eq!(types.push(Type::new(TypeKind::Primitive(PrimitiveKind::U16))), U16_TYPE_ID);
+		assert_eq!(types.push(Type::new(TypeKind::Primitive(PrimitiveKind::U8))), U8_TYPE_ID);
 		assert_eq!(types.push(Type::new(TypeKind::EmptyType)), EMPTY_TYPE_ID);
 		Self { types }
 	}
@@ -114,7 +116,6 @@ impl Types {
 			}
 			TypeKind::FunctionPointer { .. } => (),
 			TypeKind::Type => (),
-			TypeKind::String => (),
 			TypeKind::Primitive(_) => (),
 		}
 	}
@@ -177,9 +178,6 @@ impl Types {
 				write!(buffer, ") -> ").unwrap();
 				self.write_type_to_buffer(returns, buffer);
 			}
-			TypeKind::String => {
-				write!(buffer, "string").unwrap();
-			}
 			TypeKind::Primitive(primitive_kind) => {
 				write!(buffer, "{:?}", primitive_kind).unwrap();
 			}
@@ -231,7 +229,8 @@ impl Type {
 			TypeKind::Type => (8, 8),
 			TypeKind::Primitive(PrimitiveKind::U64) => (8, 8),
 			TypeKind::Primitive(PrimitiveKind::U32) => (4, 4),
-			TypeKind::String => (8, 8),
+			TypeKind::Primitive(PrimitiveKind::U16) => (2, 2),
+			TypeKind::Primitive(PrimitiveKind::U8)  => (1, 1),
 			TypeKind::FunctionPointer { .. } => (8, 8),
 		};
 
@@ -262,12 +261,13 @@ pub enum TypeKind {
 		returns: TypeId,
 	},
 	Type,
-	String,
 	Primitive(PrimitiveKind),
 }
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum PrimitiveKind {
+	U8,
+	U16,
 	U32,
 	U64,
 }

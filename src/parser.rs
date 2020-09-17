@@ -12,6 +12,7 @@ use lexer::*;
 struct Context<'a, 't> {
 	ast: &'a mut Ast, 
 	scopes: &'a mut Scopes,
+	types: &'a mut Types,
 	scope: ScopeId, 
 	tokens: &'a mut TokenStream<'t>,
 	resources: &'a mut Resources,
@@ -29,6 +30,7 @@ impl<'a, 't> Context<'a, 't> {
 			resources: self.resources,
 			is_meta: self.is_meta,
 			folder: self.folder,
+			types: self.types,
 		}
 	}
 
@@ -41,6 +43,7 @@ impl<'a, 't> Context<'a, 't> {
 			resources: self.resources,
 			is_meta: self.is_meta,
 			folder: self.folder,
+			types: self.types,
 		}
 	}
 
@@ -54,6 +57,7 @@ impl<'a, 't> Context<'a, 't> {
 			resources: self.resources,
 			is_meta: self.is_meta,
 			folder: self.folder,
+			types: self.types,
 		}
 	}
 }
@@ -774,15 +778,39 @@ fn parse_value(
 		}
 		TokenKind::StringLiteral(ref string) => {
 			context.tokens.next();
+
 			// TODO: Find a way to get rid of the string cloning here!
 			// Possibly by making TokenStream own its data
-			let id = context.resources.insert(
+
+			let string_bytes = string.as_bytes();
+			let n_bytes = string_bytes.len();
+			let buffer_id = context.resources.insert_done(Resource::new_with_type(
+				token.loc.clone(),
+				ResourceKind::Value(ResourceValue::Value(
+					context.types.handle(U8_TYPE_ID),
+					n_bytes,
+					string.as_bytes().into(),
+					vec![],
+				)),
+				U8_TYPE_ID,
+			));
+
+			let [a, b, c, d, e, f, g, h] = n_bytes.to_le_bytes();
+
+			let string_type = context.types.insert(Type::new(TypeKind::BufferPointer(U8_TYPE_ID)));
+			let id = context.resources.insert_done(
 				Resource::new_with_type(
 					token.loc.clone(),
-					ResourceKind::String(string.clone()),
-					STRING_TYPE_ID
+					ResourceKind::Value(ResourceValue::Value(
+						context.types.handle(string_type),
+						1,
+						smallvec![0, 0, 0, 0, 0, 0, 0, 0, a, b, c, d, e, f, g, h],
+						vec![(0, buffer_id, context.types.handle(U8_TYPE_ID))],
+					)),
+					string_type,
 				)
 			);
+
 			context.ast.insert_node(Node::new(&context, token, context.scope, NodeKind::Resource(id)))
 		}
 		TokenKind::Keyword("heap_clone") => {
@@ -1080,6 +1108,7 @@ pub fn parse_code(
 	code: &str,
 	resources: &mut Resources,
 	scopes: &mut Scopes,
+	types: &mut Types,
 	scope: ScopeId,
 	is_value: bool,
 ) -> Result<Ast, ()> {
@@ -1091,6 +1120,7 @@ pub fn parse_code(
 		ast: &mut ast,
 		scopes,
 		scope,
+		types,
 		tokens: &mut stream,
 		resources,
 		is_meta: false,

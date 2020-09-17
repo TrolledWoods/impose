@@ -57,7 +57,7 @@ impl fmt::Debug for Instruction {
 			Instruction::WrappingDiv(result, a, b) => 
 				write!(f, "{:?} = {:?} / {:?}", result, a, b),
 			Instruction::SetAddressOf(to, from) =>
-				write!(f, "{:?} = {:?}", to, from),
+				write!(f, "{:?} = &{:?}", to, from),
 			Instruction::LessThan(result, a, b) =>
 				write!(f, "{:?} = {:?} < {:?}", result, a, b),
 			Instruction::IndirectMove(into, from) => write!(f, "mov {:?} = {:?}", into, from),
@@ -471,11 +471,11 @@ pub fn compile_expression(
 				let from = match node_values[operand as usize].clone().unwrap() {
 					Value::Local(handle) => handle,
 					Value::Constant(_) => panic!("Cannot dereference constants"),
-					value => {
+					Value::Pointer(handle) => {
 						let local = locals.allocate(types.handle(
-								ast.nodes[operand as usize].type_.unwrap()
+							ast.nodes[operand as usize].type_.unwrap()
 						));
-						push_instr!(instructions, Instruction::Move(local, value));
+						push_instr!(instructions, Instruction::Move(local, Value::Pointer(handle)));
 						local
 					}
 				};
@@ -518,8 +518,7 @@ fn get_resource_constant(
 	match resource.kind {
 		ResourceKind::Poison => panic!("Used poison. TODO: Return"),
 		ResourceKind::ExternalFunction { .. } |
-		ResourceKind::Function { .. } | 
-		ResourceKind::String(_) =>
+		ResourceKind::Function { .. } =>
 			Ok((1, id.into_index().into())),
 		ResourceKind::Value(ResourceValue::Value(type_handle, n_values, ref value, ref pointer_members)) => {
 			if pointer_members.len() > 0 {
@@ -537,7 +536,6 @@ fn get_resource_constant(
 						Value::Local(local) => local,
 						_ => {
 							let value_local = locals.allocate_several(sub_type_handle, n_values);
-							println!("--- VALUE LOCAL: {:?}", value_local);
 							push_instr!(instructions, Instruction::Move(value_local, value));
 							value_local
 						}

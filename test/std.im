@@ -4,8 +4,32 @@
 
 vec :: import "vec";
 
+print :: |message: &- U8| {
+	raw := bit_cast { pointer: &U8, length: U64 } (message);
+
+	if raw.length {
+		length := raw.length - 1;
+		index := 0;
+
+		{:end_loop
+			loop {
+				if length < index { 
+					skip :end_loop;
+				};
+
+				val := *(raw.pointer + bit_cast &U8 (index));
+				put_char(val);
+
+				index = index + 1;
+			};
+		};
+	};
+
+	flush();
+};
+
 /// Prints out a number more easily
-debug :: |name: String, value: U64| {
+debug :: |name: &- U8, value: U64| {
 	print(name);
 	print(": ");
 	print_num(value);
@@ -24,6 +48,11 @@ PointerBufferRaw :: type {
 alloc_u64 :: |n_elements: U64| {
 	pointer := buffer_into_raw(alloc(n_elements * 8, 8)).pointer;
 	buffer_from_raw(struct { pointer: pointer, length: n_elements })
+};
+
+alloc_u8 :: |n_elements: U64| {
+	pointer := bit_cast { pointer: &U64, length: U64 } (alloc(n_elements, 1)).pointer;
+	bit_cast &- U8 (struct { pointer: pointer, length: n_elements })
 };
 
 dealloc_buffer_u64 :: |buffer: &- U64| {
