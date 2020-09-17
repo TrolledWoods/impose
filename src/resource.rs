@@ -68,15 +68,16 @@ impl Resources {
 							member.kind = ResourceKind::Function(
 								ResourceFunction::Typing(ast, typer, arguments)
 							);
-							self.add_dependency(member_id, dependency, scopes);
 							member.depending_on = Some(dependency);
 							self.return_resource(member_id, member);
+							self.add_dependency(member_id, dependency, scopes);
 							return Ok(true);
 						}
 						Ok(None) => {}
 						Err(()) => {
 							member.kind = ResourceKind::Poison;
 							self.return_resource(member_id, member);
+							self.make_resource_poison(member_id);
 							return Ok(true);
 						}
 					}
@@ -104,10 +105,10 @@ impl Resources {
 					{
 						Ok(value) => value,
 						Err(dependency) => {
-							self.add_dependency(member_id, dependency, scopes);
 							member.kind = ResourceKind::Function(ResourceFunction::Typed(ast));
 							member.depending_on = Some(dependency);
 							self.return_resource(member_id, member);
+							self.add_dependency(member_id, dependency, scopes);
 							return Ok(true);
 						}
 					};
@@ -157,6 +158,7 @@ impl Resources {
 							member.kind = ResourceKind::Poison;
 							error_value!(member, "Cannot load file, because: '{:?}'", err);
 							self.return_resource(member_id, member);
+							self.make_resource_poison(member_id);
 							return Ok(true);
 						}
 					};
@@ -176,6 +178,7 @@ impl Resources {
 							self.code_cache.insert(file, code);
 							member.kind = ResourceKind::Poison;
 							self.return_resource(member_id, member);
+							self.make_resource_poison(member_id);
 							return Ok(true);
 						}
 					};
@@ -194,16 +197,17 @@ impl Resources {
 				ResourceKind::Value(ResourceValue::Typing(mut ast, mut typer)) => {
 					match typer.try_type_ast(types, &mut ast, scopes, self) {
 						Ok(Some(dependency)) => {
-							self.add_dependency(member_id, dependency, scopes);
 							member.kind = ResourceKind::Value(ResourceValue::Typing(ast, typer));
 							member.depending_on = Some(dependency);
 							self.return_resource(member_id, member);
+							self.add_dependency(member_id, dependency, scopes);
 							return Ok(true);
 						}
 						Ok(None) => { }
 						Err(()) => {
 							member.kind = ResourceKind::Poison;
 							self.return_resource(member_id, member);
+							self.make_resource_poison(member_id);
 							return Ok(true);
 						}
 					}
@@ -220,10 +224,10 @@ impl Resources {
 					{
 						Ok(value) => value,
 						Err(dependency) => {
-							self.add_dependency(member_id, dependency, scopes);
 							member.depending_on = Some(dependency);
 							member.kind = ResourceKind::Value(ResourceValue::Typed(ast));
 							self.return_resource(member_id, member);
+							self.add_dependency(member_id, dependency, scopes);
 							return Ok(true);
 						}
 					};
@@ -358,9 +362,25 @@ impl Resources {
 		ResourceValue::Value(type_handle, n_sub_element, value.into(), resource_pointers)
 	}
 
-	pub fn check_completion(&self) {
+	pub fn check_completion(&mut self) {
 		if self.uncomputed_resources.len() > 0 {
-			for uncomputed_resource_id in self.uncomputed_resources.iter().copied() {
+			let uncomputed_resources = std::mem::replace(&mut self.uncomputed_resources, HashSet::new());
+
+			// Make all the unknown identifier poison first, because unknown identifiers
+			// are not usually errors(they may appear later), so we need to make them errors
+			// when the compilation process is over.
+			for uncomputed_resource_id in uncomputed_resources.iter() {
+				let resource = self.resource(*uncomputed_resource_id);
+
+				match resource.depending_on {
+					Some(Dependency::Constant(_, _)) => {
+						self.make_resource_poison(*uncomputed_resource_id);
+					}
+					_ => ()
+				}
+			}
+
+			for uncomputed_resource_id in uncomputed_resources {
 				let resource = self.resource(uncomputed_resource_id);
 
 				match resource.depending_on {
@@ -368,15 +388,21 @@ impl Resources {
 						error_value!(loc, "Unknown identifier");
 					}
 					Some(Dependency::Type(loc, depending_on)) => {
-						info!(self.resource(depending_on).loc, "Type of this is needed");
-						error_value!(loc, "Needs a type that cannot be calculated");
+						if !matches!(self.resource(depending_on).kind, ResourceKind::Poison) {
+							info!(self.resource(depending_on).loc, "Type of this is needed");
+							error_value!(loc, "Needs a type that cannot be calculated");
+						}
 					}
 					Some(Dependency::Value(loc, depending_on)) => {
-						info!(self.resource(depending_on).loc, "Value of this is needed");
-						error_value!(loc, "Needs a value that cannot be calculated");
+						if !matches!(self.resource(depending_on).kind, ResourceKind::Poison) {
+							info!(self.resource(depending_on).loc, "Value of this is needed");
+							error_value!(loc, "Needs a value that cannot be calculated");
+						}
 					}
 					None => {
-						error_value!(resource.loc, "Value cannot be computed, got forgotten for some reason");
+						if !matches!(self.resource(uncomputed_resource_id).kind, ResourceKind::Poison) {
+							error_value!(resource.loc, "Value cannot be computed, got forgotten for some reason(Internal compiler error)");
+						}
 					}
 				}
 			}
@@ -402,22 +428,45 @@ impl Resources {
 			}
 			Dependency::Type(_, resource_id) => {
 				let depending_on = self.resource_mut(resource_id);
-				if depending_on.type_.is_none() {
-					depending_on.waiting_on_type.push(dependant);
+				if let ResourceKind::Poison = depending_on.kind {
+					// It's depending on poison, so spread the poison! Muhahaha
+					self.resource_mut(dependant).kind = ResourceKind::Poison;
 				} else {
-					self.compute_queue.push_back(dependant);
-					return;
+					if depending_on.type_.is_none() {
+						depending_on.waiting_on_type.push(dependant);
+					} else {
+						self.compute_queue.push_back(dependant);
+						return;
+					}
 				}
 			}
 			Dependency::Value(_, resource_id) => {
 				let depending_on = self.resource_mut(resource_id);
-				if let Some(ref mut waiting_on_value) = depending_on.waiting_on_value {
-					waiting_on_value.push(dependant);
+				if let ResourceKind::Poison = depending_on.kind {
+					// It's depending on poison, so spread the poison! Muhahaha
+					self.resource_mut(dependant).kind = ResourceKind::Poison;
 				} else {
-					self.compute_queue.push_back(dependant);
-					return;
+					if let Some(ref mut waiting_on_value) = depending_on.waiting_on_value {
+						waiting_on_value.push(dependant);
+					} else {
+						self.compute_queue.push_back(dependant);
+						return;
+					}
 				}
 			}
+		}
+	}
+
+	pub fn make_resource_poison(&mut self, resource_id: ResourceId) {
+		let resource = self.resource_mut(resource_id);
+		resource.kind = ResourceKind::Poison;
+		let mut dependants = std::mem::replace(&mut resource.waiting_on_type, Vec::new());
+		if let Some(ref mut waiting_on_value) = resource.waiting_on_value {
+			dependants.append(waiting_on_value);
+		}
+
+		for dependant in dependants {
+			self.make_resource_poison(dependant);
 		}
 	}
 
@@ -550,6 +599,9 @@ pub enum ResourceFunction {
 }
 
 pub enum ResourceKind {
+	// TODO: Make function and external function the same thing, and instead have a buffer
+	// of all the functions that exist, making functions calls just do a lookup into that
+	// buffer to call a function.
 	ExternalFunction {
 		// TODO: Make a more advanced interface to call external functions
 		func: Box<dyn Fn(&Resources, &[u8], &mut [u8])>,

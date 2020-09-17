@@ -353,6 +353,15 @@ pub fn compile_expression(
 							panic!("bleh");
 						}
 					}
+					TypeKind::BufferPointer(_) => {
+						if sub_name == "pointer" {
+							node_values.push(Some(value.get_sub_value(0, 8, 8)));
+						} else if sub_name == "length" {
+							node_values.push(Some(value.get_sub_value(8, 8, 8)));
+						} else {
+							panic!("bleh");
+						}
+					}
 					TypeKind::Struct { ref members } => {
 						for (name, offset, handle) in members {
 							if *name == sub_name {

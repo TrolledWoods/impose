@@ -325,7 +325,7 @@ impl AstTyper {
 					let id = ast.nodes[member as usize].type_.unwrap();
 					let type_kind = &types.get(id).kind;
 					
-					match type_kind {
+					match *type_kind {
 						TypeKind::Primitive(PrimitiveKind::U64) => {
 							if sub_name == "low" {
 								Some(U32_TYPE_ID)
@@ -333,6 +333,15 @@ impl AstTyper {
 								Some(U32_TYPE_ID)
 							} else {
 								return error!(node, "This member does not exist on U64");
+							}
+						}
+						TypeKind::BufferPointer(sub_type) => {
+							if sub_name == "pointer" {
+								Some(types.insert(Type::new(TypeKind::Pointer(sub_type))))
+							} else if sub_name == "length" {
+								Some(U64_TYPE_ID)
+							} else {
+								panic!("bleh");
 							}
 						}
 						TypeKind::Struct { ref members } => {
