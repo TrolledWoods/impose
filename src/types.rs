@@ -451,6 +451,9 @@ impl AstTyper {
 									_ => return error!(node, "A Type identifier has to contain a type!"),
 								}
 							}
+							ScopeMemberKind::UndefinedDependency(_) => {
+								return Ok(Some(Dependency::Constant(node.loc, id)));
+							}
 							_ => return error!(node, "A Type identifier has to be constant"), 
 						}
 					};

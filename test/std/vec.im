@@ -25,8 +25,7 @@ free :: |vec: Vector| {:skip_free
 
 /// Returns a buffer which is a subsection of the vector
 slice :: |vec: &Vector, start: U64, end: U64| {
-	x := *vec;
-	pointer := buffer_into_raw(x.buffer).pointer;
+	pointer := buffer_into_raw((*vec).buffer).pointer;
 
 	pointer = pointer + bit_cast &U64 (start * 8);
 	length := end - start;
@@ -35,13 +34,11 @@ slice :: |vec: &Vector, start: U64, end: U64| {
 };
 
 slice_full :: |vec: &Vector| {
-	x := *vec;
-	slice(vec, 0, x.length)
+	slice(vec, 0, (*vec).length)
 };
 
 capacity :: |vec: &Vector| {
-	x := (*vec);
-	buffer_into_raw(x.buffer).length
+	buffer_into_raw((*vec).buffer).length
 };
 
 reserve :: |vec: &Vector, min_capacity: U64| {
@@ -49,25 +46,22 @@ reserve :: |vec: &Vector, min_capacity: U64| {
 	if capacity < min_capacity {
 		new_buffer := alloc_u64(min_capacity + 10);
 		// Copy data into new buffer
-		x := *vec;
-		buffer_iterate_any(slice(vec, 0, x.length), |index: U64, value: &U64, any: &{}| {
+		buffer_iterate_any(slice(vec, 0, (*vec).length), |index: U64, value: &U64, any: &{}| {
 			new_buffer := *bit_cast & &- U64 (any);
 			*buffer_get(new_buffer, index) = *value;
 		}, bit_cast &{} (&new_buffer));
 
-		dealloc_buffer_u64(x.buffer);
+		dealloc_buffer_u64((*vec).buffer);
 		(*vec).buffer = new_buffer;
 	};
 };
 
 push :: |vec: &Vector, value: U64| {
-	x := *vec;
-	reserve(vec, x.length + 1);
-	*get(vec, x.length) = value;
-	(*vec).length = x.length + 1;
+	reserve(vec, (*vec).length + 1);
+	*get(vec, (*vec).length) = value;
+	(*vec).length = (*vec).length + 1;
 };
 
 get :: |vec: &Vector, index: U64| {
-	x := *vec;
-	buffer_get(x.buffer, index)
+	buffer_get((*vec).buffer, index)
 };

@@ -6,6 +6,7 @@
 // [/] Assigning pointers/pointer buffers to constants, by creating other constants that contain
 //   a copy of the thing that was behind the pointer.
 
+// BUG: This doesn't work when in unordered position. Figure out why...
 std :: import "std";
 
 main :: || {
@@ -15,7 +16,6 @@ main :: || {
 	std\debug("vec[0]", *std\vec\get(&vec, 0));
 
 	std\vec\free(vec);
-	vec
 };
 
 main();
