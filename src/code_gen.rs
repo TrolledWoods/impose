@@ -527,6 +527,8 @@ fn get_resource_constant(
 
 				let local = locals.allocate(type_handle);
 
+				push_instr!(instructions, Instruction::Move(local, Value::Constant(value.clone())));
+
 				for &(offset, sub_resource_id, sub_type_handle) in pointer_members {
 					let (n_values, value) = 
 						get_resource_constant(types, instructions, locals, loc, resources, sub_resource_id)?;

@@ -23,18 +23,35 @@ SOME_VECTOR :: {
 	vec
 };
 
+OTHER_THING :: struct {
+	vec: &{
+		buffer := bit_cast &- std\vec\Vector (struct { pointer: &SOME_VECTOR, length: 1 });
+		buffer
+	},
+	x: &32,
+	y: 50,
+};
+
 main :: || {
 	// vec := std\vec\create();
-	vec := SOME_VECTOR;
+	other_thing := OTHER_THING;
 
-	std\debug("vec[0]", *std\vec\get(&vec, 0));
-	std\debug("vec[1]", *std\vec\get(&vec, 1));
-	std\debug("vec[2]", *std\vec\get(&vec, 2));
+	buffer := *other_thing.vec;
+	vec := *(bit_cast { hi: &std\vec\Vector, no: U64 } (buffer)).hi;
 
-	// std\vec\push(&vec, 5);
-	// std\debug("vec[0]", *std\vec\get(&vec, 0));
+	std\debug("x", *other_thing.x);
+	std\debug("y", other_thing.y);
 
-	// std\vec\free(vec);
+	std\debug("vec capacity", std\vec\capacity(&vec));
+	std\debug("vec length", vec.length);
+
+	std\buffer_iterate(std\vec\slice_full(&vec), |index: U64, value: &U64| {
+		print("vec[");
+		print_num(index);
+		print("]: ");
+		print_num(*value);
+		print("\n");
+	});
 };
 
 main();
