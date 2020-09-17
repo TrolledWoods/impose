@@ -117,6 +117,16 @@ pub fn run_instructions(
 					_ => panic!("Unknown thing"),
 				}
 			}
+			Instruction::GetAddressOfResource(to, resource_id) => {
+				if let ResourceKind::Value(ResourceValue::Value(_, _, ref val, _)) = 
+					resources.resource(resource_id).kind
+				{
+					let bytes = (val.as_ptr() as u64).to_le_bytes();
+					stack_frame_instance.insert_into_local(to, &bytes);
+				} else {
+					panic!();
+				}
+			}
 			Instruction::SetAddressOf(to, from) => {
 				let bytes = (stack_frame_instance.address_of_local(from) as u64).to_le_bytes();
 				stack_frame_instance.insert_into_local(to, &bytes);

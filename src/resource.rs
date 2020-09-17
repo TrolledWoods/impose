@@ -535,8 +535,6 @@ pub enum ResourceValue {
 	/// It is a little unfortunate that we may have to do an almost full deep copy whenever loading
 	/// a constant as a pointer, but that might be necessary. Not sure how to reliably make it work
 	/// in any other way.
-	// TODO: Don't create a local variable if the value does not contain any pointers
-	// on its own.
 	Value(TypeHandle, usize, crate::stack_frame::ConstBuffer, Vec<(usize, ResourceId, TypeHandle)>),
 }
 

@@ -1,11 +1,10 @@
 std :: import "std";
 
 {
-	my_string := "x\n";
-	buffer := bit_cast { pointer: &U8, _: U64 } (my_string);
-
-	a := *(buffer.pointer + bit_cast &U8 (0));
-	put_char(a);
-	b := *(buffer.pointer + bit_cast &U8 (1));
-	put_char(b);
+	std\print("Hello, World!\n");
 };
+
+
+
+
+

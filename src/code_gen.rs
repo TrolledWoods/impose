@@ -31,6 +31,7 @@ pub enum Instruction {
 	LessThan(LocalHandle, Value, Value),
 
 	SetAddressOf(LocalHandle, LocalHandle),
+	GetAddressOfResource(LocalHandle, ResourceId),
 
 	IndirectMove(IndirectLocalHandle, Value),
 	Move(LocalHandle, Value),
@@ -56,6 +57,8 @@ impl fmt::Debug for Instruction {
 				write!(f, "{:?} = {:?} * {:?}", result, a, b),
 			Instruction::WrappingDiv(result, a, b) => 
 				write!(f, "{:?} = {:?} / {:?}", result, a, b),
+			Instruction::GetAddressOfResource(to, id) =>
+				write!(f, "{:?} = resource({:?})", to, id),
 			Instruction::SetAddressOf(to, from) =>
 				write!(f, "{:?} = &{:?}", to, from),
 			Instruction::LessThan(result, a, b) =>
@@ -506,6 +509,50 @@ pub fn compile_expression(
 	Ok((locals.layout(), instructions, node_values.last().unwrap().clone()))
 }
 
+/// Returns a pointer to a resource, either by copying the resource onto the stack and taking a
+/// pointer to that, or by taking a pointer to the resource itself. The pointer is always
+/// in a local, because it cannot possibly be a constant(because pointers to resources change
+/// when compiling etc).
+fn get_resource_pointer(
+	types: &Types,
+	instructions: &mut Vec<Instruction>,
+	locals: &mut Locals,
+	loc: &CodeLoc,
+	resources: &Resources,
+	id: ResourceId,
+	local: LocalHandle,
+	sub_type_handle: TypeHandle,
+) -> Result<(), Dependency> {
+	// TODO: Also optimize direct pointers to constants.
+	let resource = resources.resource(id);
+	match resource.kind {
+		ResourceKind::Value(ResourceValue::Value(_, _, _, ref pointer_members)) 
+			if pointer_members.len() == 0 && false => 
+		{
+			// There is an instruction for this!
+			push_instr!(instructions, Instruction::GetAddressOfResource(local, id));
+			Ok(())
+		}
+		_ => {
+			// This is just a random pointer
+			let (n_values, value) =
+				get_resource_constant(types, instructions, locals, loc, resources, id)?;
+
+			let value_local = match value {
+				Value::Local(local) => local,
+				_ => {
+					let value_local = locals.allocate_several(sub_type_handle, n_values);
+					push_instr!(instructions, Instruction::Move(value_local, value));
+					value_local
+				}
+			};
+
+			push_instr!(instructions, Instruction::SetAddressOf(local, value_local));
+			Ok(())
+		}
+	}
+}
+
 fn get_resource_constant(
 	types: &Types,
 	instructions: &mut Vec<Instruction>,
@@ -529,21 +576,8 @@ fn get_resource_constant(
 				push_instr!(instructions, Instruction::Move(local, Value::Constant(value.clone())));
 
 				for &(offset, sub_resource_id, sub_type_handle) in pointer_members {
-					let (n_values, value) = 
-						get_resource_constant(types, instructions, locals, loc, resources, sub_resource_id)?;
-
-					let value_local = match value {
-						Value::Local(local) => local,
-						_ => {
-							let value_local = locals.allocate_several(sub_type_handle, n_values);
-							push_instr!(instructions, Instruction::Move(value_local, value));
-							value_local
-						}
-					};
-
-					push_instr!(instructions, Instruction::SetAddressOf(
-						local.sub_local(offset, 8, 8), value_local
-					));
+					// Put the resource pointer into the right local.
+					get_resource_pointer(types, instructions, locals, loc, resources, sub_resource_id, local.sub_local(offset, 8, 8), sub_type_handle)?;
 				}
 
 				Ok((n_values, Value::Local(local)))
