@@ -28,7 +28,7 @@ pub fn run_instructions(
 				instr_pointer = (instr_pointer as i64 + a) as usize;
 			}
 			Instruction::JumpRelIfZero(ref value, a) => {
-				let value = stack_frame_instance.get_u64(value);
+				let value = stack_frame_instance.get_value(value)[0];
 				if value == 0 {
 					instr_pointer = (instr_pointer as i64 + a) as usize;
 				}
