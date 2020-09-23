@@ -126,15 +126,17 @@ impl Location for Node {
 	}
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum MarkerKind {
+	IfCondition(AstNodeId),
+	IfElseTrueBody(AstNodeId),
+	LoopHead,
+}
+
 #[derive(Debug)]
 pub enum NodeKind {
 	Temporary,
-	/// A Member of some other node, to allow for more specific behaviour
-	Member {
-		child_of: AstNodeId,
-		contains: AstNodeId,
-		id: u8,
-	},
+	Marker(MarkerKind),
 	MemberAccess(AstNodeId, ustr::Ustr),
 	Number(i128),
 
@@ -182,11 +184,7 @@ pub enum NodeKind {
 		false_body: AstNodeId,
 	},
 
-	LocationMarker,
-	Loop {
-		body: AstNodeId,
-		start_location: AstNodeId,
-	},
+	Loop(AstNodeId),
 
 	Struct {
 		members: Vec<(ustr::Ustr, AstNodeId)>,
@@ -867,77 +865,51 @@ fn parse_value(
 		TokenKind::Keyword("loop") => {
 			context.tokens.next();
 
-			let start_location = context.ast.insert_node(
-				Node::new(&context, token, context.scope, NodeKind::LocationMarker)
+			context.ast.insert_node(
+				Node::new(&context, token, context.scope, NodeKind::Marker(MarkerKind::LoopHead))
 			);
 			let body = parse_expression(context.borrow())?;
 
-			context.ast.insert_node(Node::new(&context, token, context.scope, NodeKind::Loop {
-				body,
-				start_location,
-			}))
+			context.ast.insert_node(Node::new(&context, token, context.scope,
+				NodeKind::Loop(body)
+			))
 		}
 		TokenKind::Keyword("if") => {
 			context.tokens.next();
 
 			let condition = parse_expression(context.borrow())?;
-			let condition_marker = 
-				context.ast.insert_node(Node::new(&context, token, context.scope, NodeKind::Temporary));
+			let condition_marker = context.ast.insert_node(Node::new(&context, token, context.scope,
+				NodeKind::Marker(MarkerKind::IfCondition(condition))
+			));
 
 			let true_body = parse_block(context.borrow(), true, true)?;
-			let true_body_marker =
-				context.ast.insert_node(Node::new(&context, token, context.scope, NodeKind::Temporary));
 
 			if let Some(TokenKind::Keyword("else")) = context.tokens.peek_kind() {
 				context.tokens.next();
 
+				let true_body_marker = context.ast.insert_node(
+					Node::new(&context, token, context.scope,
+						NodeKind::Marker(MarkerKind::IfElseTrueBody(true_body))
+				));
+
 				let false_body = parse_block(context.borrow(), true, true)?;
-				let false_body_marker = 
-					context.ast.insert_node(Node::new(&context, token, context.scope, NodeKind::Temporary));
 
 				let if_statement = context.ast.insert_node(
 					Node::new(&context, token, context.scope, NodeKind::IfWithElse {
-						condition: condition_marker,
+						condition: condition,
 						true_body: true_body_marker,
-						false_body: false_body_marker,
+						false_body: false_body,
 					})
 				);
-
-				context.ast.nodes[condition_marker as usize].kind = NodeKind::Member {
-					child_of: if_statement,
-					contains: condition,
-					id: 0,
-				};
-				context.ast.nodes[true_body_marker as usize].kind = NodeKind::Member {
-					child_of: if_statement,
-					contains: true_body,
-					id: 1,
-				};
-				context.ast.nodes[false_body_marker as usize].kind = NodeKind::Member {
-					child_of: if_statement,
-					contains: false_body,
-					id: 2,
-				};
 
 				if_statement
 			} else {
 				let if_statement = context.ast.insert_node(
 					Node::new(&context, token, context.scope, NodeKind::If {
-						condition: condition_marker,
-						body: true_body_marker,
+						condition: condition,
+						body: true_body,
 					})
 				);
-
-				context.ast.nodes[condition_marker as usize].kind = NodeKind::Member {
-					child_of: if_statement,
-					contains: condition,
-					id: 0,
-				};
-				context.ast.nodes[true_body_marker as usize].kind = NodeKind::Member {
-					child_of: if_statement,
-					contains: true_body,
-					id: 1,
-				};
 
 				if_statement
 			}

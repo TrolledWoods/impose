@@ -310,8 +310,11 @@ impl AstTyper {
 				NodeKind::StackClone(_) => {
 					todo!("Stack clone");
 				}
-				NodeKind::Member { contains, .. } => {
+				NodeKind::Marker(MarkerKind::IfElseTrueBody(contains)) => {
 					ast.nodes[contains as usize].type_
+				}
+				NodeKind::Marker(_) => {
+					None
 				}
 				NodeKind::Number(_) => {
 					Some(types.insert(Type::new(TypeKind::Primitive(PrimitiveKind::U64))))
@@ -362,7 +365,6 @@ impl AstTyper {
 						_ => return error!(node, "This type doesn't have members"),
 					}
 				}
-				NodeKind::LocationMarker => None,
 				NodeKind::Loop { .. } => {
 					Some(types.insert(Type::new(TypeKind::EmptyType)))
 				}

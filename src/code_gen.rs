@@ -89,13 +89,15 @@ pub fn compile_expression(
 	types: &Types,
 ) -> Result<(StackFrameLayout, Vec<Instruction>, Option<Value>), Dependency> {
 	let mut locals = Locals::new();
+
+	// TODO: Make this a stack instead of a list.
 	let mut node_values: Vec<Option<Value>> = Vec::with_capacity(ast.nodes.len());
 	let mut instructions = Vec::new();
 
 	let mut temporary_labels: Vec<(_, _, Option<LocalHandle>)> = Vec::new();
-	let mut instruction_locations: HashMap<AstNodeId, usize> = HashMap::new();
-	
 	let mut function_arg_locations = Vec::new();
+
+	let mut marker_locs = Vec::new();
 
 	for (node_id, node) in ast.nodes.iter().enumerate().map(|(a, b)| (a as u32, b)) {
 		if node.is_meta_data { 
@@ -154,69 +156,45 @@ pub fn compile_expression(
 				push_instr!(instructions, Instruction::Move(location, input));
 				node_values.push(None);
 			}
-			NodeKind::LocationMarker => {
-				instruction_locations.insert(node_id, instructions.len());
+			NodeKind::Marker(MarkerKind::LoopHead) => {
+				marker_locs.push(instructions.len());
 				node_values.push(None);
 			}
-			NodeKind::Member { child_of, contains, id } => {
-				let mut node_value = None;
-
-				match (&ast.nodes[child_of as usize].kind, id) {
-					(NodeKind::If { .. }, 0) => {
-						instruction_locations.insert(node_id, instructions.len());
-						// Will be a jump instruction over the body
-						push_instr!(instructions, Instruction::Temporary);
-					}
-					(NodeKind::If { .. }, 1) => {
-						// TODO: Remove this state
-					}
-					(NodeKind::IfWithElse { .. }, 0) => {
-						instruction_locations.insert(node_id, instructions.len());
-						// Jump instruction to skip the true body and jump to the else
-						push_instr!(instructions, Instruction::Temporary);
-					}
-					(NodeKind::IfWithElse { .. }, 1) => {
-						// Instruction to move the value into a new local, so that the else can
-						// also use that same local
-						let local = locals.allocate(
-							types.handle(ast.nodes[contains as usize].type_.unwrap())
-						);
-						push_instr!(
-							instructions, 
-							Instruction::Move(local, node_values[contains as usize].clone().unwrap())
-						);
-						node_value = Some(Value::Local(local));
-
-						// Instruction to jump to to skip the if body
-						instruction_locations.insert(node_id, instructions.len());
-
-						// Jump instruction to skip else
-						push_instr!(instructions, Instruction::Temporary);
-					}
-					(NodeKind::IfWithElse { .. }, 2) => {
-						// Instruction to jump to to skip the else
-						instruction_locations.insert(node_id, instructions.len());
-					}
-					(node_kind, id) => 
-						panic!("{:?} does not have a member with id {}", node_kind, id),
-				}
-
-				match node_value {
-					Some(node_value) => node_values.push(Some(node_value)),
-					None => node_values.push(node_values[contains as usize].clone()),
-				}
+			NodeKind::Marker(MarkerKind::IfCondition(_)) => {
+				marker_locs.push(instructions.len());
+				// Will be a jump instruction over the body
+				push_instr!(instructions, Instruction::Temporary);
+				node_values.push(None);
 			}
-			NodeKind::Loop { start_location, .. } => {
-				let jump_to_instr_loc = *instruction_locations.get(&start_location).unwrap();
+			NodeKind::Marker(MarkerKind::IfElseTrueBody(contains)) => {
+				// Instruction to move the value into a new local, so that the else can
+				// also use that same local
+				let local = locals.allocate(
+					types.handle(ast.nodes[contains as usize].type_.unwrap())
+				);
+				push_instr!(
+					instructions, 
+					Instruction::Move(local, node_values[contains as usize].clone().unwrap())
+				);
+
+				// Instruction to jump to to skip the if body
+				marker_locs.push(instructions.len());
+
+				// Jump instruction to skip else
+				push_instr!(instructions, Instruction::Temporary);
+
+				node_values.push(Some(Value::Local(local)));
+			}
+			NodeKind::Loop(_) => {
+				let jump_to_instr_loc = marker_locs.pop().unwrap();
 				let current_instr_loc = instructions.len();
 				push_instr!(instructions, Instruction::JumpRel(
 					jump_to_instr_loc as i64 - current_instr_loc as i64 - 1
 				));
-
 				node_values.push(None);
 			}
 			NodeKind::If { condition, .. } => {
-				let condition_instr_loc = *instruction_locations.get(&condition).unwrap();
+				let condition_instr_loc = marker_locs.pop().unwrap();
 				let current_instr_loc   = instructions.len();
 				instructions[condition_instr_loc] = Instruction::JumpRelIfZero(
 					node_values[condition as usize].clone().unwrap(),
@@ -226,8 +204,8 @@ pub fn compile_expression(
 				node_values.push(None);
 			}
 			NodeKind::IfWithElse { condition, true_body, false_body } => {
-				let condition_instr_loc = *instruction_locations.get(&condition).unwrap();
-				let true_body_instr_loc = *instruction_locations.get(&true_body).unwrap();
+				let true_body_instr_loc = marker_locs.pop().unwrap();
+				let condition_instr_loc = marker_locs.pop().unwrap();
 				let current_instr_loc   = instructions.len();
 
 				instructions[condition_instr_loc] = Instruction::JumpRelIfZero(

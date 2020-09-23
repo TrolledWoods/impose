@@ -17,8 +17,7 @@ print :: |message: &- U8| {
 					skip :end_loop;
 				};
 
-				val := *(raw.pointer + bit_cast &U8 (index));
-				put_char(val);
+				put_char(*(raw.pointer + bit_cast &U8 (index)));
 
 				index = index + 1;
 			};

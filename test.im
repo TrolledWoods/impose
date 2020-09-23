@@ -1,15 +1,11 @@
 std :: import "std";
 
-MY_THIRD_CONST :: {
-	MY_OTHER_CONST
-};
-MY_CONST :: {
-	MY_OTHER_CONST
-};
+std\print("Hello, World!\n");
 
-MY_OTHER_CONST :: {
-	MY_CONST
+x := if 0 {
+	2
+} else {
+	4
 };
 
-
-to_u8 :: |num: U64| bit_cast { x: U8, _: U32 } (num).x;
+std\debug("x", x);
