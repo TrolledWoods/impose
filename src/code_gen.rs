@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::fmt;
 
 use crate::parser::*;
@@ -90,25 +89,20 @@ pub fn compile_expression(
 ) -> Result<(StackFrameLayout, Vec<Instruction>, Option<Value>), Dependency> {
 	let mut locals = Locals::new();
 
-	// TODO: Make this a stack instead of a list.
-	let mut node_values: Vec<Option<Value>> = Vec::with_capacity(ast.nodes.len());
+	let mut node_values: Vec<Value> = Vec::new();
+	let mut marker_locs = Vec::new();
+	let mut temporary_labels: Vec<(_, _, Option<LocalHandle>)> = Vec::new();
+
 	let mut instructions = Vec::new();
 
-	let mut temporary_labels: Vec<(_, _, Option<LocalHandle>)> = Vec::new();
-	let mut function_arg_locations = Vec::new();
-
-	let mut marker_locs = Vec::new();
-
-	for (node_id, node) in ast.nodes.iter().enumerate().map(|(a, b)| (a as u32, b)) {
+	for node in ast.nodes.iter() {
 		if node.is_meta_data { 
-			node_values.push(None);
 			continue; 
 		}
 
-		match node.kind {
-			NodeKind::BitCast { into_type: _, value } => {
-				// Bit casting just reinterprets the type, we don't actually do anything :D
-				node_values.push(node_values[value as usize].clone());
+		let evaluation_value = match node.kind {
+			NodeKind::BitCast { into_type: _, value: _ } => {
+				node_values.pop().unwrap()
 			}
 			NodeKind::Identifier { source: member_id, const_members: ref sub_members, is_type } => {
 				assert!(!is_type, "Identifier that is type should be meta");
@@ -124,11 +118,11 @@ pub fn compile_expression(
 							None => panic!("Invalid thing, \nScopes: {:?}, \nInstructions: {:?}", scopes, instructions),
 						};
 						
-						node_values.push(Some(Value::Local(member)));
+						Value::Local(member)
 					}
 					ScopeMemberKind::Constant(id) => {
 						let (_, value) = get_resource_constant(types, &mut instructions, &mut locals, &node.loc, resources, id)?;
-						node_values.push(Some(value))
+						value
 					}
 					ScopeMemberKind::Label => panic!("Cannot do labels"),
 				}
@@ -136,15 +130,10 @@ pub fn compile_expression(
 			NodeKind::DeclareFunctionArgument { variable_name, .. } => {
 				let scope_member = scopes.member_mut(variable_name);
 
-				// Declaring a function argument is like moving the responsibility of setting
-				// the locals to the caller. This should be done by the 'call' instruction,
-				// which will set all the affected locals to the appropriate values.
 				let location = locals.allocate(types.handle(scope_member.type_.unwrap()));
-
 				scope_member.storage_loc = Some(location);
 
-				function_arg_locations.push(location);
-				node_values.push(None);
+				continue;
 			}
 			NodeKind::Declaration { variable_name, value } => {
 				let location = locals.allocate(
@@ -152,19 +141,21 @@ pub fn compile_expression(
 				);
 				scopes.member_mut(variable_name).storage_loc = Some(location);
 				
-				let input = node_values[value as usize].clone().unwrap();
+				let input = node_values.pop().unwrap();
 				push_instr!(instructions, Instruction::Move(location, input));
-				node_values.push(None);
+
+				Value::Local(EMPTY_LOCAL)
 			}
 			NodeKind::Marker(MarkerKind::LoopHead) => {
 				marker_locs.push(instructions.len());
-				node_values.push(None);
+				Value::Local(EMPTY_LOCAL)
 			}
 			NodeKind::Marker(MarkerKind::IfCondition(_)) => {
 				marker_locs.push(instructions.len());
 				// Will be a jump instruction over the body
 				push_instr!(instructions, Instruction::Temporary);
-				node_values.push(None);
+				let value = node_values.pop().unwrap();
+				value
 			}
 			NodeKind::Marker(MarkerKind::IfElseTrueBody(contains)) => {
 				// Instruction to move the value into a new local, so that the else can
@@ -174,7 +165,7 @@ pub fn compile_expression(
 				);
 				push_instr!(
 					instructions, 
-					Instruction::Move(local, node_values[contains as usize].clone().unwrap())
+					Instruction::Move(local, node_values.pop().unwrap())
 				);
 
 				// Instruction to jump to to skip the if body
@@ -183,33 +174,42 @@ pub fn compile_expression(
 				// Jump instruction to skip else
 				push_instr!(instructions, Instruction::Temporary);
 
-				node_values.push(Some(Value::Local(local)));
+				Value::Local(local)
 			}
 			NodeKind::Loop(_) => {
+				node_values.pop().unwrap(); // Loop body
+				node_values.pop().unwrap(); // Loop head marker
+
 				let jump_to_instr_loc = marker_locs.pop().unwrap();
 				let current_instr_loc = instructions.len();
 				push_instr!(instructions, Instruction::JumpRel(
 					jump_to_instr_loc as i64 - current_instr_loc as i64 - 1
 				));
-				node_values.push(None);
+				Value::Local(EMPTY_LOCAL)
 			}
-			NodeKind::If { condition, .. } => {
+			NodeKind::If { .. } => {
 				let condition_instr_loc = marker_locs.pop().unwrap();
 				let current_instr_loc   = instructions.len();
+
+				let _true_body = node_values.pop().unwrap();
+				let condition = node_values.pop().unwrap();
 				instructions[condition_instr_loc] = Instruction::JumpRelIfZero(
-					node_values[condition as usize].clone().unwrap(),
+					condition,
 					current_instr_loc as i64 - condition_instr_loc as i64 - 1
 				);
-
-				node_values.push(None);
+				Value::Local(EMPTY_LOCAL)
 			}
-			NodeKind::IfWithElse { condition, true_body, false_body } => {
+			NodeKind::IfWithElse { .. } => {
 				let true_body_instr_loc = marker_locs.pop().unwrap();
 				let condition_instr_loc = marker_locs.pop().unwrap();
 				let current_instr_loc   = instructions.len();
 
+				let false_body = node_values.pop().unwrap();
+				let true_body = node_values.pop().unwrap();
+				let condition = node_values.pop().unwrap();
+
 				instructions[condition_instr_loc] = Instruction::JumpRelIfZero(
-					node_values[condition as usize].clone().unwrap(),
+					condition,
 					// We don't subtract one here, because we wanna move past the Jump that skips
 					// over the else block at true_body_instr_loc
 					true_body_instr_loc as i64 - condition_instr_loc as i64
@@ -221,17 +221,16 @@ pub fn compile_expression(
 					current_instr_loc as i64 - true_body_instr_loc as i64
 				);
 
-				if let Value::Local(local) = node_values[true_body as usize].clone().unwrap() {
+				if let Value::Local(local) = true_body {
 					push_instr!(instructions, Instruction::Move(
 						local, 
-						node_values[false_body as usize].clone().unwrap(),
+						false_body,
 					));
 				} else {
 					panic!("This can't be a constant bruh");
 				}
 
-				let true_body_value = node_values[true_body as usize].clone();
-				node_values.push(true_body_value);
+				true_body
 			}
 			NodeKind::Skip { label, value } => {
 				let mut instruction_loc = instructions.len();
@@ -243,6 +242,7 @@ pub fn compile_expression(
 							// If we have a value, the type checker has to make sure that the
 							// other skip also has a value
 							return_value_local = Some(return_value.unwrap());
+							break;
 						}
 					}
 
@@ -252,7 +252,7 @@ pub fn compile_expression(
 						));
 					}
 
-					let input = node_values[value as usize].clone().unwrap();
+					let input = node_values.pop().unwrap();
 
 					instruction_loc += 1;
 					push_instr!(instructions, Instruction::Move(return_value_local.unwrap(), input));
@@ -261,10 +261,14 @@ pub fn compile_expression(
 				push_instr!(instructions, Instruction::JumpRel(-42069));
 
 				temporary_labels.push((label, instruction_loc, return_value_local));
-				node_values.push(None);
+
+				Value::Local(EMPTY_LOCAL)
 			}
 			NodeKind::Block { ref contents, label } => {
 				let mut return_value_loc = None;
+				let result = node_values.pop().unwrap();
+
+				node_values.truncate(node_values.len() + 1 - contents.len());
 
 				if let Some(label) = label {
 					for (_, instruction_loc, return_value) in 
@@ -282,18 +286,17 @@ pub fn compile_expression(
 					}
 				}
 
-				let result = node_values[*contents.last().unwrap() as usize].clone();
 				match return_value_loc {
 					Some(location) => {
-						push_instr!(instructions, Instruction::Move(location, result.unwrap()));
-						node_values.push(Some(Value::Local(location)));
+						push_instr!(instructions, Instruction::Move(location, result));
+						Value::Local(location)
 					}
 					None => {
-						node_values.push(result);
+						result
 					}
 				}
 			}
-			NodeKind::Struct { ref members } => {
+			NodeKind::Struct { .. } => {
 				let id = node.type_.unwrap();
 				let handle = types.handle(id);
 				let type_kind = &types.get(id).kind;
@@ -301,53 +304,51 @@ pub fn compile_expression(
 				let local = locals.allocate(handle);
 				match type_kind {
 					TypeKind::Struct { members: ref type_members } => {
-						for ((_, offset, type_handle), (_, member_node_id)) 
-							in type_members.iter().zip(members) 
-						{
+						for (_, offset, type_handle) in type_members.iter().rev() {
 							let sub_local = 
 								local.sub_local(*offset, type_handle.size, type_handle.align);
-							push_instr!(instructions, Instruction::Move(sub_local, node_values[*member_node_id as usize].clone().unwrap()));
+							push_instr!(instructions, Instruction::Move(sub_local, node_values.pop().unwrap()));
 						}
 					}
 					_ => unreachable!(),
 				}
 
-				node_values.push(Some(Value::Local(local)));
+				Value::Local(local)
 			}
 			NodeKind::MemberAccess(member, sub_name) => {
 				let id = ast.nodes[member as usize].type_.unwrap();
 				let type_kind = &types.get(id).kind;
 
-				let value = node_values[member as usize].clone().unwrap();
+				let value = node_values.pop().unwrap();
 
 				// TODO: We don't wanna recheck the name twice, 
 				match type_kind {
 					TypeKind::Primitive(PrimitiveKind::U64) => {
 						if sub_name == "low" {
-							node_values.push(Some(value.get_sub_value(0, 4, 4)));
+							value.get_sub_value(0, 4, 4)
 						} else if sub_name == "high" {
-							node_values.push(Some(value.get_sub_value(4, 4, 4)));
+							value.get_sub_value(4, 4, 4)
 						} else {
 							panic!("bleh");
 						}
 					}
 					TypeKind::BufferPointer(_) => {
 						if sub_name == "pointer" {
-							node_values.push(Some(value.get_sub_value(0, 8, 8)));
+							value.get_sub_value(0, 8, 8)
 						} else if sub_name == "length" {
-							node_values.push(Some(value.get_sub_value(8, 8, 8)));
+							value.get_sub_value(8, 8, 8)
 						} else {
 							panic!("bleh");
 						}
 					}
 					TypeKind::Struct { ref members } => {
-						for (name, offset, handle) in members {
+						members.iter().find_map(|(name, offset, handle)| {
 							if *name == sub_name {
-								node_values.push(Some(
-									value.get_sub_value(*offset, handle.size, handle.align)
-								));
+								Some(value.get_sub_value(*offset, handle.size, handle.align))
+							} else {
+								None
 							}
-						}
+						}).expect("Struct does not contain member, should be caught in type check")
 					}
 					_ => panic!("bleh"),
 				}
@@ -355,13 +356,13 @@ pub fn compile_expression(
 			NodeKind::Number(num) => {
 				// TODO: Check that the number fits, although I guess this should
 				// be down further up in the pipeline
-				node_values.push(Some((num as u64).into()));
+				(num as u64).into()
 			}
-			NodeKind::BinaryOperator { operator, left, right } => {
-				let a = node_values[left as usize] .clone().unwrap();
-				let b = node_values[right as usize].clone().unwrap();
+			NodeKind::BinaryOperator { operator, .. } => {
+				let b = node_values.pop().unwrap();
+				let a = node_values.pop().unwrap();
 
-				let result = locals.allocate(types.handle(ast.nodes[right as usize].type_.unwrap()));
+				let result = locals.allocate(types.handle(node.type_.unwrap()));
 
 				match operator {
 					Operator::Assign => {
@@ -395,14 +396,10 @@ pub fn compile_expression(
 					_ => todo!("Unhandled operator"),
 				}
 
-				node_values.push(Some(Value::Local(result)));
-				
-				// I know what I'm doing, we are not copying these without reason!
-				// locals.free_value(node_values[left as usize].clone());
-				// locals.free_value(node_values[right as usize].clone());
+				Value::Local(result)
 			}
 			NodeKind::EmptyLiteral => {
-				node_values.push(None);
+				Value::Local(EMPTY_LOCAL)
 			}
 			NodeKind::FunctionCall { function_pointer, ref arg_list } => {
 				// Get the type of the function
@@ -417,6 +414,8 @@ pub fn compile_expression(
 
 				let returns = locals.allocate(types.handle(return_type));
 
+				let arg_list = &node_values[node_values.len() - arg_list.len() ..];
+
 				// TODO: If I have zst:s, this won't handle them properly.
 				let mut offset_ctr = 0;
 				let args = arg_list.iter().zip(arg_types)
@@ -424,23 +423,27 @@ pub fn compile_expression(
 						let type_handle = types.handle(*type_);
 						let offset = crate::align::to_aligned(type_handle.align, offset_ctr);
 						offset_ctr = offset + type_handle.size;
-						(offset, node_values[*arg as usize].clone().unwrap(), type_handle.size)
+						(offset, arg.clone(), type_handle.size)
 					})
 					.collect();
-				let calling = node_values[function_pointer as usize].clone().unwrap();
+
+				let len = node_values.len() - arg_list.len();
+				node_values.truncate(len);
+
+				let calling = node_values.pop().unwrap();
 
 				push_instr!(instructions, Instruction::Call { calling, returns, args });
 
-				node_values.push(Some(Value::Local(returns)));
+				Value::Local(returns)
 			}
 			NodeKind::Resource(id) => {
 				let (_, value) = get_resource_constant(types, &mut instructions, &mut locals, &node.loc, resources, id)?;
-				node_values.push(Some(value))
+				value
 			}
 
 			NodeKind::UnaryOperator { operator: Operator::BitAndOrPointer, operand } => {
 				let to = locals.allocate(types.handle(node.type_.unwrap()));
-				let from = match node_values[operand as usize].clone().unwrap() {
+				let from = match node_values.pop().unwrap() {
 					Value::Local(handle) => handle,
 					value => {
 						let local = locals.allocate(types.handle(
@@ -452,13 +455,13 @@ pub fn compile_expression(
 				};
 
 				push_instr!(instructions, Instruction::SetAddressOf(to, from));
-				node_values.push(Some(Value::Local(to)));
+				Value::Local(to)
 			}
 			NodeKind::UnaryOperator { operator: Operator::MulOrDeref, operand } => {
 				// Get a local, no matter what!
 				// (only 1 level indirect access, so you cannot indirectly access an indirect
 				// so to speak)
-				let from = match node_values[operand as usize].clone().unwrap() {
+				let from = match node_values.pop().unwrap() {
 					Value::Local(handle) => handle,
 					Value::Constant(_) => panic!("Cannot dereference constants"),
 					Value::Pointer(handle) => {
@@ -471,13 +474,13 @@ pub fn compile_expression(
 				};
 
 				// Make a pointer value.
-				node_values.push(Some(Value::Pointer(from.indirect_local_handle_to_self())));
+				Value::Pointer(from.indirect_local_handle_to_self())
 			}
 
 			// Get the type of some value as a constant.
 			NodeKind::GetType(node) => {
 				let type_ = ast.nodes[node as usize].type_.unwrap().into_index() as u64;
-				node_values.push(Some(Value::Constant(type_.to_le_bytes().into())));
+				Value::Constant(type_.to_le_bytes().into())
 			}
 
 			// Type expressions evaluate types with the typing system at typing type, we do not
@@ -486,14 +489,21 @@ pub fn compile_expression(
 			NodeKind::TypeFunctionPointer { .. } |
 			NodeKind::TypeBufferPointer(_) |
 			NodeKind::TypePointer(_) => {
-				node_values.push(None);
-			}
+				continue;
+			},
 
 			_ => todo!()
-		}
+		};
+
+		node_values.push(evaluation_value);
+		// println!("{:?}", node.kind);
+		// for instruction in &instructions[instr_index ..] {
+		// 	println!(" + {:?}", instruction);
+		// }
+		// println!("{:?}", node_values);
 	}
 
-	Ok((locals.layout(), instructions, node_values.last().unwrap().clone()))
+	Ok((locals.layout(), instructions, node_values.pop()))
 }
 
 /// Returns a pointer to a resource, either by copying the resource onto the stack and taking a

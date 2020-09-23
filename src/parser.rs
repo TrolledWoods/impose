@@ -896,7 +896,7 @@ fn parse_value(
 
 				let if_statement = context.ast.insert_node(
 					Node::new(&context, token, context.scope, NodeKind::IfWithElse {
-						condition: condition,
+						condition: condition_marker,
 						true_body: true_body_marker,
 						false_body: false_body,
 					})
@@ -906,7 +906,7 @@ fn parse_value(
 			} else {
 				let if_statement = context.ast.insert_node(
 					Node::new(&context, token, context.scope, NodeKind::If {
-						condition: condition,
+						condition: condition_marker,
 						body: true_body,
 					})
 				);

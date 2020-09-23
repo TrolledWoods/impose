@@ -19,7 +19,19 @@ impl fmt::Debug for Value {
 		match self {
 			Value::Local(handle) => write!(f, "{:?}", handle),
 			Value::Pointer(handle) => write!(f, "{:?}", handle),
-			Value::Constant(buffer) => write!(f, "{:?}", buffer),
+			Value::Constant(buffer) => {
+				use std::convert::TryFrom;
+
+				if let Ok(val) = <[u8; 8]>::try_from(buffer.as_slice()) {
+					write!(f, "<{}>", i64::from_le_bytes(val))?;
+				} else if let Ok(val) = <[u8; 4]>::try_from(buffer.as_slice()) {
+					write!(f, "<{}>", i32::from_le_bytes(val))?;
+				} else {
+					write!(f, "{:?}", buffer)?;
+				}
+
+				Ok(())
+			}
 		}
 	}
 }
@@ -28,6 +40,8 @@ impl Value {
 	pub fn get_sub_value(&self, offset: usize, size: usize, align: usize) -> Value {
 		match *self {
 			Value::Local(handle) => {
+				if handle.size == 0 { return Value::Local(handle); }
+
 				debug_assert!(offset + size <= handle.size);
 
 				// Check that our align is aligned if the handle is aligned.
@@ -115,6 +129,9 @@ impl fmt::Debug for IndirectLocalHandle {
 	}
 }
 
+pub const EMPTY_LOCAL: LocalHandle =
+	LocalHandle { offset: 0, align: 1, size: 0, id: LocalId::create_raw(9999) };
+
 /// A handle to any subsection of a local.
 ///
 /// It cannot however contain a constant value.
@@ -185,6 +202,8 @@ impl Locals {
 
 	/// Allocates the space of a type as a local.
 	pub fn allocate(&mut self, type_: crate::types::TypeHandle) -> LocalHandle {
+		if type_.size == 0 { return EMPTY_LOCAL; }
+
 		let id = self.locals.push(Local {
 			size:  type_.size,
 			align: type_.align,
@@ -239,6 +258,8 @@ pub struct StackFrameLayout {
 
 impl StackFrameLayout {
 	fn local_pos_and_size(&self, local: LocalHandle) -> (usize, usize) {
+		if local.size == 0 { return (0, 0); }
+
 		(
 			self.local_positions[local.id.into_index()] + local.offset,
 			local.size,
@@ -351,6 +372,7 @@ impl StackFrameInstance {
 
 	pub fn insert_value_into_local(&mut self, local: LocalHandle, value: &Value) {
 		let (to_pos, to_size) = self.layout.local_pos_and_size(local);
+		if to_size == 0 { return; }
 		let to_loc = &mut self.bytes_mut()[to_pos] as *mut u8;
 
 		// SAFETY: There is no safety. The programming language we are running is not a

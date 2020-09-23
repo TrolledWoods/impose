@@ -135,9 +135,12 @@ pub fn run_instructions(
 				// TODO: Get rid of recursion(by introducing call stack), 
 				// and don't crash if the function is not defined yet, just pause the execution
 				// and continue when it is ready.
+
+				let id = stack_frame_instance.get_u64(calling) as u32;
+
 				use crate::id::Id;
 				let resource = resources.resource(
-					ResourceId::create(stack_frame_instance.get_u64(calling) as u32)
+					ResourceId::create(id)
 				);
 
 				match resource.kind {

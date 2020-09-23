@@ -70,6 +70,12 @@ fn main() {
 		TYPE_TYPE_ID, 
 		ResourceKind::Value(ResourceValue::Value(type_type_handle, 1, (U64_TYPE_ID.into_index() as u64).to_le_bytes().into(), vec![])),
 	).unwrap();
+	scopes.insert_root_resource(
+		&mut resources, 
+		ustr::ustr("Empty"), 
+		TYPE_TYPE_ID, 
+		ResourceKind::Value(ResourceValue::Value(type_type_handle, 1, (EMPTY_TYPE_ID.into_index() as u64).to_le_bytes().into(), vec![])),
+	).unwrap();
 	let put_char_type_id = types.insert(Type::new(TypeKind::FunctionPointer {
 		args: vec![U8_TYPE_ID],
 		returns: EMPTY_TYPE_ID,

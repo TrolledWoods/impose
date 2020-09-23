@@ -1,11 +1,13 @@
 std :: import "std";
 
-std\print("Hello, World!\n");
+{
+	my_vec := std\vec\create();
 
-x := if 0 {
-	2
-} else {
-	4
+	std\vec\push(&my_vec, 5);
+	std\vec\push(&my_vec, 3);
+	std\vec\push(&my_vec, 1);
+
+	std\vec\debug_vec(&my_vec);
+
+	std\vec\free(my_vec);
 };
-
-std\debug("x", x);

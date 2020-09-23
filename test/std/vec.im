@@ -3,6 +3,16 @@ Vector :: type {
 	length: U64,
 };
 
+debug_vec :: |vec: &Vector| {
+	buffer_iterate(slice_full(vec), |index: U64, element: &U64| {
+		print("[");
+		print_num(index);
+		print("]: ");
+		print_num(*element);
+		print("\n");
+	});
+};
+
 create :: || {
 	raw := struct {
 		pointer: bit_cast &U64 (0),
