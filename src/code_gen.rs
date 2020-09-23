@@ -446,8 +446,10 @@ pub fn compile_expression(
 					}
 				};
 
+				let size = types.handle(node.type_.unwrap()).size;
+
 				// Make a pointer value.
-				Value::Pointer(from.indirect_local_handle_to_self())
+				Value::Pointer(from.indirect_local_handle_to_self(size))
 			}
 
 			// Get the type of some value as a constant.

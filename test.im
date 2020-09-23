@@ -1,53 +1,9 @@
+// Import the standard library
 std :: import "std";
 
-{
-	my_vec := std\vec\create();
+func :: |val: { x: U64, y: U64 }| val.y;
 
-	std\vec\push(&my_vec, 5);
-	std\vec\push(&my_vec, 3);
-	std\vec\push(&my_vec, 1);
+my_val := struct { x: 2, y: 50};
+num := &my_val;
 
-	std\vec\debug_vec(&my_vec);
-
-	std\vec\free(my_vec);
-};
-
-new_line :: *"\n".pointer;
-
-my_struct := struct {
-	_0: 0,
-	_1: 1,
-	_2: 9,
-	_3: 1,
-	_4: 4,
-	_5: 5,
-	_6: 6,
-	_7: 7,
-};
-
-ptr   := bit_cast &U32 (&my_struct._0);
-ptr_b := bit_cast &U32 (&my_struct._0);
-
-print_num(ptr - ptr_b);
-put_char(new_line);
-
-print_u32(*(ptr + 0));
-put_char(new_line);
-
-print_u32(*(ptr + 1));
-put_char(new_line);
-
-print_u32(*(ptr + 2));
-put_char(new_line);
-
-print_u32(*(ptr + 3));
-put_char(new_line);
-
-print_u32(*(ptr + 4));
-put_char(new_line);
-
-print_u32 :: |num: U32| {
-	val := 0;
-	val.low = num;
-	print_num(val);
-};
+std\debug("y", func(*num));

@@ -4,7 +4,7 @@
 
 vec :: import "vec";
 
-print :: |message: &- U8| {
+_print :: |message: &- U8| {
 	raw := bit_cast { pointer: &U8, length: U64 } (message);
 
 	if raw.length {
@@ -27,12 +27,21 @@ print :: |message: &- U8| {
 	flush();
 };
 
+print :: |message: &- U8| {
+	_print("Printing pointer ");
+	print_num(bit_cast U64 (message.pointer));
+	_print(", length ");
+	print_num(message.length);
+	_print(":");
+	_print(message);
+};
+
 /// Prints out a number more easily
 debug :: |name: &- U8, value: U64| {
-	print(name);
-	print(": ");
+	_print(name);
+	_print(": ");
 	print_num(value);
-	print("\n");
+	_print("\n");
 };
 
 /// A pointer buffer in a raw version.

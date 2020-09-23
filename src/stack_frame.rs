@@ -156,12 +156,12 @@ impl fmt::Debug for LocalHandle {
 
 impl LocalHandle {
 	/// Turns the local into an indirect value pointing to that local.
-	pub fn indirect_local_handle_to_self(&self) -> IndirectLocalHandle {
+	pub fn indirect_local_handle_to_self(&self, size: usize) -> IndirectLocalHandle {
 		IndirectLocalHandle {
 			pointer: self.id,
 			pointer_offset: self.offset,
 			offset: 0,
-			resulting_size: self.size,
+			resulting_size: size,
 		}
 	}
 
