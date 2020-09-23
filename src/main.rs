@@ -15,6 +15,7 @@ pub mod id;
 #[macro_use]
 pub mod error;
 
+pub mod intrinsic;
 pub mod operator;
 pub mod parser;
 pub mod scopes;

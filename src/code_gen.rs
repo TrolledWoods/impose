@@ -1,5 +1,6 @@
 use std::fmt;
 
+use crate::intrinsic::*;
 use crate::parser::*;
 use crate::types::*;
 use crate::scopes::*;
@@ -19,15 +20,7 @@ pub enum Instruction {
 	/// Temporary instruction. Cannot be run, because it's supposed to be overwritten later.
 	Temporary,
 
-	/// Wrapping addition. The LocalHandle, Value and Value have to have the same size.
-	// TODO: We can make this take up less space by having the same size 
-	// for everything, potentially?
-	WrappingAdd(LocalHandle, Value, Value),
-	WrappingSub(LocalHandle, Value, Value),
-	WrappingMul(LocalHandle, Value, Value),
-	WrappingDiv(LocalHandle, Value, Value),
-
-	LessThan(LocalHandle, Value, Value),
+	IntrinsicTwoArgs(IntrinsicKindTwo, LocalHandle, Value, Value),
 
 	SetAddressOf(LocalHandle, LocalHandle),
 	GetAddressOfResource(LocalHandle, ResourceId),
@@ -48,20 +41,12 @@ impl fmt::Debug for Instruction {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match self {
 			Instruction::Temporary => write!(f, "temp"),
-			Instruction::WrappingAdd(result, a, b) => 
-				write!(f, "{:?} = {:?} + {:?}", result, a, b),
-			Instruction::WrappingSub(result, a, b) => 
-				write!(f, "{:?} = {:?} - {:?}", result, a, b),
-			Instruction::WrappingMul(result, a, b) => 
-				write!(f, "{:?} = {:?} * {:?}", result, a, b),
-			Instruction::WrappingDiv(result, a, b) => 
-				write!(f, "{:?} = {:?} / {:?}", result, a, b),
+			Instruction::IntrinsicTwoArgs(intrinsic, result, a, b)
+				=> write!(f, "{:?} = {:?} {:?}, {:?}", result, intrinsic, a, b),
 			Instruction::GetAddressOfResource(to, id) =>
 				write!(f, "{:?} = resource({:?})", to, id),
 			Instruction::SetAddressOf(to, from) =>
 				write!(f, "{:?} = &{:?}", to, from),
-			Instruction::LessThan(result, a, b) =>
-				write!(f, "{:?} = {:?} < {:?}", result, a, b),
 			Instruction::IndirectMove(into, from) => write!(f, "mov {:?} = {:?}", into, from),
 			Instruction::Move(a, b) => write!(f, "mov {:?} = {:?}", a, b),
 			Instruction::JumpRel(a) => write!(f, "jump {:?}", a),
@@ -127,6 +112,14 @@ pub fn compile_expression(
 					ScopeMemberKind::Label => panic!("Cannot do labels"),
 				}
 			}
+			NodeKind::IntrinsicTwo(kind) => {
+				let right = node_values.pop().unwrap();
+				let left  = node_values.pop().unwrap();
+
+				let result = locals.allocate(types.handle(node.type_.unwrap()));
+				push_instr!(instructions, Instruction::IntrinsicTwoArgs(kind, result, left, right));
+				Value::Local(result)
+			},
 			NodeKind::DeclareFunctionArgument { variable_name, .. } => {
 				let scope_member = scopes.member_mut(variable_name);
 
@@ -357,46 +350,6 @@ pub fn compile_expression(
 				// TODO: Check that the number fits, although I guess this should
 				// be down further up in the pipeline
 				(num as u64).into()
-			}
-			NodeKind::BinaryOperator { operator, .. } => {
-				let b = node_values.pop().unwrap();
-				let a = node_values.pop().unwrap();
-
-				let result = locals.allocate(types.handle(node.type_.unwrap()));
-
-				match operator {
-					Operator::Assign => {
-						match a {
-							Value::Local(local) => {
-								push_instr!(instructions, Instruction::Move(local, b.clone()));
-							}
-							Value::Pointer(local) => {
-								push_instr!(
-									instructions, 
-									Instruction::IndirectMove(local, b.clone())
-								);
-							}
-							_ => todo!("Left hand side of assignment cannot be constant atm"),
-						}
-
-						// TODO: Check if the result is used eventually, we will have a flag for if
-						// the return value of an AstNode is used or not
-						push_instr!(instructions, Instruction::Move(result, b));
-					}
-					Operator::Less =>
-						push_instr!(instructions, Instruction::LessThan(result, a, b)),
-					Operator::Add =>
-						push_instr!(instructions, Instruction::WrappingAdd(result, a, b)),
-					Operator::Sub =>
-						push_instr!(instructions, Instruction::WrappingSub(result, a, b)),
-					Operator::MulOrDeref =>
-						push_instr!(instructions, Instruction::WrappingMul(result, a, b)),
-					Operator::Div =>
-						push_instr!(instructions, Instruction::WrappingDiv(result, a, b)),
-					_ => todo!("Unhandled operator"),
-				}
-
-				Value::Local(result)
 			}
 			NodeKind::EmptyLiteral => {
 				Value::Local(EMPTY_LOCAL)

@@ -1,13 +1,19 @@
-std :: import "std";
+// std :: import "std";
+// 
+// {
+// 	my_vec := std\vec\create();
+// 
+// 	std\vec\push(&my_vec, 5);
+// 	std\vec\push(&my_vec, 3);
+// 	std\vec\push(&my_vec, 1);
+// 
+// 	std\vec\debug_vec(&my_vec);
+// 
+// 	std\vec\free(my_vec);
+// };
 
-{
-	my_vec := std\vec\create();
+x := 0.low < 4.low;
+y := 5 < 2;
 
-	std\vec\push(&my_vec, 5);
-	std\vec\push(&my_vec, 3);
-	std\vec\push(&my_vec, 1);
-
-	std\vec\debug_vec(&my_vec);
-
-	std\vec\free(my_vec);
-};
+z := x == y;
+z

@@ -1,3 +1,4 @@
+use crate::intrinsic::*;
 use crate::resource::*;
 use crate::code_gen::*;
 use crate::stack_frame::*;
@@ -32,90 +33,19 @@ pub fn run_instructions(
 					instr_pointer = (instr_pointer as i64 + a) as usize;
 				}
 			}
-			Instruction::WrappingAdd(result, ref a, ref b) => {
-				match result.size {
-					4 => {
-						let a = stack_frame_instance.get_u32(a);
-						let b = stack_frame_instance.get_u32(b);
+			Instruction::IntrinsicTwoArgs(intrinsic, result, ref a, ref b) => {
+				let a = stack_frame_instance.get_value(a);
+				let b = stack_frame_instance.get_value(b);
 
-						stack_frame_instance.insert_into_local(result, &(a.wrapping_add(b)).to_le_bytes());
-					}
-					8 => {
-						let a = stack_frame_instance.get_u64(a);
-						let b = stack_frame_instance.get_u64(b);
+				// This is to make sure the alignment is good
+				let mut buffer_u64: u64 = 0;
+				run_intrinsic_two(intrinsic, &mut buffer_u64, a, b);
 
-						stack_frame_instance.insert_into_local(result, &(a.wrapping_add(b)).to_le_bytes());
-					}
-					_ => panic!("Unknown thing"),
-				}
-			}
-			Instruction::WrappingSub(result, ref a, ref b) => {
-				match result.size {
-					4 => {
-						let a = stack_frame_instance.get_u32(a);
-						let b = stack_frame_instance.get_u32(b);
-
-						stack_frame_instance.insert_into_local(result, &(a.wrapping_sub(b)).to_le_bytes());
-					}
-					8 => {
-						let a = stack_frame_instance.get_u64(a);
-						let b = stack_frame_instance.get_u64(b);
-
-						stack_frame_instance.insert_into_local(result, &(a.wrapping_sub(b)).to_le_bytes());
-					}
-					_ => panic!("Unknown thing"),
-				}
-			}
-			Instruction::WrappingMul(result, ref a, ref b) => {
-				match result.size {
-					4 => {
-						let a = stack_frame_instance.get_u32(a);
-						let b = stack_frame_instance.get_u32(b);
-
-						stack_frame_instance.insert_into_local(result, &(a.wrapping_mul(b)).to_le_bytes());
-					}
-					8 => {
-						let a = stack_frame_instance.get_u64(a);
-						let b = stack_frame_instance.get_u64(b);
-
-						stack_frame_instance.insert_into_local(result, &(a.wrapping_mul(b)).to_le_bytes());
-					}
-					_ => panic!("Unknown thing"),
-				}
-			}
-			Instruction::WrappingDiv(result, ref a, ref b) => {
-				match result.size {
-					4 => {
-						let a = stack_frame_instance.get_u32(a);
-						let b = stack_frame_instance.get_u32(b);
-
-						stack_frame_instance.insert_into_local(result, &(a.wrapping_div(b)).to_le_bytes());
-					}
-					8 => {
-						let a = stack_frame_instance.get_u64(a);
-						let b = stack_frame_instance.get_u64(b);
-
-						stack_frame_instance.insert_into_local(result, &(a.wrapping_div(b)).to_le_bytes());
-					}
-					_ => panic!("Unknown thing"),
-				}
-			}
-			Instruction::LessThan(result, ref a, ref b) => {
-				match result.size {
-					4 => {
-						let a = stack_frame_instance.get_u32(a);
-						let b = stack_frame_instance.get_u32(b);
-
-						stack_frame_instance.insert_into_local(result, &((a < b) as u32).to_le_bytes());
-					}
-					8 => {
-						let a = stack_frame_instance.get_u64(a);
-						let b = stack_frame_instance.get_u64(b);
-
-						stack_frame_instance.insert_into_local(result, &((a < b) as u64).to_le_bytes());
-					}
-					_ => panic!("Unknown thing"),
-				}
+				let result_size = result.size;
+				stack_frame_instance.insert_into_local(
+					result,
+					&buffer_u64.to_le_bytes()[..result_size],
+				);
 			}
 			Instruction::GetAddressOfResource(to, resource_id) => {
 				if let ResourceKind::Value(ResourceValue::Value(_, _, ref val, _)) = 
