@@ -112,6 +112,26 @@ pub fn compile_expression(
 					ScopeMemberKind::Label => panic!("Cannot do labels"),
 				}
 			}
+			NodeKind::Assign => {
+				let right = node_values.pop().unwrap();
+				let left = node_values.pop().unwrap();
+
+				let new_value = locals.allocate(types.handle(node.type_.unwrap()));
+				match left {
+					Value::Local(handle) => {
+						push_instr!(instructions, Instruction::Move(handle, right.clone()));
+					},
+					Value::Pointer(handle) => {
+						push_instr!(instructions, Instruction::IndirectMove(handle, right.clone()));
+					},
+					Value::Constant(_) => {
+						panic!("Cannot assign to a constant");
+					}
+				};
+
+				push_instr!(instructions, Instruction::Move(new_value, right));
+				Value::Local(new_value)
+			}
 			NodeKind::IntrinsicTwo(kind) => {
 				let right = node_values.pop().unwrap();
 				let left  = node_values.pop().unwrap();

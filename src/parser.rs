@@ -156,6 +156,8 @@ pub enum NodeKind {
 		value: AstNodeId,
 	},
 
+	Assign,
+
 	Resource(ResourceId),
 	FunctionCall {
 		function_pointer: AstNodeId,
