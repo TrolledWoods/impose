@@ -1096,11 +1096,6 @@ pub fn parse_code(
 ) -> Result<Ast, ()> {
 	let (last_loc, tokens) = lex_code(file, code)?;
 
-	println!("\ntokens: ");
-	for token in &tokens {
-		println!("{:?}", token);
-	}
-
 	let mut ast = Ast::new();
 
 	let mut stream = TokenStream::new(&tokens, last_loc);
