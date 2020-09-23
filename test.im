@@ -1,6 +1,8 @@
 complex :: import "complex";
 
 SOLID    :: *"#".pointer;
+ALMOST   :: *"*".pointer;
+SOMEWHAT :: *"'".pointer;
 EMPTY    :: *" ".pointer;
 NEW_LINE :: *"\n".pointer;
 
@@ -8,11 +10,11 @@ true  :: 1 > 0;
 false :: 0 > 1;
 
 {
-	y := 0.5;
-	dy := 0.1;
-	dx := 0.05;
+	y := 2.0;
+	dy := 0b0.000001;
+	dx := 0b0.0000001;
 	{:y_loop loop {
-		x  := 0.0 - 2.0;
+		x := 0.0 - 2.0;
 		{:x_loop loop {
 			c := complex\create(x, y);
 			z := complex\create(0.0, 0.0);
@@ -26,12 +28,12 @@ false :: 0 > 1;
 				};
 
 				iters = iters + 1;
-				if iters > 300 {
+				if iters > 500 {
 					skip :iterator (true);
 				};
 			}; false};
 
-			put_char(if is_valid { SOLID } else { EMPTY });
+			put_char(if is_valid { SOLID } else { if iters > 20 { ALMOST } else { if iters > 10 { SOMEWHAT } else { EMPTY }}});
 
 			x = x + dx;
 			if x > 2.0 {
@@ -42,7 +44,7 @@ false :: 0 > 1;
 		put_char(NEW_LINE);
 
 		y = y - dy;
-		if y < 0.0 - 0.5 {
+		if y < 0.0 - 2.0 {
 			skip :y_loop;
 		};
 	};};
