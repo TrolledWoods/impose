@@ -35,6 +35,11 @@ pub enum IntrinsicKindTwo {
 	Greater,
 	GreaterEqu,
 
+	LessF32, LessF64,
+	LessEquF32, LessEquF64,
+	GreaterF32, GreaterF64,
+	GreaterEquF32, GreaterEquF64,
+
 	BitAnd,
 	BitXor,
 	BitOr,
@@ -77,6 +82,16 @@ pub fn get_binary_operator_intrinsic(operator: Operator, types: &Types, left_typ
 		(Operator::NEqu, BOOL_TYPE_ID, BOOL_TYPE_ID) =>
 			(IntrinsicKindTwo::NotEqual, BOOL_TYPE_ID),
 
+		(Operator::Equ, F32_TYPE_ID, F32_TYPE_ID) =>
+			(IntrinsicKindTwo::Equal, F32_TYPE_ID),
+		(Operator::NEqu, F32_TYPE_ID, F32_TYPE_ID) =>
+			(IntrinsicKindTwo::NotEqual, F32_TYPE_ID),
+
+		(Operator::Equ, F64_TYPE_ID, F64_TYPE_ID) =>
+			(IntrinsicKindTwo::Equal, F64_TYPE_ID),
+		(Operator::NEqu, F64_TYPE_ID, F64_TYPE_ID) =>
+			(IntrinsicKindTwo::NotEqual, F64_TYPE_ID),
+
 		(Operator::Equ, left, right) if is_primitive_int(left) && left == right =>
 			(IntrinsicKindTwo::Equal, BOOL_TYPE_ID),
 		(Operator::NEqu, left, right) if is_primitive_int(left) && left == right =>
@@ -89,6 +104,24 @@ pub fn get_binary_operator_intrinsic(operator: Operator, types: &Types, left_typ
 			(IntrinsicKindTwo::Greater, BOOL_TYPE_ID),
 		(Operator::GreaterEqu, left, right) if is_primitive_int(left) && left == right =>
 			(IntrinsicKindTwo::GreaterEqu, BOOL_TYPE_ID),
+
+		(Operator::Less, F32_TYPE_ID, F32_TYPE_ID) =>
+			(IntrinsicKindTwo::LessF32, BOOL_TYPE_ID),
+		(Operator::LessEqu, F32_TYPE_ID, F32_TYPE_ID) =>
+			(IntrinsicKindTwo::LessEquF32, BOOL_TYPE_ID),
+		(Operator::Greater, F32_TYPE_ID, F32_TYPE_ID) =>
+			(IntrinsicKindTwo::GreaterF32, BOOL_TYPE_ID),
+		(Operator::GreaterEqu, F32_TYPE_ID, F32_TYPE_ID) =>
+			(IntrinsicKindTwo::GreaterEquF32, BOOL_TYPE_ID),
+
+		(Operator::Less, F64_TYPE_ID, F64_TYPE_ID) =>
+			(IntrinsicKindTwo::LessF64, BOOL_TYPE_ID),
+		(Operator::LessEqu, F64_TYPE_ID, F64_TYPE_ID) =>
+			(IntrinsicKindTwo::LessEquF64, BOOL_TYPE_ID),
+		(Operator::Greater, F64_TYPE_ID, F64_TYPE_ID) =>
+			(IntrinsicKindTwo::GreaterF64, BOOL_TYPE_ID),
+		(Operator::GreaterEqu, F64_TYPE_ID, F64_TYPE_ID) =>
+			(IntrinsicKindTwo::GreaterEquF64, BOOL_TYPE_ID),
 
 		(Operator::BitAndOrPointer, left, right) if is_primitive_int(left) && left == right =>
 			(IntrinsicKindTwo::BitAnd, left),
@@ -162,6 +195,16 @@ pub fn run_intrinsic_two(intrinsic: IntrinsicKindTwo, buf: &mut u64, a: &[u8], b
 		IntrinsicKindTwo::LessEqu    => *buf = (buf_to_u64(a) <= buf_to_u64(b)) as u64,
 		IntrinsicKindTwo::Greater    => *buf = (buf_to_u64(a) >  buf_to_u64(b)) as u64,
 		IntrinsicKindTwo::GreaterEqu => *buf = (buf_to_u64(a) >= buf_to_u64(b)) as u64,
+
+		IntrinsicKindTwo::LessF32       => *buf = (f32::from_bits(buf_to_u32(a)) <  f32::from_bits(buf_to_u32(b))) as u64,
+		IntrinsicKindTwo::LessEquF32    => *buf = (f32::from_bits(buf_to_u32(a)) <= f32::from_bits(buf_to_u32(b))) as u64,
+		IntrinsicKindTwo::GreaterF32    => *buf = (f32::from_bits(buf_to_u32(a)) >  f32::from_bits(buf_to_u32(b))) as u64,
+		IntrinsicKindTwo::GreaterEquF32 => *buf = (f32::from_bits(buf_to_u32(a)) >= f32::from_bits(buf_to_u32(b))) as u64,
+
+		IntrinsicKindTwo::LessF64       => *buf = (f64::from_bits(buf_to_u64(a)) <  f64::from_bits(buf_to_u64(b))) as u64,
+		IntrinsicKindTwo::LessEquF64    => *buf = (f64::from_bits(buf_to_u64(a)) <= f64::from_bits(buf_to_u64(b))) as u64,
+		IntrinsicKindTwo::GreaterF64    => *buf = (f64::from_bits(buf_to_u64(a)) >  f64::from_bits(buf_to_u64(b))) as u64,
+		IntrinsicKindTwo::GreaterEquF64 => *buf = (f64::from_bits(buf_to_u64(a)) >= f64::from_bits(buf_to_u64(b))) as u64,
 
 		IntrinsicKindTwo::BitAnd => *buf = buf_to_u64(a) & buf_to_u64(b),
 		IntrinsicKindTwo::BitOr  => *buf = buf_to_u64(a) | buf_to_u64(b),

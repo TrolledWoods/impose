@@ -1,13 +1,49 @@
-// Import the standard library
-// std :: import "std";
-// 
-// my_vec := std\vec\create();
-// 
-// std\vec\push(&my_vec, 50);
-// std\vec\push(&my_vec, 120);
-// std\vec\push(&my_vec, 69);
-// 
-// std\vec\debug_vec(&my_vec);
-// std\vec\free(my_vec);
+complex :: import "complex";
 
-print_f64(1.2 - 4.2);
+SOLID    :: *"#".pointer;
+EMPTY    :: *" ".pointer;
+NEW_LINE :: *"\n".pointer;
+
+true  :: 1 > 0;
+false :: 0 > 1;
+
+{
+	y := 0.5;
+	dy := 0.1;
+	dx := 0.05;
+	{:y_loop loop {
+		x  := 0.0 - 2.0;
+		{:x_loop loop {
+			c := complex\create(x, y);
+			z := complex\create(0.0, 0.0);
+
+			iters := 0;
+			is_valid := {:iterator loop {
+				z = complex\add(complex\mul(z, z), c);
+
+				if z.real * z.real + z.imag * z.imag >= 4.0 {
+					skip :iterator (false);
+				};
+
+				iters = iters + 1;
+				if iters > 300 {
+					skip :iterator (true);
+				};
+			}; false};
+
+			put_char(if is_valid { SOLID } else { EMPTY });
+
+			x = x + dx;
+			if x > 2.0 {
+				skip :x_loop;
+			};
+		};};
+
+		put_char(NEW_LINE);
+
+		y = y - dy;
+		if y < 0.0 - 0.5 {
+			skip :y_loop;
+		};
+	};};
+};

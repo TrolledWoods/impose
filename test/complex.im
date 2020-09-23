@@ -1,0 +1,27 @@
+Complex :: type {
+	real: F64,
+	imag: F64,
+};
+
+create :: |real: F64, imag: F64| struct { real: real, imag: imag };
+
+add :: |a: Complex, b: Complex| {
+	struct {
+		real: a.real + b.real,
+		imag: a.imag + b.imag,
+	}
+};
+
+sub :: |a: Complex, b: Complex| {
+	struct {
+		real: a.real - b.real,
+		imag: a.imag - b.imag,
+	}
+};
+
+mul :: |a: Complex, b: Complex| {
+	struct {
+		real: a.real * b.real - a.imag * b.imag,
+		imag: a.real * b.imag + a.imag * b.real,
+	}
+};
