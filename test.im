@@ -12,8 +12,3 @@
 // 	std\vec\free(my_vec);
 // };
 
-x := 5;
-x = x + 2;
-
-my_pointer := "hello".pointer;
-print_num(x + 1);

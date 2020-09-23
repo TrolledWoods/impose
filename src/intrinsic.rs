@@ -24,6 +24,10 @@ pub enum IntrinsicKindTwo {
 	DivF64,
 	DivF32,
 
+	PointerAdd { size: u64 },
+	PointerSub { size: u64 },
+	PointerDiff { size: u64 },
+
 	Equal,
 	NotEqual,
 	Less,
@@ -36,7 +40,7 @@ pub enum IntrinsicKindTwo {
 	BitOr,
 }
 
-pub fn get_binary_operator_intrinsic(operator: Operator, left_type: TypeId, right_type: TypeId)
+pub fn get_binary_operator_intrinsic(operator: Operator, types: &Types, left_type: TypeId, right_type: TypeId)
 	-> Option<(IntrinsicKindTwo, TypeId)>
 {
 	Some(match (operator, left_type, right_type) {
@@ -92,6 +96,36 @@ pub fn get_binary_operator_intrinsic(operator: Operator, left_type: TypeId, righ
 			(IntrinsicKindTwo::BitOr, left),
 		(Operator::BitXor, left, right) if is_primitive_int(left) && left == right =>
 			(IntrinsicKindTwo::BitXor, left),
+
+		(Operator::Add, left, U64_TYPE_ID) => {
+			if let TypeKind::Pointer(internal) = types.get(left).kind {
+				let size = types.handle(internal).size as u64;
+
+				(IntrinsicKindTwo::PointerAdd { size }, left)
+			} else {
+				return None
+			}
+		}
+		(Operator::Sub, left, U64_TYPE_ID) => {
+			if let TypeKind::Pointer(internal) = types.get(left).kind {
+				let size = types.handle(internal).size as u64;
+
+				(IntrinsicKindTwo::PointerSub { size }, left)
+			} else {
+				return None
+			}
+		}
+		(Operator::Sub, left, right) => {
+			match (&types.get(left).kind, &types.get(right).kind) {
+				(TypeKind::Pointer(left), TypeKind::Pointer(right)) if left == right => {
+					let size = types.handle(*left).size as u64;
+
+					(IntrinsicKindTwo::PointerDiff { size }, U64_TYPE_ID)
+				}
+				_ => return None,
+			}
+		}
+
 		_ => return None,
 	})
 }
@@ -132,6 +166,10 @@ pub fn run_intrinsic_two(intrinsic: IntrinsicKindTwo, buf: &mut u64, a: &[u8], b
 		IntrinsicKindTwo::BitAnd => *buf = buf_to_u64(a) & buf_to_u64(b),
 		IntrinsicKindTwo::BitOr  => *buf = buf_to_u64(a) | buf_to_u64(b),
 		IntrinsicKindTwo::BitXor => *buf = buf_to_u64(a) ^ buf_to_u64(b),
+
+		IntrinsicKindTwo::PointerAdd { size } => *buf = buf_to_u64(a).wrapping_add(buf_to_u64(b) * size),
+		IntrinsicKindTwo::PointerSub { size } => *buf = buf_to_u64(a).wrapping_sub(buf_to_u64(b) * size),
+		IntrinsicKindTwo::PointerDiff { size } => *buf = buf_to_u64(a).wrapping_sub(buf_to_u64(b)) / size,
 	};
 }
 

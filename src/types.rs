@@ -580,7 +580,7 @@ impl AstTyper {
 						// Generate an intrinsic for the combination of types.
 						// TODO: Move this to a separate file at least, to hide the mess a bit.
 						let (intrinsic, return_type) =
-							match get_binary_operator_intrinsic(operator, left_type, right_type)
+							match get_binary_operator_intrinsic(operator, types, left_type, right_type)
 						{
 							Some(value) => value,
 							None => return error!(node, "This combination of operator and types does not exist"),

@@ -17,7 +17,7 @@ print :: |message: &- U8| {
 					skip :end_loop;
 				};
 
-				put_char(*(raw.pointer + bit_cast &U8 (index)));
+				put_char(*(raw.pointer + index));
 
 				index = index + 1;
 			};
@@ -74,7 +74,7 @@ buffer_from_raw :: |raw: PointerBufferRaw| {
 /// Gets a pointer to a specific element in a pointer buffer.
 buffer_get :: |buffer: &- U64, index: U64| {
 	pointer := buffer_into_raw(buffer).pointer;
-	pointer + bit_cast &U64 (index * 8)
+	pointer + index
 };
 
 buffer_length :: |buffer: &- U64| buffer_into_raw(buffer).length;
@@ -101,7 +101,7 @@ buffer_iterate_any :: |buffer: &- U64, callback: (U64, &U64, &{}), any: &{}| {
 					skip :end_loop;
 				};
 
-				callback(index, raw.pointer + bit_cast &U64 (index * 8), any);
+				callback(index, raw.pointer + index, any);
 
 				index = index + 1;
 			};

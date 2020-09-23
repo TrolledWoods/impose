@@ -37,7 +37,7 @@ free :: |vec: Vector| {:skip_free
 slice :: |vec: &Vector, start: U64, end: U64| {
 	pointer := buffer_into_raw((*vec).buffer).pointer;
 
-	pointer = pointer + bit_cast &U64 (start * 8);
+	pointer = pointer + start;
 	length := end - start;
 
 	buffer_from_raw(struct { pointer: pointer, length: length })
