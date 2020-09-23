@@ -57,6 +57,7 @@ impl Value {
 				})
 			}
 			Value::Pointer(handle) => {
+				debug_assert!(offset + size <= handle.resulting_size);
 				debug_assert!(is_aligned(align, offset));
 
 				Value::Pointer(IndirectLocalHandle {
@@ -157,6 +158,8 @@ impl fmt::Debug for LocalHandle {
 impl LocalHandle {
 	/// Turns the local into an indirect value pointing to that local.
 	pub fn indirect_local_handle_to_self(&self, size: usize) -> IndirectLocalHandle {
+		assert_eq!(self.size, 8);
+
 		IndirectLocalHandle {
 			pointer: self.id,
 			pointer_offset: self.offset,

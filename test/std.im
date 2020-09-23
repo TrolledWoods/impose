@@ -28,11 +28,6 @@ _print :: |message: &- U8| {
 };
 
 print :: |message: &- U8| {
-	_print("Printing pointer ");
-	print_num(bit_cast U64 (message.pointer));
-	_print(", length ");
-	print_num(message.length);
-	_print(":");
 	_print(message);
 };
 

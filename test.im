@@ -1,9 +1,11 @@
 // Import the standard library
 std :: import "std";
 
-func :: |val: { x: U64, y: U64 }| val.y;
+my_vec := std\vec\create();
 
-my_val := struct { x: 2, y: 50};
-num := &my_val;
+std\vec\push(&my_vec, 50);
+std\vec\push(&my_vec, 120);
+std\vec\push(&my_vec, 69);
 
-std\debug("y", func(*num));
+std\vec\debug_vec(&my_vec);
+std\vec\free(my_vec);
