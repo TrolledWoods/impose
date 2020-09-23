@@ -14,7 +14,14 @@ pub const U64_TYPE_ID:    TypeId = TypeId::create_raw(1);
 pub const U32_TYPE_ID:    TypeId = TypeId::create_raw(2);
 pub const U16_TYPE_ID:    TypeId = TypeId::create_raw(3);
 pub const U8_TYPE_ID:     TypeId = TypeId::create_raw(4);
-pub const EMPTY_TYPE_ID:  TypeId = TypeId::create_raw(5);
+pub const S64_TYPE_ID:    TypeId = TypeId::create_raw(5);
+pub const S32_TYPE_ID:    TypeId = TypeId::create_raw(6);
+pub const S16_TYPE_ID:    TypeId = TypeId::create_raw(7);
+pub const S8_TYPE_ID:     TypeId = TypeId::create_raw(8);
+pub const F64_TYPE_ID:    TypeId = TypeId::create_raw(9);
+pub const F32_TYPE_ID:    TypeId = TypeId::create_raw(10);
+pub const BOOL_TYPE_ID:   TypeId = TypeId::create_raw(11);
+pub const EMPTY_TYPE_ID:  TypeId = TypeId::create_raw(12);
 
 create_id!(TypeId);
 
@@ -26,10 +33,17 @@ impl Types {
 	pub fn new() -> Self {
 		let mut types = IdVec::new();
 		assert_eq!(types.push(Type::new(TypeKind::Type)), TYPE_TYPE_ID);
-		assert_eq!(types.push(Type::new(TypeKind::Primitive(PrimitiveKind::U64))), U64_TYPE_ID);
-		assert_eq!(types.push(Type::new(TypeKind::Primitive(PrimitiveKind::U32))), U32_TYPE_ID);
-		assert_eq!(types.push(Type::new(TypeKind::Primitive(PrimitiveKind::U16))), U16_TYPE_ID);
-		assert_eq!(types.push(Type::new(TypeKind::Primitive(PrimitiveKind::U8))), U8_TYPE_ID);
+		assert_eq!(types.push(Type::new(TypeKind::U64)), U64_TYPE_ID);
+		assert_eq!(types.push(Type::new(TypeKind::U32)), U32_TYPE_ID);
+		assert_eq!(types.push(Type::new(TypeKind::U16)), U16_TYPE_ID);
+		assert_eq!(types.push(Type::new(TypeKind::U8 )), U8_TYPE_ID );
+		assert_eq!(types.push(Type::new(TypeKind::S64)), S64_TYPE_ID);
+		assert_eq!(types.push(Type::new(TypeKind::S32)), S32_TYPE_ID);
+		assert_eq!(types.push(Type::new(TypeKind::S16)), S16_TYPE_ID);
+		assert_eq!(types.push(Type::new(TypeKind::S8 )), S8_TYPE_ID );
+		assert_eq!(types.push(Type::new(TypeKind::F64)), F64_TYPE_ID);
+		assert_eq!(types.push(Type::new(TypeKind::F32)), F32_TYPE_ID);
+		assert_eq!(types.push(Type::new(TypeKind::Bool)), BOOL_TYPE_ID);
 		assert_eq!(types.push(Type::new(TypeKind::EmptyType)), EMPTY_TYPE_ID);
 		Self { types }
 	}
@@ -99,7 +113,6 @@ impl Types {
 					);
 				}
 			}
-			TypeKind::EmptyType => (),
 			TypeKind::Pointer(type_behind_pointer) => {
 				pointers_inside.push(PointerInType { 
 					offset,
@@ -114,9 +127,7 @@ impl Types {
 					size_offset: Some(offset + 8)
 				});
 			}
-			TypeKind::FunctionPointer { .. } => (),
-			TypeKind::Type => (),
-			TypeKind::Primitive(_) => (),
+			_ => (),
 		}
 	}
 
@@ -178,9 +189,17 @@ impl Types {
 				write!(buffer, ") -> ").unwrap();
 				self.write_type_to_buffer(returns, buffer);
 			}
-			TypeKind::Primitive(primitive_kind) => {
-				write!(buffer, "{:?}", primitive_kind).unwrap();
-			}
+			TypeKind::U8 => write!(buffer, "U8").unwrap(),
+			TypeKind::U16 => write!(buffer, "U16").unwrap(),
+			TypeKind::U32 => write!(buffer, "U32").unwrap(),
+			TypeKind::U64 => write!(buffer, "U64").unwrap(),
+			TypeKind::S8 => write!(buffer, "S8").unwrap(),
+			TypeKind::S16 => write!(buffer, "S16").unwrap(),
+			TypeKind::S32 => write!(buffer, "S32").unwrap(),
+			TypeKind::S64 => write!(buffer, "S64").unwrap(),
+			TypeKind::F32 => write!(buffer, "F32").unwrap(),
+			TypeKind::F64 => write!(buffer, "F64").unwrap(),
+			TypeKind::Bool => write!(buffer, "Bool").unwrap(),
 		}
 	}
 }
@@ -226,11 +245,18 @@ impl Type {
 			TypeKind::Pointer(_) => (8, 8),
 			TypeKind::BufferPointer(_) => (16, 8),
 			TypeKind::EmptyType => (0, 1),
+			TypeKind::U64 |
+			TypeKind::S64 |
+			TypeKind::F64 |
 			TypeKind::Type => (8, 8),
-			TypeKind::Primitive(PrimitiveKind::U64) => (8, 8),
-			TypeKind::Primitive(PrimitiveKind::U32) => (4, 4),
-			TypeKind::Primitive(PrimitiveKind::U16) => (2, 2),
-			TypeKind::Primitive(PrimitiveKind::U8)  => (1, 1),
+			TypeKind::U32 |
+			TypeKind::S32 |
+			TypeKind::F32 => (4, 4),
+			TypeKind::U16 |
+			TypeKind::S16 => (2, 2),
+			TypeKind::Bool |
+			TypeKind::U8 |
+			TypeKind::S8 => (1, 1),
 			TypeKind::FunctionPointer { .. } => (8, 8),
 		};
 
@@ -261,15 +287,21 @@ pub enum TypeKind {
 		returns: TypeId,
 	},
 	Type,
-	Primitive(PrimitiveKind),
-}
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum PrimitiveKind {
 	U8,
 	U16,
 	U32,
 	U64,
+
+	S8,
+	S16,
+	S32,
+	S64,
+
+	F64,
+	F32,
+
+	Bool,
 }
 
 pub struct AstTyper {
@@ -320,7 +352,7 @@ impl AstTyper {
 					None
 				}
 				NodeKind::Number(_) => {
-					Some(types.insert(Type::new(TypeKind::Primitive(PrimitiveKind::U64))))
+					Some(U64_TYPE_ID)
 				}
 				NodeKind::DeclareFunctionArgument { variable_name, type_node } => {
 					scopes.member_mut(variable_name).type_ 
@@ -332,7 +364,7 @@ impl AstTyper {
 					let type_kind = &types.get(id).kind;
 					
 					match *type_kind {
-						TypeKind::Primitive(PrimitiveKind::U64) => {
+						TypeKind::U64 => {
 							if sub_name == "low" {
 								Some(U32_TYPE_ID)
 							} else if sub_name == "high" {
@@ -527,16 +559,152 @@ impl AstTyper {
 						return error!(node, "This is not a function pointer, yet a function call was attemted on it");
 					}
 				}
-				NodeKind::BinaryOperator { left, right, operator: _ } => {
+				NodeKind::BinaryOperator { left, right, operator } => {
 					let left_type = ast.nodes[left as usize].type_.unwrap();
 					let right_type = ast.nodes[right as usize].type_.unwrap();
-					if left_type != right_type {
-						info!(ast.nodes[left as usize], "This is type '{}'", types.type_to_string(left_type));
-						info!(ast.nodes[right as usize], "This is type '{}'", types.type_to_string(right_type));
-						return error!(node, "This operator needs both operands to be of the same type");
-					}
 
-					ast.nodes[right as usize].type_
+					// Generate an intrinsic for the combination of types.
+					// TODO: Move this to a separate file at least, to hide the mess a bit.
+					let (intrinsic, return_type) = match (operator, left_type, right_type) {
+						(Operator::Add, U64_TYPE_ID, U64_TYPE_ID) =>
+							(IntrinsicKind::AddU64, U64_TYPE_ID),
+						(Operator::Add, U32_TYPE_ID, U32_TYPE_ID) =>
+							(IntrinsicKind::AddU32, U32_TYPE_ID),
+						(Operator::Add, U16_TYPE_ID, U16_TYPE_ID) =>
+							(IntrinsicKind::AddU16, U16_TYPE_ID),
+						(Operator::Add, U8_TYPE_ID, U8_TYPE_ID) =>
+							(IntrinsicKind::AddU8 ,U8_TYPE_ID),
+						(Operator::Add, S64_TYPE_ID, S64_TYPE_ID) =>
+							(IntrinsicKind::AddS64, S64_TYPE_ID),
+						(Operator::Add, S32_TYPE_ID, S32_TYPE_ID) =>
+							(IntrinsicKind::AddS32, S32_TYPE_ID),
+						(Operator::Add, S16_TYPE_ID, S16_TYPE_ID) =>
+							(IntrinsicKind::AddS16, S16_TYPE_ID),
+						(Operator::Add, S8_TYPE_ID, S8_TYPE_ID) =>
+							(IntrinsicKind::AddS8 ,S8_TYPE_ID),
+						(Operator::Add, F64_TYPE_ID, F64_TYPE_ID) =>
+							(IntrinsicKind::AddF64, F64_TYPE_ID),
+						(Operator::Add, F32_TYPE_ID, F32_TYPE_ID) =>
+							(IntrinsicKind::AddF32, F32_TYPE_ID),
+						(Operator::Sub, U64_TYPE_ID, U64_TYPE_ID) =>
+							(IntrinsicKind::SubU64, U64_TYPE_ID),
+						(Operator::Sub, U32_TYPE_ID, U32_TYPE_ID) =>
+							(IntrinsicKind::SubU32, U32_TYPE_ID),
+						(Operator::Sub, U16_TYPE_ID, U16_TYPE_ID) =>
+							(IntrinsicKind::SubU16, U16_TYPE_ID),
+						(Operator::Sub, U8_TYPE_ID, U8_TYPE_ID) =>
+							(IntrinsicKind::SubU8 ,U8_TYPE_ID),
+						(Operator::Sub, S64_TYPE_ID, S64_TYPE_ID) =>
+							(IntrinsicKind::SubS64, S64_TYPE_ID),
+						(Operator::Sub, S32_TYPE_ID, S32_TYPE_ID) =>
+							(IntrinsicKind::SubS32, S32_TYPE_ID),
+						(Operator::Sub, S16_TYPE_ID, S16_TYPE_ID) =>
+							(IntrinsicKind::SubS16, S16_TYPE_ID),
+						(Operator::Sub, S8_TYPE_ID, S8_TYPE_ID) =>
+							(IntrinsicKind::SubS8 ,S8_TYPE_ID),
+						(Operator::Sub, F64_TYPE_ID, F64_TYPE_ID) =>
+							(IntrinsicKind::SubF64, F64_TYPE_ID),
+						(Operator::Sub, F32_TYPE_ID, F32_TYPE_ID) =>
+							(IntrinsicKind::SubF32, F32_TYPE_ID),
+						(Operator::MulOrDeref, U64_TYPE_ID, U64_TYPE_ID) =>
+							(IntrinsicKind::MulU64, U64_TYPE_ID),
+						(Operator::MulOrDeref, U32_TYPE_ID, U32_TYPE_ID) =>
+							(IntrinsicKind::MulU32, U32_TYPE_ID),
+						(Operator::MulOrDeref, U16_TYPE_ID, U16_TYPE_ID) =>
+							(IntrinsicKind::MulU16, U16_TYPE_ID),
+						(Operator::MulOrDeref, U8_TYPE_ID, U8_TYPE_ID) =>
+							(IntrinsicKind::MulU8 ,U8_TYPE_ID),
+						(Operator::MulOrDeref, S64_TYPE_ID, S64_TYPE_ID) =>
+							(IntrinsicKind::MulS64, S64_TYPE_ID),
+						(Operator::MulOrDeref, S32_TYPE_ID, S32_TYPE_ID) =>
+							(IntrinsicKind::MulS32, S32_TYPE_ID),
+						(Operator::MulOrDeref, S16_TYPE_ID, S16_TYPE_ID) =>
+							(IntrinsicKind::MulS16, S16_TYPE_ID),
+						(Operator::MulOrDeref, S8_TYPE_ID, S8_TYPE_ID) =>
+							(IntrinsicKind::MulS8 ,S8_TYPE_ID),
+						(Operator::MulOrDeref, F64_TYPE_ID, F64_TYPE_ID) =>
+							(IntrinsicKind::MulF64, F64_TYPE_ID),
+						(Operator::MulOrDeref, F32_TYPE_ID, F32_TYPE_ID) =>
+							(IntrinsicKind::MulF32, F32_TYPE_ID),
+						(Operator::Div, U64_TYPE_ID, U64_TYPE_ID) =>
+							(IntrinsicKind::DivU64, U64_TYPE_ID),
+						(Operator::Div, U32_TYPE_ID, U32_TYPE_ID) =>
+							(IntrinsicKind::DivU32, U32_TYPE_ID),
+						(Operator::Div, U16_TYPE_ID, U16_TYPE_ID) =>
+							(IntrinsicKind::DivU16, U16_TYPE_ID),
+						(Operator::Div, U8_TYPE_ID, U8_TYPE_ID) =>
+							(IntrinsicKind::DivU8 ,U8_TYPE_ID),
+						(Operator::Div, S64_TYPE_ID, S64_TYPE_ID) =>
+							(IntrinsicKind::DivS64, S64_TYPE_ID),
+						(Operator::Div, S32_TYPE_ID, S32_TYPE_ID) =>
+							(IntrinsicKind::DivS32, S32_TYPE_ID),
+						(Operator::Div, S16_TYPE_ID, S16_TYPE_ID) =>
+							(IntrinsicKind::DivS16, S16_TYPE_ID),
+						(Operator::Div, S8_TYPE_ID, S8_TYPE_ID) =>
+							(IntrinsicKind::DivS8 ,S8_TYPE_ID),
+						(Operator::Div, F64_TYPE_ID, F64_TYPE_ID) =>
+							(IntrinsicKind::DivF64, F64_TYPE_ID),
+						(Operator::Div, F32_TYPE_ID, F32_TYPE_ID) =>
+							(IntrinsicKind::DivF32, F32_TYPE_ID),
+						(Operator::Equ, U64_TYPE_ID, U64_TYPE_ID) |
+						(Operator::Equ, S64_TYPE_ID, S64_TYPE_ID) =>
+							(IntrinsicKind::EqualI64, right_type),
+						(Operator::Equ, U32_TYPE_ID, U32_TYPE_ID) |
+						(Operator::Equ, S32_TYPE_ID, S32_TYPE_ID) =>
+							(IntrinsicKind::EqualI32, right_type),
+						(Operator::Equ, U16_TYPE_ID, U16_TYPE_ID) |
+						(Operator::Equ, S16_TYPE_ID, S16_TYPE_ID) =>
+							(IntrinsicKind::EqualI16, right_type),
+						(Operator::Equ, U8_TYPE_ID, U8_TYPE_ID) |
+						(Operator::Equ, S8_TYPE_ID, S8_TYPE_ID) =>
+							(IntrinsicKind::EqualI8, right_type),
+						(Operator::BitAndOrPointer, U64_TYPE_ID, U64_TYPE_ID) |
+						(Operator::BitAndOrPointer, S64_TYPE_ID, S64_TYPE_ID) =>
+						 	(IntrinsicKind::BitAnd64, right_type),
+						(Operator::BitAndOrPointer, U32_TYPE_ID, U32_TYPE_ID) |
+						(Operator::BitAndOrPointer, S32_TYPE_ID, S32_TYPE_ID) =>
+						 	(IntrinsicKind::BitAnd32, right_type),
+						(Operator::BitAndOrPointer, U16_TYPE_ID, U16_TYPE_ID) |
+						(Operator::BitAndOrPointer, S16_TYPE_ID, S16_TYPE_ID) =>
+						 	(IntrinsicKind::BitAnd16, right_type),
+						(Operator::BitAndOrPointer, U8_TYPE_ID, U8_TYPE_ID) |
+						(Operator::BitAndOrPointer, S8_TYPE_ID, S8_TYPE_ID) =>
+						 	(IntrinsicKind::BitAnd8, right_type),
+						(Operator::BitwiseOrOrLambda, U64_TYPE_ID, U64_TYPE_ID) |
+						(Operator::BitwiseOrOrLambda, S64_TYPE_ID, S64_TYPE_ID) =>
+						 	(IntrinsicKind::BitOr64, right_type),
+						(Operator::BitwiseOrOrLambda, U32_TYPE_ID, U32_TYPE_ID) |
+						(Operator::BitwiseOrOrLambda, S32_TYPE_ID, S32_TYPE_ID) =>
+						 	(IntrinsicKind::BitOr32, right_type),
+						(Operator::BitwiseOrOrLambda, U16_TYPE_ID, U16_TYPE_ID) |
+						(Operator::BitwiseOrOrLambda, S16_TYPE_ID, S16_TYPE_ID) =>
+						 	(IntrinsicKind::BitOr16, right_type),
+						(Operator::BitwiseOrOrLambda, U8_TYPE_ID, U8_TYPE_ID) |
+						(Operator::BitwiseOrOrLambda, S8_TYPE_ID, S8_TYPE_ID) =>
+						 	(IntrinsicKind::BitOr8, right_type),
+						(Operator::BitXor, U64_TYPE_ID, U64_TYPE_ID) |
+						(Operator::BitXor, S64_TYPE_ID, S64_TYPE_ID) =>
+						 	(IntrinsicKind::BitXor64, right_type),
+						(Operator::BitXor, U32_TYPE_ID, U32_TYPE_ID) |
+						(Operator::BitXor, S32_TYPE_ID, S32_TYPE_ID) =>
+						 	(IntrinsicKind::BitXor32, right_type),
+						(Operator::BitXor, U16_TYPE_ID, U16_TYPE_ID) |
+						(Operator::BitXor, S16_TYPE_ID, S16_TYPE_ID) =>
+						 	(IntrinsicKind::BitXor16, right_type),
+						(Operator::BitXor, U8_TYPE_ID, U8_TYPE_ID) |
+						(Operator::BitXor, S8_TYPE_ID, S8_TYPE_ID) =>
+						 	(IntrinsicKind::BitXor8, right_type),
+						(Operator::And, BOOL_TYPE_ID, BOOL_TYPE_ID) =>
+							(IntrinsicKind::BoolAnd, BOOL_TYPE_ID),
+						(Operator::Or, BOOL_TYPE_ID, BOOL_TYPE_ID) =>
+							(IntrinsicKind::BoolOr, BOOL_TYPE_ID),
+						(Operator::Xor, BOOL_TYPE_ID, BOOL_TYPE_ID) =>
+							(IntrinsicKind::BoolXor, BOOL_TYPE_ID),
+						_ => return error!(node, "This binary operator does not work with the given types"),
+					};
+
+					ast.nodes[self.node_id as usize].kind = NodeKind::Intrinsic(intrinsic);
+					Some(return_type)
 				},
 				NodeKind::UnaryOperator { operand, operator } => {
 					match operator {

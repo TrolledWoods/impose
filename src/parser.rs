@@ -193,10 +193,25 @@ pub enum IntrinsicKind {
 	BoolOr,
 	BoolXor,
 
-	BitNot,
-	BitAnd,
-	BitXor,
-	BitOr,
+	BitNot64,
+	BitAnd64,
+	BitXor64,
+	BitOr64,
+
+	BitNot32,
+	BitAnd32,
+	BitXor32,
+	BitOr32,
+
+	BitNot16,
+	BitAnd16,
+	BitXor16,
+	BitOr16,
+
+	BitNot8,
+	BitAnd8,
+	BitXor8,
+	BitOr8,
 }
 
 #[derive(Debug)]

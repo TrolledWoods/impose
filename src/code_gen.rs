@@ -323,7 +323,7 @@ pub fn compile_expression(
 
 				// TODO: We don't wanna recheck the name twice, 
 				match type_kind {
-					TypeKind::Primitive(PrimitiveKind::U64) => {
+					TypeKind::U64 => {
 						if sub_name == "low" {
 							value.get_sub_value(0, 4, 4)
 						} else if sub_name == "high" {
