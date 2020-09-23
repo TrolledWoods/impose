@@ -356,6 +356,9 @@ impl AstTyper {
 				NodeKind::Number(_) => {
 					Some(U64_TYPE_ID)
 				}
+				NodeKind::Float(_) => {
+					Some(F64_TYPE_ID)
+				}
 				NodeKind::DeclareFunctionArgument { variable_name, type_node } => {
 					scopes.member_mut(variable_name).type_ 
 						= Some(ast.nodes[type_node as usize].type_.unwrap());

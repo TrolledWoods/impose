@@ -140,6 +140,7 @@ pub enum NodeKind {
 	Marker(MarkerKind),
 	MemberAccess(AstNodeId, ustr::Ustr),
 	Number(i128),
+	Float(f64),
 
 	IntrinsicTwo(IntrinsicKindTwo),
 
@@ -779,6 +780,10 @@ fn parse_value(
 			context.tokens.next();
 			context.ast.insert_node(Node::new(&context, token, context.scope, NodeKind::Number(number)))
 		}
+		TokenKind::FloatLiteral(number) => {
+			context.tokens.next();
+			context.ast.insert_node(Node::new(&context, token, context.scope, NodeKind::Float(number)))
+		}
 		TokenKind::StringLiteral(ref string) => {
 			context.tokens.next();
 
@@ -1090,6 +1095,12 @@ pub fn parse_code(
 	is_value: bool,
 ) -> Result<Ast, ()> {
 	let (last_loc, tokens) = lex_code(file, code)?;
+
+	println!("\ntokens: ");
+	for token in &tokens {
+		println!("{:?}", token);
+	}
+
 	let mut ast = Ast::new();
 
 	let mut stream = TokenStream::new(&tokens, last_loc);

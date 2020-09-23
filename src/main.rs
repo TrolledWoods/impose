@@ -191,6 +191,43 @@ fn main() {
 	).unwrap();
 
 	let print_type_id = types.insert(Type::new(TypeKind::FunctionPointer {
+		args: vec![F64_TYPE_ID],
+		returns: EMPTY_TYPE_ID,
+	}));
+	scopes.insert_root_resource(
+		&mut resources, 
+		ustr::ustr("print_f64"), 
+		print_type_id, 
+		ResourceKind::ExternalFunction {
+			func: Box::new(|_, args, _| {
+				if let &[a, b, c, d, e, f, g, h] = args {
+					print!("{}", f64::from_bits(u64::from_le_bytes([a, b, c, d, e, f, g, h])));
+				} else { panic!("bad"); }
+			}),
+			n_arg_bytes: 8,
+			n_return_bytes: 0,
+		}
+	).unwrap();
+	let print_type_id = types.insert(Type::new(TypeKind::FunctionPointer {
+		args: vec![F32_TYPE_ID],
+		returns: EMPTY_TYPE_ID,
+	}));
+	scopes.insert_root_resource(
+		&mut resources, 
+		ustr::ustr("print_f32"), 
+		print_type_id, 
+		ResourceKind::ExternalFunction {
+			func: Box::new(|_, args, _| {
+				if let &[a, b, c, d] = args {
+					print!("{}", f32::from_bits(u32::from_le_bytes([a, b, c, d])));
+				} else { panic!("bad"); }
+			}),
+			n_arg_bytes: 4,
+			n_return_bytes: 0,
+		}
+	).unwrap();
+
+	let print_type_id = types.insert(Type::new(TypeKind::FunctionPointer {
 		args: vec![],
 		returns: U64_TYPE_ID,
 	}));

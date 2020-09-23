@@ -371,6 +371,9 @@ pub fn compile_expression(
 				// be down further up in the pipeline
 				(num as u64).into()
 			}
+			NodeKind::Float(num) => {
+				num.to_bits().into()
+			}
 			NodeKind::EmptyLiteral => {
 				Value::Local(EMPTY_LOCAL)
 			}

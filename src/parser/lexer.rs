@@ -30,6 +30,7 @@ pub enum TokenKind {
 	Bracket(char),
 	ClosingBracket(char),
 	NumericLiteral(i128), // TODO: Make the numeric literal arbitrarily large.
+	FloatLiteral(f64),
 	StringLiteral(String),
 }
 
@@ -139,8 +140,10 @@ pub fn lex_code(file: ustr::Ustr, code: &str) -> Result<(CodeLoc, Vec<Token>), (
 				}
 			}
 			_ if c.is_digit(10) => {
-				let (loc, number) = lex_numeric_literal(&mut lexer)?;
-				tokens.push(Token::new(loc, TokenKind::NumericLiteral(number)));
+				tokens.push(match lex_numeric_literal(&mut lexer)? {
+					(loc, Number::Integer(num)) => Token { loc, kind: TokenKind::NumericLiteral(num) },
+					(loc, Number::Float(num)) => Token { loc, kind: TokenKind::FloatLiteral(num) },
+				});
 			}
 			'"' => {
 				let (loc, string) = lex_string_literal(&mut lexer)?;
@@ -197,25 +200,36 @@ fn skip_whitespace(lexer: &mut Lexer) {
 	}
 }
 
-fn lex_numeric_literal(lexer: &mut Lexer) -> Result<(CodeLoc, i128), ()> {
+fn lex_numeric_literal(lexer: &mut Lexer) -> Result<(CodeLoc, Number), ()> {
 	let location = lexer.source_code_location.clone();
 	let mut number: i128 = 0;
 	let mut base         = 10;
 	let mut has_custom_base = false;
 	let mut has_digits = false;
 
+	let mut float_number: f64 = 0.0;
+	let mut is_float = None;
+
 	while let Some(c) = lexer.peek() {
 		match c.to_digit(base) {
 			Some(digit) => {
-				let (num, overflow_a) = number.overflowing_mul(base  as i128);
-				let (num, overflow_b) = num   .overflowing_add(digit as i128);
+				match is_float {
+					None => {
+						let (num, overflow_a) = number.overflowing_mul(base  as i128);
+						let (num, overflow_b) = num   .overflowing_add(digit as i128);
 
-				if overflow_a || overflow_b {
-					return error!(lexer, "Number too big");
+						if overflow_a || overflow_b {
+							return error!(lexer, "Number too big");
+						}
+
+						number = num;
+						has_digits = true;
+					}
+					Some(ref mut num) => {
+						*num /= base as f64;
+						float_number += *num * (digit as f64);
+					}
 				}
-
-				number = num;
-				has_digits = true;
 
 				lexer.next();
 				lexer.source_code_location.column += 1;
@@ -224,7 +238,12 @@ fn lex_numeric_literal(lexer: &mut Lexer) -> Result<(CodeLoc, i128), ()> {
 				lexer.next();
 				lexer.source_code_location.column += 1;
 			}
-			None if !has_custom_base && c.is_alphabetic() => match c {
+			None if c == '.' && is_float.is_none() => {
+				lexer.next();
+				float_number = number as f64;
+				is_float = Some(1.0);
+			}
+			None if is_float.is_none() && !has_custom_base && c.is_alphabetic() => match c {
 				'c' => {
 					if number > 36 {
 						return error!(location, "Cannot have a base higher than 36(got {})", number);
@@ -238,6 +257,7 @@ fn lex_numeric_literal(lexer: &mut Lexer) -> Result<(CodeLoc, i128), ()> {
 					// This is fine because we know number is between 2 and 46
 					base = number as u32; 
 					number = 0;
+					float_number = 0.0;
 					has_custom_base = true;
 					has_digits = false;
 				}
@@ -251,6 +271,7 @@ fn lex_numeric_literal(lexer: &mut Lexer) -> Result<(CodeLoc, i128), ()> {
 
 					base = 16;
 					number = 0;
+					float_number = 0.0;
 					has_custom_base = true;
 					has_digits = false;
 				}
@@ -264,6 +285,7 @@ fn lex_numeric_literal(lexer: &mut Lexer) -> Result<(CodeLoc, i128), ()> {
 
 					base = 2;
 					number = 0;
+					float_number = 0.0;
 					has_custom_base = true;
 					has_digits = false;
 				}
@@ -295,7 +317,15 @@ fn lex_numeric_literal(lexer: &mut Lexer) -> Result<(CodeLoc, i128), ()> {
 		return error!(lexer, "Number has to have digits");
 	}
 
-	Ok((location, number))
+	match is_float {
+		Some(_) => Ok((location, Number::Float(float_number))),
+		None => Ok((location, Number::Integer(number))),
+	}
+}
+
+enum Number {
+	Integer(i128),
+	Float(f64),
 }
 
 fn lex_string_literal(lexer: &mut Lexer) -> Result<(CodeLoc, String), ()> {
@@ -349,7 +379,10 @@ fn lex_string_literal(lexer: &mut Lexer) -> Result<(CodeLoc, String), ()> {
 					use std::convert::TryInto;
 
 					// Parse a unicode letter
-					let (num_loc, number) = lex_numeric_literal(lexer)?;
+					let (num_loc, number) = match lex_numeric_literal(lexer)? {
+						(loc, Number::Integer(number)) => (loc, number),
+						(loc, _) => return error!(loc, "Expected integer, got float"),
+					};
 
 					let number_u32: u32 = match number.try_into() {
 						Ok(n) => n,

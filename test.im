@@ -1,11 +1,13 @@
 // Import the standard library
-std :: import "std";
+// std :: import "std";
+// 
+// my_vec := std\vec\create();
+// 
+// std\vec\push(&my_vec, 50);
+// std\vec\push(&my_vec, 120);
+// std\vec\push(&my_vec, 69);
+// 
+// std\vec\debug_vec(&my_vec);
+// std\vec\free(my_vec);
 
-my_vec := std\vec\create();
-
-std\vec\push(&my_vec, 50);
-std\vec\push(&my_vec, 120);
-std\vec\push(&my_vec, 69);
-
-std\vec\debug_vec(&my_vec);
-std\vec\free(my_vec);
+print_f64(1.2 - 4.2);
