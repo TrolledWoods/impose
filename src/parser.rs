@@ -133,12 +133,80 @@ pub enum MarkerKind {
 	LoopHead,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum IntrinsicKind {
+	AddU64,
+	AddU32,
+	AddU16,
+	AddU8,
+	AddS64,
+	AddS32,
+	AddS16,
+	AddS8,
+	AddF64,
+	AddF32,
+
+	SubU64,
+	SubU32,
+	SubU16,
+	SubU8,
+	SubS64,
+	SubS32,
+	SubS16,
+	SubS8,
+	SubF64,
+	SubF32,
+
+	MulU64,
+	MulU32,
+	MulU16,
+	MulU8,
+	MulS64,
+	MulS32,
+	MulS16,
+	MulS8,
+	MulF64,
+	MulF32,
+
+	DivU64,
+	DivU32,
+	DivU16,
+	DivU8,
+	DivS64,
+	DivS32,
+	DivS16,
+	DivS8,
+	DivF64,
+	DivF32,
+
+	EqualI64,
+	EqualI32,
+	EqualI16,
+	EqualI8,
+	
+	Less,
+	LessEqu,
+	Greater,
+	GreaterEqu,
+
+	BoolAnd,
+	BoolOr,
+	BoolXor,
+
+	BitNot,
+	BitAnd,
+	BitXor,
+	BitOr,
+}
+
 #[derive(Debug)]
 pub enum NodeKind {
 	Temporary,
 	Marker(MarkerKind),
 	MemberAccess(AstNodeId, ustr::Ustr),
 	Number(i128),
+
+	Intrinsic(IntrinsicKind),
 
 	EmptyLiteral,
 	Identifier
