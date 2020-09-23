@@ -47,36 +47,29 @@ fn main() {
 		TYPE_TYPE_ID, 
 		ResourceKind::Value(ResourceValue::Value(type_type_handle, 1, (TYPE_TYPE_ID.into_index() as u64).to_le_bytes().into(), vec![])),
 	).unwrap();
-	scopes.insert_root_resource(
-		&mut resources, 
-		ustr::ustr("U8"), 
-		TYPE_TYPE_ID, 
-		ResourceKind::Value(ResourceValue::Value(type_type_handle, 1, (U8_TYPE_ID.into_index() as u64).to_le_bytes().into(), vec![])),
-	).unwrap();
-	scopes.insert_root_resource(
-		&mut resources, 
-		ustr::ustr("U16"), 
-		TYPE_TYPE_ID, 
-		ResourceKind::Value(ResourceValue::Value(type_type_handle, 1, (U16_TYPE_ID.into_index() as u64).to_le_bytes().into(), vec![])),
-	).unwrap();
-	scopes.insert_root_resource(
-		&mut resources, 
-		ustr::ustr("U32"), 
-		TYPE_TYPE_ID, 
-		ResourceKind::Value(ResourceValue::Value(type_type_handle, 1, (U32_TYPE_ID.into_index() as u64).to_le_bytes().into(), vec![])),
-	).unwrap();
-	scopes.insert_root_resource(
-		&mut resources, 
-		ustr::ustr("U64"), 
-		TYPE_TYPE_ID, 
-		ResourceKind::Value(ResourceValue::Value(type_type_handle, 1, (U64_TYPE_ID.into_index() as u64).to_le_bytes().into(), vec![])),
-	).unwrap();
-	scopes.insert_root_resource(
-		&mut resources, 
-		ustr::ustr("Empty"), 
-		TYPE_TYPE_ID, 
-		ResourceKind::Value(ResourceValue::Value(type_type_handle, 1, (EMPTY_TYPE_ID.into_index() as u64).to_le_bytes().into(), vec![])),
-	).unwrap();
+
+	let mut insert_type = |name, type_: TypeId| {
+		scopes.insert_root_resource(
+			&mut resources, 
+			ustr::ustr(name), 
+			TYPE_TYPE_ID, 
+			ResourceKind::Value(ResourceValue::Value(type_type_handle, 1, (type_.into_index() as u64).to_le_bytes().into(), vec![])),
+		).unwrap();
+	};
+
+	insert_type("U8",    U8_TYPE_ID);
+	insert_type("U16",   U16_TYPE_ID);
+	insert_type("U32",   U32_TYPE_ID);
+	insert_type("U64",   U64_TYPE_ID);
+	insert_type("S8",    S8_TYPE_ID);
+	insert_type("S16",   S16_TYPE_ID);
+	insert_type("S32",   S32_TYPE_ID);
+	insert_type("S64",   S64_TYPE_ID);
+	insert_type("F32",   F32_TYPE_ID);
+	insert_type("F64",   F64_TYPE_ID);
+	insert_type("Empty", EMPTY_TYPE_ID);
+	insert_type("Bool",  BOOL_TYPE_ID);
+
 	let put_char_type_id = types.insert(Type::new(TypeKind::FunctionPointer {
 		args: vec![U8_TYPE_ID],
 		returns: EMPTY_TYPE_ID,

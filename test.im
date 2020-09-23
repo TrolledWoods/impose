@@ -12,8 +12,4 @@
 // 	std\vec\free(my_vec);
 // };
 
-x := 0.low < 4.low;
-y := 5 < 2;
-
-z := x == y;
-z
+3 + 4
