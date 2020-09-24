@@ -33,3 +33,54 @@ print :: |num: Complex| {
 	print_f64(num.imag);
 	std\_print("i)");
 };
+
+SOLID    :: *"#".pointer;
+ALMOST   :: *"*".pointer;
+SOMEWHAT :: *"'".pointer;
+EMPTY    :: *" ".pointer;
+NEW_LINE :: *"\n".pointer;
+
+true  :: 1 > 0;
+false :: 0 > 1;
+
+print_mandelbrot :: |center_x: F64, center_y: F64, size: F64, window_size: F64, aspect: F64| {
+	units_per_pixel := size / window_size;
+	y := center_y + size;
+	dy := units_per_pixel;
+	dx := units_per_pixel * aspect;
+	loop :y_loop {
+		x := center_x - size;
+		loop :x_loop {
+			c := complex\create(x, y);
+			z := complex\create(0.0, 0.0);
+
+			iters := 0;
+			is_valid := loop {
+				z = complex\add(complex\mul(z, z), c);
+
+				if z.real * z.real + z.imag * z.imag >= 4.0 {
+					skip loop (false);
+				};
+
+				iters = iters + 1;
+				if iters > 500 {
+					skip loop (true);
+				};
+			};
+
+			put_char(if is_valid { SOLID } else { if iters > 20 { ALMOST } else { if iters > 10 { SOMEWHAT } else { EMPTY }}});
+
+			x = x + dx;
+			if x > center_x + size {
+				skip :x_loop;
+			};
+		};
+
+		put_char(NEW_LINE);
+
+		y = y - dy;
+		if y < center_y - size {
+			skip :y_loop;
+		};
+	};
+};
