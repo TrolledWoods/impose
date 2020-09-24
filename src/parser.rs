@@ -639,13 +639,8 @@ fn parse_function(
 			|mut context| {
 				let value = context.tokens.expect_next(|| "Expected function argument name")?;
 				if let Token { loc, kind: TokenKind::Identifier(name) } = value {
-					let (mut dependants, arg) = context.scopes.declare_member(
-						sub_scope,
-						ustr::ustr(name),
-						Some(loc),
-						ScopeMemberKind::FunctionArgument,
-					)?;
-					context.resources.resolve_dependencies(&mut dependants);
+					let arg = context.locals.add_member(context.scopes, *loc, ustr::ustr(name));
+					// context.resources.resolve_dependencies(&mut dependants);
 					args.push(arg);
 
 					let colon = context.tokens.next();

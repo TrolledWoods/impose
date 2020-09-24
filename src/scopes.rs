@@ -310,7 +310,6 @@ pub enum ScopeMemberKind {
 	Indirect(ScopeMemberId),
 
 	LocalVariable,
-	FunctionArgument,
 	Label,
 	Constant(ResourceId),
 }

@@ -469,7 +469,7 @@ impl AstTyper {
 					let member = scopes.member(id);
 					let final_type = if !is_type {
 						match member.kind {
-							ScopeMemberKind::LocalVariable | ScopeMemberKind::FunctionArgument => {
+							ScopeMemberKind::LocalVariable => {
 								if let Some(type_) = member.type_ {
 									type_
 								} else {
