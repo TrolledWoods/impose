@@ -323,6 +323,8 @@ pub struct ScopeMember {
 	pub storage_loc: Option<LocalHandle>,
 }
 
+create_id!(LabelId);
+
 create_id!(ScopeId);
 
 create_id!(

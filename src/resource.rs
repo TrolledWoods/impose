@@ -100,9 +100,7 @@ impl Resources {
 					self.compute_queue.push_back(member_id);
 				}
 				ResourceKind::Function(ResourceFunction::Typed(mut ast)) => {
-					let (locals, instructions, return_value) 
-						= match compile_expression(&mut ast, scopes, self, types) 
-					{
+					let program = match compile_expression(&mut ast, scopes, self, types) {
 						Ok(value) => value,
 						Err(dependency) => {
 							member.kind = ResourceKind::Function(ResourceFunction::Typed(ast));
@@ -123,24 +121,18 @@ impl Resources {
 						types.print(resource_type.unwrap());
 						println!();
 						println!("Instructions: ");
-						for instruction in &instructions {
+						for instruction in &program.instructions {
 							println!("{:?}", instruction);
 						}
 					}
 
-					member.kind = ResourceKind::Function(
-						 ResourceFunction::Value(
-							 std::sync::Arc::new(locals),
-							 instructions,
-							 return_value
-						 )
-					);
+					member.kind = ResourceKind::Function(ResourceFunction::Value(program));
 
 					self.uncomputed_resources.remove(&member_id);
 					self.return_resource(member_id, member);
 					self.compute_queue.push_back(member_id);
 				}
-				ResourceKind::Function(ResourceFunction::Value(_, _, _)) => {
+				ResourceKind::Function(ResourceFunction::Value(_)) => {
 					// Do nothing here.
 					self.return_resource(member_id, member);
 				}
@@ -219,9 +211,7 @@ impl Resources {
 					self.compute_queue.push_back(member_id);
 				}
 				ResourceKind::Value(ResourceValue::Typed(mut ast)) => {
-					let (stack_layout, instructions, return_value) 
-						= match compile_expression(&mut ast, scopes, self, types) 
-					{
+					let program = match compile_expression(&mut ast, scopes, self, types) {
 						Ok(value) => value,
 						Err(dependency) => {
 							member.depending_on = Some(dependency);
@@ -233,12 +223,11 @@ impl Resources {
 					};
 
 					// TODO: Go through the type, and change any pointers into resource pointers.
-					let mut instance = std::sync::Arc::new(stack_layout).create_instance();
+					let mut instance = program.layout.create_instance();
 					let value = run_instructions(
-						&instructions,
-						return_value.as_ref(),
-						&mut instance,
 						self,
+						&mut instance,
+						&program,
 					);
 
 					if let Some(mut waiting_on_value) = member.waiting_on_value.take() {
@@ -252,7 +241,7 @@ impl Resources {
 							types.print(*resource_type);
 						}
 						println!("Instructions: ");
-						for instruction in &instructions {
+						for instruction in &program.instructions {
 							println!("{:?}", instruction);
 						}
 
@@ -591,11 +580,7 @@ pub enum ResourceFunction {
 	Defined(Ast, Vec<ScopeMemberId>),
 	Typing(Ast, AstTyper, Vec<ScopeMemberId>),
 	Typed(Ast),
-	Value(
-		std::sync::Arc<crate::stack_frame::StackFrameLayout>,
-		Vec<Instruction>, 
-		Option<crate::stack_frame::Value>,
-	),
+	Value(Program),
 }
 
 pub enum ResourceKind {

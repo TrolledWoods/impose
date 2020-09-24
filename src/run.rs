@@ -5,15 +5,14 @@ use crate::stack_frame::*;
 
 // TODO: Optimize the way we return data.
 pub fn run_instructions(
-	instructions: &[Instruction], 
-	result_value: Option<&Value>, 
+	resources: &Resources,
 	stack_frame_instance: &mut StackFrameInstance,
-	resources: &Resources
+	program: &Program,
 ) -> ConstBuffer {
 	let mut instr_pointer = 0;
 	
-	while instr_pointer < instructions.len() {
-		let instruction = &instructions[instr_pointer];
+	while instr_pointer < program.instructions.len() {
+		let instruction = &program.instructions[instr_pointer];
 		instr_pointer += 1;
 
 		match *instruction {
@@ -74,9 +73,9 @@ pub fn run_instructions(
 				);
 
 				match resource.kind {
-					ResourceKind::Function(ResourceFunction::Value(ref sub_scope, ref instructions, ref return_value)) => {
+					ResourceKind::Function(ResourceFunction::Value(ref program)) => {
 						let mut sub_stack_frame_instance = 
-							sub_scope.create_instance_with_func_args(
+							program.layout.create_instance_with_func_args(
 								args.iter().map(|(index, value, _)| (
 									*index,
 									stack_frame_instance.get_value(value),
@@ -84,10 +83,9 @@ pub fn run_instructions(
 							);
 
 						let return_value = run_instructions(
-							instructions,
-							return_value.as_ref(),
-							&mut sub_stack_frame_instance,
 							resources,
+							&mut sub_stack_frame_instance,
+							program,
 						);
 
 						stack_frame_instance.insert_into_local(returns, &return_value);
@@ -115,4 +113,5 @@ pub fn run_instructions(
 		}
 	}
 
-	result_value.map(|val| stack_frame_instance.clone_value(val)).unwrap_or_default() }
+	stack_frame_instance.clone_value(&program.value)
+}

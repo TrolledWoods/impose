@@ -8,6 +8,7 @@ use crate::resource::*;
 use crate::stack_frame::*;
 use crate::operator::*;
 use crate::code_loc::*;
+use crate::id::*;
 
 macro_rules! push_instr {
 	($instrs:expr, $instr:expr) => {{
@@ -64,6 +65,13 @@ impl fmt::Debug for Instruction {
 	}
 }
 
+pub struct Program {
+	pub layout: std::sync::Arc<StackFrameLayout>,
+	pub instructions: Vec<Instruction>,
+	pub labels: IdVec<usize, LabelId>,
+	pub value: Value,
+}
+
 // TODO: Add a struct with data about compiling an expression, so that we can keep going
 // at the same point that we stopped if there is an undefined dependency.
 pub fn compile_expression(
@@ -71,7 +79,7 @@ pub fn compile_expression(
 	scopes: &mut Scopes,
 	resources: &Resources,
 	types: &Types,
-) -> Result<(StackFrameLayout, Vec<Instruction>, Option<Value>), Dependency> {
+) -> Result<Program, Dependency> {
 	let mut locals = Locals::new();
 
 	let mut node_values: Vec<Value> = Vec::new();
@@ -481,7 +489,12 @@ pub fn compile_expression(
 		// println!("{:?}", node_values);
 	}
 
-	Ok((locals.layout(), instructions, node_values.pop()))
+	Ok(Program {
+		layout: std::sync::Arc::new(locals.layout()),
+		instructions,
+		labels: IdVec::new(),
+		value: node_values.pop().unwrap(),
+	})
 }
 
 /// Returns a pointer to a resource, either by copying the resource onto the stack and taking a

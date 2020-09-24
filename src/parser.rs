@@ -640,7 +640,6 @@ fn parse_function(
 				let value = context.tokens.expect_next(|| "Expected function argument name")?;
 				if let Token { loc, kind: TokenKind::Identifier(name) } = value {
 					let arg = context.locals.add_member(context.scopes, *loc, ustr::ustr(name));
-					// context.resources.resolve_dependencies(&mut dependants);
 					args.push(arg);
 
 					let colon = context.tokens.next();
