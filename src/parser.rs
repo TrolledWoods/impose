@@ -13,7 +13,6 @@ use lexer::*;
 struct Context<'a, 't> {
 	ast: &'a mut Ast, 
 	scopes: &'a mut Scopes,
-	locals: &'a mut LocalVariables,
 	types: &'a mut Types,
 	scope: ScopeId, 
 	tokens: &'a mut TokenStream<'t>,
@@ -23,11 +22,10 @@ struct Context<'a, 't> {
 }
 
 impl<'a, 't> Context<'a, 't> {
-	fn new_stackframe<'b>(&'b mut self, ast: &'b mut Ast, locals: &'b mut LocalVariables, scope: ScopeId) -> Context<'b, 't> {
+	fn new_stackframe<'b>(&'b mut self, ast: &'b mut Ast, scope: ScopeId) -> Context<'b, 't> {
 		Context {
 			ast,
 			scopes: self.scopes,
-			locals,
 			scope,
 			tokens: self.tokens,
 			resources: self.resources,
@@ -41,7 +39,6 @@ impl<'a, 't> Context<'a, 't> {
 		Context {
 			ast: self.ast,
 			scopes: self.scopes,
-			locals: self.locals,
 			scope: self.scope,
 			tokens: self.tokens,
 			resources: self.resources,
@@ -52,12 +49,11 @@ impl<'a, 't> Context<'a, 't> {
 	}
 
 	fn sub_scope<'b>(&'b mut self) -> Context<'b, 't> {
-		self.locals.push();
+		self.ast.locals.push();
 		let sub_scope = self.scopes.create_scope(Some(self.scope));
 		Context {
 			ast: self.ast,
 			scopes: self.scopes,
-			locals: self.locals,
 			scope: sub_scope,
 			tokens: self.tokens,
 			resources: self.resources,
@@ -75,6 +71,7 @@ pub type AstNodeId = u32;
 pub struct Ast {
 	pub nodes: Vec<Node>,
 	pub is_typed: bool,
+	pub locals: LocalVariables,
 }
 
 impl Ast {
@@ -82,6 +79,7 @@ impl Ast {
 		Ast { 
 			nodes: Vec::new(),
 			is_typed: false,
+			locals: LocalVariables::new(),
 		}
 	}
 
@@ -398,7 +396,7 @@ fn parse_block(mut context: Context, expect_brackets: bool, is_runnable: bool)
 
 				// We have a declaration
 				let value = parse_expression(context.borrow())?;
-				let variable_name = context.locals.add_member(
+				let variable_name = context.ast.locals.add_member(
 					context.scopes, *ident_loc, ustr::ustr(name)
 				);
 				
@@ -425,8 +423,7 @@ fn parse_block(mut context: Context, expect_brackets: bool, is_runnable: bool)
 
 				let sub_scope = 
 					context.scopes.create_scope_that_is_maybe_thin(Some(context.scope), true);
-				let mut locals = LocalVariables::new();
-				let mut sub_context = context.new_stackframe(&mut ast, &mut locals, sub_scope);
+				let mut sub_context = context.new_stackframe(&mut ast, sub_scope);
 
 				parse_expression(sub_context.borrow())?;
 
@@ -467,7 +464,7 @@ fn parse_block(mut context: Context, expect_brackets: bool, is_runnable: bool)
 		}
 	}
 
-	context.locals.pop();
+	context.ast.locals.pop();
 
 	Ok(context.ast.insert_node(Node::new(&context, &loc, context.scope, NodeKind::Block { contents: commands, label } )))
 }
@@ -517,7 +514,7 @@ fn parse_identifier(
 	let token = context.tokens.next().unwrap();
 	match token.kind {
 		TokenKind::Identifier(name) => {
-			if let Some(member) = context.locals.get(name) {
+			if let Some(member) = context.ast.locals.get(name) {
 				Ok(context.ast.insert_node(Node::new(&context, token, context.scope,
 					NodeKind::Identifier {
 						source: member,
@@ -629,8 +626,7 @@ fn parse_function(
 	let mut args = Vec::new();
 	let sub_scope = parent_context.scopes.create_scope(Some(parent_context.scope));
 
-	let mut variables = LocalVariables::new();
-	let mut context = parent_context.new_stackframe(&mut ast, &mut variables, sub_scope);
+	let mut context = parent_context.new_stackframe(&mut ast, sub_scope);
 
 	let token = context.tokens.peek().expect("Don't call parse_function without a '|' to start");
 	if let TokenKind::Operator(Operator::BitwiseOrOrLambda) = token.kind {
@@ -639,7 +635,7 @@ fn parse_function(
 			|mut context| {
 				let value = context.tokens.expect_next(|| "Expected function argument name")?;
 				if let Token { loc, kind: TokenKind::Identifier(name) } = value {
-					let arg = context.locals.add_member(context.scopes, *loc, ustr::ustr(name));
+					let arg = context.ast.locals.add_member(context.scopes, *loc, ustr::ustr(name));
 					args.push(arg);
 
 					let colon = context.tokens.next();
@@ -1110,14 +1106,12 @@ pub fn parse_code(
 	let (last_loc, tokens) = lex_code(file, code)?;
 
 	let mut ast = Ast::new();
-	let mut locals = LocalVariables::new();
 
 	let mut stream = TokenStream::new(&tokens, last_loc);
 	let context = Context {
 		ast: &mut ast,
 		scopes,
 		scope,
-		locals: &mut locals,
 		types,
 		tokens: &mut stream,
 		resources,

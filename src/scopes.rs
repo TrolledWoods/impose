@@ -246,6 +246,7 @@ impl Scopes {
 }
 
 // TODO: We want to use this to figure out what to capture in a closure too.
+#[derive(Debug)]
 pub struct LocalVariables {
 	variables: Vec<(Ustr, ScopeMemberId)>,
 	block_stack: Vec<usize>,
