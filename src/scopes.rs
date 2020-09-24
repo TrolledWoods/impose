@@ -4,6 +4,7 @@ use crate::types::*;
 use crate::id::*;
 use crate::code_loc::*;
 use crate::error::*;
+use ustr::Ustr;
 
 /// Scopes contains all the scopes in the entire program.
 #[derive(Debug)]
@@ -28,7 +29,7 @@ impl Scopes {
 	pub fn insert_root_resource(
 		&mut self, 
 		resources: &mut Resources,
-		name: ustr::Ustr, 
+		name: Ustr, 
 		type_: TypeId, 
 		kind: ResourceKind,
 	) -> Result<(), ()> {
@@ -101,7 +102,7 @@ impl Scopes {
 		self.members.get_mut(member)
 	}
 
-	pub fn find_member(&self, mut scope_id: ScopeId, name: ustr::Ustr) -> Option<ScopeMemberId> {
+	pub fn find_member(&self, mut scope_id: ScopeId, name: Ustr) -> Option<ScopeMemberId> {
 		loop {
 			for member_id in self.scopes.get(scope_id).members.iter() {
 				// This does not use the ``member`` function on purpose, because the member function
@@ -142,7 +143,7 @@ impl Scopes {
 		}
 	}
 
-	pub fn find_or_create_temp(&mut self, scope: ScopeId, name: ustr::Ustr) -> Result<ScopeMemberId, ()> {
+	pub fn find_or_create_temp(&mut self, scope: ScopeId, name: Ustr) -> Result<ScopeMemberId, ()> {
 		if let Some(member_id) = self.find_member(scope, name) {
 			return Ok(member_id);
 		} else {
@@ -158,7 +159,7 @@ impl Scopes {
 	pub fn declare_member(
 		&mut self, 
 		scope: ScopeId, 
-		name: ustr::Ustr, 
+		name: Ustr, 
 		loc: Option<&CodeLoc>,
 		kind: ScopeMemberKind,
 	) -> Result<(Vec<ResourceId>, ScopeMemberId), ()> {
@@ -220,7 +221,7 @@ impl Scopes {
 						"Name is already taken"
 					);
 				} else {
-					return error!(CodeLoc { file: ustr::ustr("no"), line: 0, column: 0 }, "Compiler error; Name collisions stuff");
+					return error!(CodeLoc { file: "no".into(), line: 0, column: 0 }, "Compiler error; Name collisions stuff");
 				}
 			}
 		}
@@ -241,6 +242,49 @@ impl Scopes {
 		};
 		
 		Ok(declared_member_id)
+	}
+}
+
+// TODO: We want to use this to figure out what to capture in a closure too.
+pub struct LocalVariables {
+	variables: Vec<(Ustr, ScopeMemberId)>,
+	block_stack: Vec<usize>,
+}
+
+impl LocalVariables {
+	pub fn new() -> Self {
+		Self { variables: Vec::new(), block_stack: Vec::new() }
+	}
+
+	pub fn add_member(&mut self, scopes: &mut Scopes, loc: CodeLoc, name: Ustr) -> ScopeMemberId {
+		let member_id = scopes.members.push(ScopeMember {
+			name,
+			kind: ScopeMemberKind::LocalVariable,
+			declaration_location: Some(loc),
+			type_: None,
+			storage_loc: None,
+		});
+		self.variables.push((name, member_id));
+		member_id
+	}
+
+	pub fn get(&self, wanted_name: Ustr) -> Option<ScopeMemberId> {
+		for &(name, id) in self.variables.iter().rev() {
+			if name == wanted_name {
+				return Some(id);
+			}
+		}
+
+		None
+	}
+
+	pub fn push(&mut self) {
+		self.block_stack.push(self.variables.len());
+	}
+
+	pub fn pop(&mut self) {
+		let len = self.block_stack.pop().unwrap();
+		self.variables.truncate(len);
 	}
 }
 
@@ -273,7 +317,7 @@ pub enum ScopeMemberKind {
 
 #[derive(Debug)]
 pub struct ScopeMember {
-	pub name: ustr::Ustr,
+	pub name: Ustr,
 	pub kind: ScopeMemberKind,
 	pub declaration_location: Option<CodeLoc>,
 	pub type_: Option<TypeId>,
@@ -304,4 +348,3 @@ create_id!(
 	/// ```
 	ScopeMemberId
 );
-
