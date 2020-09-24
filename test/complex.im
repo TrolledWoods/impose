@@ -25,3 +25,11 @@ mul :: |a: Complex, b: Complex| {
 		imag: a.real * b.imag + a.imag * b.real,
 	}
 };
+
+print :: |num: Complex| {
+	std\_print("(");
+	print_f64(num.real);
+	std\_print(" + ");
+	print_f64(num.imag);
+	std\_print("i)");
+};

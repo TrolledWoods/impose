@@ -16,7 +16,6 @@ pub fn run_instructions(
 		instr_pointer += 1;
 
 		match *instruction {
-			Instruction::Temporary => panic!("Cannot run temporary instruction"),
 			Instruction::IndirectMove(into, ref from) => {
 				stack_frame_instance.insert_value_into_indirect_local(into, from);
 			}
@@ -24,12 +23,12 @@ pub fn run_instructions(
 				stack_frame_instance.insert_value_into_local(into, from);
 			}
 			Instruction::JumpRel(a) => {
-				instr_pointer = (instr_pointer as i64 + a) as usize;
+				instr_pointer = program.labels[a.into_index()];
 			}
 			Instruction::JumpRelIfZero(ref value, a) => {
 				let value = stack_frame_instance.get_value(value)[0];
 				if value == 0 {
-					instr_pointer = (instr_pointer as i64 + a) as usize;
+					instr_pointer = program.labels[a.into_index()];
 				}
 			}
 			Instruction::IntrinsicTwoArgs(intrinsic, result, ref a, ref b) => {

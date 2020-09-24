@@ -7,7 +7,7 @@ vec :: import "vec";
 _print :: |message: &- U8| {
 	raw := bit_cast { pointer: &U8, length: U64 } (message);
 
-	if raw.length {
+	if raw.length > 0 {
 		length := raw.length - 1;
 		index := 0;
 
@@ -49,11 +49,11 @@ PointerBufferRaw :: type {
 /// Allocates a pointer buffer of u64 elements
 /// TODO: Make this function polymorphic.
 alloc_u64 :: |n_elements: U64| {
-	bit_cast &-U64 (struct { pointer: alloc(n_elements * 8, 8), length: n_elements });
+	bit_cast &-U64 (struct { pointer: alloc(n_elements * 8, 8), length: n_elements })
 };
 
 alloc_u8 :: |n_elements: U64| {
-	bit_cast &-U64 (struct { pointer: alloc(n_elements,     1), length: n_elements });
+	bit_cast &-U64 (struct { pointer: alloc(n_elements,     1), length: n_elements })
 };
 
 dealloc_buffer_u64 :: |buffer: &- U64| {
@@ -93,7 +93,7 @@ buffer_iterate :: |buffer: &- U64, callback: (U64, &U64)| {
 buffer_iterate_any :: |buffer: &- U64, callback: (U64, &U64, &{}), any: &{}| {
 	raw := buffer_into_raw(buffer);
 
-	if raw.length {
+	if raw.length > 0 {
 		length := raw.length - 1;
 		index := 0;
 

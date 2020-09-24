@@ -132,14 +132,13 @@ impl Location for Node {
 
 #[derive(Debug, Clone, Copy)]
 pub enum MarkerKind {
-	IfCondition(AstNodeId),
-	IfElseTrueBody(AstNodeId),
-	LoopHead,
+	IfCondition(AstNodeId, LabelId),
+	IfElseTrueBody { contains: AstNodeId, true_body_label: LabelId, false_body_label: LabelId },
+	LoopHead(LabelId),
 }
 
 #[derive(Debug)]
 pub enum NodeKind {
-	Temporary,
 	Marker(MarkerKind),
 	MemberAccess(AstNodeId, ustr::Ustr),
 	Number(i128),
@@ -182,6 +181,7 @@ pub enum NodeKind {
 	If {
 		condition: AstNodeId,
 		body: AstNodeId,
+		end_label: LabelId,
 	},
 	/// # Members
 	/// 0: Condition member
@@ -191,9 +191,10 @@ pub enum NodeKind {
 		condition : AstNodeId,
 		true_body : AstNodeId,
 		false_body: AstNodeId,
+		end_label: LabelId,
 	},
 
-	Loop(AstNodeId),
+	Loop(AstNodeId, LabelId, LabelId),
 
 	Struct {
 		members: Vec<(ustr::Ustr, AstNodeId)>,
@@ -203,11 +204,11 @@ pub enum NodeKind {
 	Declaration { variable_name: ScopeMemberId, value: AstNodeId, },
 	Block {
 		contents: Vec<AstNodeId>,
-		label: Option<ScopeMemberId>,
+		label: LabelId,
 	},
 	Skip {
-		label: ScopeMemberId,
-		value: Option<AstNodeId>,
+		label: LabelId,
+		value: AstNodeId,
 	},
 
 	/// Returns the type of a type expression as a value instead of a type.
@@ -295,20 +296,13 @@ impl<'a> TokenStream<'a> {
 
 fn try_parse_create_label(
 	context: Context,
-) -> Result<Option<ScopeMemberId>, ()> {
+) -> Result<Option<ustr::Ustr>, ()> {
 	if let Some(TokenKind::Colon) = context.tokens.peek_kind() {
 		context.tokens.next();
 		let loc = context.tokens.get_location();
 		match context.tokens.next_kind() {
 			Some(TokenKind::Identifier(name)) => {
-				let (mut depenendants, id) = context.scopes.declare_member(
-					context.scope, 
-					ustr::ustr(name),
-					Some(&loc),
-					ScopeMemberKind::Label,
-				)?;
-				context.resources.resolve_dependencies(&mut depenendants);
-				Ok(Some(id))
+				Ok(Some(*name))
 			}
 			_ => {
 				return error!(loc, "Expected label name");
@@ -321,23 +315,15 @@ fn try_parse_create_label(
 
 fn try_parse_label(
 	context: Context,
-) -> Result<Option<ScopeMemberId>, ()> {
+) -> Result<Option<LabelId>, ()> {
 	if let Some(TokenKind::Colon) = context.tokens.peek_kind() {
 		context.tokens.next();
 		let loc = context.tokens.get_location();
 		match context.tokens.next_kind() {
 			Some(TokenKind::Identifier(name)) => {
-				let id = context.scopes.find_member(
-					context.scope, 
+				let id = context.ast.locals.get_label(
 					*name,
 				).ok_or_else(|| error_value!(loc, "Unknown label"))?;
-
-				if context.scopes.member(id).kind != ScopeMemberKind::Label {
-					return error!(
-						loc, 
-						"Expected label, got variable or constant"
-					);
-				}
 
 				Ok(Some(id))
 			}
@@ -346,7 +332,24 @@ fn try_parse_label(
 			}
 		}
 	} else {
-		Ok(None)
+		let loc = context.tokens.get_location();
+		match context.tokens.next_kind() {
+			Some(TokenKind::Keyword("loop")) => {
+				let id = context.ast.locals.get_label_by_kind(
+					LabelKind::Loop
+				).ok_or_else(|| error_value!(loc, "Unknown label"))?;
+
+				Ok(Some(id))
+			}
+			Some(TokenKind::Identifier(name)) if name.as_str() == "block" => {
+				let id = context.ast.locals.get_label_by_kind(
+					LabelKind::Block
+				).ok_or_else(|| error_value!(loc, "Unknown label"))?;
+
+				Ok(Some(id))
+			}
+			_ => Ok(None),
+		}
 	}
 }
 
@@ -365,7 +368,8 @@ fn parse_block(mut context: Context, expect_brackets: bool, is_runnable: bool)
 
 	let mut context = context.sub_scope();
 
-	let label = try_parse_create_label(context.borrow())?;
+	let label_name = try_parse_create_label(context.borrow())?;
+	let label_id = context.ast.locals.push_label(LabelKind::Block, label_name);
 
 	let mut commands = Vec::new();
 	loop {
@@ -465,8 +469,11 @@ fn parse_block(mut context: Context, expect_brackets: bool, is_runnable: bool)
 	}
 
 	context.ast.locals.pop();
+	context.ast.locals.pop_label();
 
-	Ok(context.ast.insert_node(Node::new(&context, &loc, context.scope, NodeKind::Block { contents: commands, label } )))
+	Ok(context.ast.insert_node(Node::new(&context, &loc, context.scope,
+		NodeKind::Block { contents: commands, label: label_id }
+	)))
 }
 
 fn parse_type_expr_value(
@@ -884,21 +891,28 @@ fn parse_value(
 		TokenKind::Keyword("loop") => {
 			context.tokens.next();
 
+			let label_name = try_parse_create_label(context.borrow())?;
+			let break_label = context.ast.locals.push_label(LabelKind::Loop, label_name);
+			let label = context.ast.locals.create_internal_label();
 			context.ast.insert_node(
-				Node::new(&context, token, context.scope, NodeKind::Marker(MarkerKind::LoopHead))
+				Node::new(&context, token, context.scope, NodeKind::Marker(MarkerKind::LoopHead(label)))
 			);
 			let body = parse_expression(context.borrow())?;
 
+			context.ast.locals.pop_label();
+
 			context.ast.insert_node(Node::new(&context, token, context.scope,
-				NodeKind::Loop(body)
+				NodeKind::Loop(body, label, break_label)
 			))
 		}
 		TokenKind::Keyword("if") => {
 			context.tokens.next();
 
+			let true_body_label = context.ast.locals.create_internal_label();
+
 			let condition = parse_expression(context.borrow())?;
 			let condition_marker = context.ast.insert_node(Node::new(&context, token, context.scope,
-				NodeKind::Marker(MarkerKind::IfCondition(condition))
+				NodeKind::Marker(MarkerKind::IfCondition(condition, true_body_label))
 			));
 
 			let true_body = parse_block(context.borrow(), true, true)?;
@@ -906,9 +920,17 @@ fn parse_value(
 			if let Some(TokenKind::Keyword("else")) = context.tokens.peek_kind() {
 				context.tokens.next();
 
+				let false_body_label = context.ast.locals.create_internal_label();
+
 				let true_body_marker = context.ast.insert_node(
 					Node::new(&context, token, context.scope,
-						NodeKind::Marker(MarkerKind::IfElseTrueBody(true_body))
+						NodeKind::Marker(
+							MarkerKind::IfElseTrueBody {
+								contains: true_body,
+								true_body_label,
+								false_body_label
+							}
+						)
 				));
 
 				let false_body = parse_block(context.borrow(), true, true)?;
@@ -918,6 +940,7 @@ fn parse_value(
 						condition: condition_marker,
 						true_body: true_body_marker,
 						false_body: false_body,
+						end_label: false_body_label,
 					})
 				);
 
@@ -927,6 +950,7 @@ fn parse_value(
 					Node::new(&context, token, context.scope, NodeKind::If {
 						condition: condition_marker,
 						body: true_body,
+						end_label: true_body_label,
 					})
 				);
 
@@ -1031,9 +1055,9 @@ fn parse_value(
 					}
 				}
 
-				Some(value)
+				value
 			} else {
-				None
+				context.ast.insert_node(Node::new(&context, &loc, context.scope, NodeKind::EmptyLiteral))
 			};
 
 			context.ast.insert_node(Node::new(&context, token, context.scope, NodeKind::Skip { label, value }))

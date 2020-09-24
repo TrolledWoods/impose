@@ -1,3 +1,4 @@
+std     :: import "std";
 complex :: import "complex";
 
 SOLID    :: *"#".pointer;
@@ -13,25 +14,25 @@ false :: 0 > 1;
 	y := 2.0;
 	dy := 0b0.001;
 	dx := 0b0.0001;
-	{:y_loop loop {
+	loop :y_loop {
 		x := 0.0 - 2.0;
-		{:x_loop loop {
+		loop :x_loop {
 			c := complex\create(x, y);
 			z := complex\create(0.0, 0.0);
 
 			iters := 0;
-			is_valid := {:iterator loop {
+			is_valid := loop {
 				z = complex\add(complex\mul(z, z), c);
 
 				if z.real * z.real + z.imag * z.imag >= 4.0 {
-					skip :iterator (false);
+					skip loop (false);
 				};
 
 				iters = iters + 1;
 				if iters > 50 {
-					skip :iterator (true);
+					skip loop (true);
 				};
-			}; false};
+			};
 
 			put_char(if is_valid { SOLID } else { if iters > 20 { ALMOST } else { if iters > 10 { SOMEWHAT } else { EMPTY }}});
 
@@ -39,7 +40,7 @@ false :: 0 > 1;
 			if x > 2.0 {
 				skip :x_loop;
 			};
-		};};
+		};
 
 		put_char(NEW_LINE);
 
@@ -47,5 +48,5 @@ false :: 0 > 1;
 		if y < 0.0 - 2.0 {
 			skip :y_loop;
 		};
-	};};
+	};
 };

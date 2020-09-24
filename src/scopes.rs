@@ -259,7 +259,7 @@ pub struct LocalVariables {
 	block_stack: Vec<usize>,
 
 	label_names: Vec<((LabelKind, Option<Ustr>), LabelId)>,
-	labels: IdVec<(), LabelId>,
+	pub labels: IdVec<TypeId, LabelId>,
 }
 
 impl LocalVariables {
@@ -318,8 +318,12 @@ impl LocalVariables {
 		self.block_stack.push(self.variables.len());
 	}
 
+	pub fn create_internal_label(&mut self) -> LabelId {
+		self.labels.push(NEVER_TYPE_ID)
+	}
+
 	pub fn push_label(&mut self, kind: LabelKind, name: Option<Ustr>) -> LabelId {
-		let id = self.labels.push(());
+		let id = self.labels.push(NEVER_TYPE_ID);
 		self.label_names.push(((kind, name), id));
 		id
 	}

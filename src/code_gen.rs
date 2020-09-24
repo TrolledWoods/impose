@@ -8,7 +8,6 @@ use crate::resource::*;
 use crate::stack_frame::*;
 use crate::operator::*;
 use crate::code_loc::*;
-use crate::id::*;
 
 macro_rules! push_instr {
 	($instrs:expr, $instr:expr) => {{
@@ -18,9 +17,6 @@ macro_rules! push_instr {
 }
 
 pub enum Instruction {
-	/// Temporary instruction. Cannot be run, because it's supposed to be overwritten later.
-	Temporary,
-
 	IntrinsicTwoArgs(IntrinsicKindTwo, LocalHandle, Value, Value),
 
 	SetAddressOf(LocalHandle, LocalHandle),
@@ -29,8 +25,8 @@ pub enum Instruction {
 	IndirectMove(IndirectLocalHandle, Value),
 	Move(LocalHandle, Value),
 
-	JumpRel(i64),
-	JumpRelIfZero(Value, i64),
+	JumpRel(LabelId),
+	JumpRelIfZero(Value, LabelId),
 	Call {
 		calling: Value, 
 		returns: LocalHandle, 
@@ -41,7 +37,6 @@ pub enum Instruction {
 impl fmt::Debug for Instruction {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match self {
-			Instruction::Temporary => write!(f, "temp"),
 			Instruction::IntrinsicTwoArgs(intrinsic, result, a, b)
 				=> write!(f, "{:?} = {:?} {:?}, {:?}", result, intrinsic, a, b),
 			Instruction::GetAddressOfResource(to, id) =>
@@ -68,7 +63,7 @@ impl fmt::Debug for Instruction {
 pub struct Program {
 	pub layout: std::sync::Arc<StackFrameLayout>,
 	pub instructions: Vec<Instruction>,
-	pub labels: IdVec<usize, LabelId>,
+	pub labels: Vec<usize>,
 	pub value: Value,
 }
 
@@ -81,16 +76,23 @@ pub fn compile_expression(
 	types: &Types,
 ) -> Result<Program, Dependency> {
 	let mut locals = Locals::new();
-
 	let mut node_values: Vec<Value> = Vec::new();
-	let mut marker_locs = Vec::new();
-	let mut temporary_labels: Vec<(_, _, Option<LocalHandle>)> = Vec::new();
-
 	let mut instructions = Vec::new();
+	let mut labels = vec![None; ast.locals.labels.len()];
+
+	// Allocate locals for all the things to reside within
+	let mut label_locals = Vec::new();
 
 	for node in ast.nodes.iter() {
 		if node.is_meta_data { 
 			continue; 
+		}
+
+		// TODO: Get rid of this
+		if !matches!(node.kind, NodeKind::DeclareFunctionArgument { .. }) {
+			label_locals = ast.locals.labels.iter()
+				.map(|&v| locals.allocate(types.handle(v)))
+				.collect::<Vec<_>>();
 		}
 
 		let evaluation_value = match node.kind {
@@ -167,18 +169,19 @@ pub fn compile_expression(
 
 				Value::Local(EMPTY_LOCAL)
 			}
-			NodeKind::Marker(MarkerKind::LoopHead) => {
-				marker_locs.push(instructions.len());
+			NodeKind::Marker(MarkerKind::LoopHead(label)) => {
+				assert_eq!(labels[label.into_index()], None);
+				labels[label.into_index()] = Some(instructions.len());
 				Value::Local(EMPTY_LOCAL)
 			}
-			NodeKind::Marker(MarkerKind::IfCondition(_)) => {
-				marker_locs.push(instructions.len());
-				// Will be a jump instruction over the body
-				push_instr!(instructions, Instruction::Temporary);
+			NodeKind::Marker(MarkerKind::IfCondition(_, label)) => {
 				let value = node_values.pop().unwrap();
-				value
+				push_instr!(instructions, Instruction::JumpRelIfZero(value, label));
+				Value::Local(EMPTY_LOCAL)
 			}
-			NodeKind::Marker(MarkerKind::IfElseTrueBody(contains)) => {
+			NodeKind::Marker(
+				MarkerKind::IfElseTrueBody { contains, true_body_label, false_body_label }
+			) => {
 				// Instruction to move the value into a new local, so that the else can
 				// also use that same local
 				let local = locals.allocate(
@@ -189,58 +192,35 @@ pub fn compile_expression(
 					Instruction::Move(local, node_values.pop().unwrap())
 				);
 
-				// Instruction to jump to to skip the if body
-				marker_locs.push(instructions.len());
-
 				// Jump instruction to skip else
-				push_instr!(instructions, Instruction::Temporary);
+				push_instr!(instructions, Instruction::JumpRel(false_body_label));
+
+				labels[true_body_label.into_index()] = Some(instructions.len());
 
 				Value::Local(local)
 			}
-			NodeKind::Loop(_) => {
+			NodeKind::Loop(_, label, break_label) => {
 				node_values.pop().unwrap(); // Loop body
 				node_values.pop().unwrap(); // Loop head marker
 
-				let jump_to_instr_loc = marker_locs.pop().unwrap();
-				let current_instr_loc = instructions.len();
-				push_instr!(instructions, Instruction::JumpRel(
-					jump_to_instr_loc as i64 - current_instr_loc as i64 - 1
-				));
+				push_instr!(instructions, Instruction::JumpRel(label));
+
+				labels[break_label.into_index()] = Some(instructions.len());
+
 				Value::Local(EMPTY_LOCAL)
 			}
-			NodeKind::If { .. } => {
-				let condition_instr_loc = marker_locs.pop().unwrap();
-				let current_instr_loc   = instructions.len();
-
+			NodeKind::If { end_label, .. } => {
 				let _true_body = node_values.pop().unwrap();
-				let condition = node_values.pop().unwrap();
-				instructions[condition_instr_loc] = Instruction::JumpRelIfZero(
-					condition,
-					current_instr_loc as i64 - condition_instr_loc as i64 - 1
-				);
+				let _condition = node_values.pop().unwrap();
+
+				labels[end_label.into_index()] = Some(instructions.len());
+
 				Value::Local(EMPTY_LOCAL)
 			}
-			NodeKind::IfWithElse { .. } => {
-				let true_body_instr_loc = marker_locs.pop().unwrap();
-				let condition_instr_loc = marker_locs.pop().unwrap();
-				let current_instr_loc   = instructions.len();
-
+			NodeKind::IfWithElse { end_label, .. } => {
 				let false_body = node_values.pop().unwrap();
 				let true_body = node_values.pop().unwrap();
-				let condition = node_values.pop().unwrap();
-
-				instructions[condition_instr_loc] = Instruction::JumpRelIfZero(
-					condition,
-					// We don't subtract one here, because we wanna move past the Jump that skips
-					// over the else block at true_body_instr_loc
-					true_body_instr_loc as i64 - condition_instr_loc as i64
-				);
-
-				instructions[true_body_instr_loc] = Instruction::JumpRel(
-					// Move past the MoveU64 that moves the false body return value into the
-					// true body return value
-					current_instr_loc as i64 - true_body_instr_loc as i64
-				);
+				let _condition = node_values.pop().unwrap();
 
 				if let Value::Local(local) = true_body {
 					push_instr!(instructions, Instruction::Move(
@@ -251,71 +231,30 @@ pub fn compile_expression(
 					panic!("This can't be a constant bruh");
 				}
 
+				labels[end_label.into_index()] = Some(instructions.len());
+
 				true_body
 			}
-			NodeKind::Skip { label, value } => {
-				let mut instruction_loc = instructions.len();
+			NodeKind::Skip { label, .. } => {
+				let value = node_values.pop().unwrap();
+				push_instr!(instructions,
+					Instruction::Move(label_locals[label.into_index()], value)
+				);
 
-				let mut return_value_local = None;
-				if let Some(value) = value {
-					for (name, _, return_value) in &temporary_labels {
-						if name == &label {
-							// If we have a value, the type checker has to make sure that the
-							// other skip also has a value
-							return_value_local = Some(return_value.unwrap());
-							break;
-						}
-					}
-
-					if return_value_local.is_none() {
-						return_value_local = Some(locals.allocate(
-							types.handle(ast.nodes[value as usize].type_.unwrap())
-						));
-					}
-
-					let input = node_values.pop().unwrap();
-
-					instruction_loc += 1;
-					push_instr!(instructions, Instruction::Move(return_value_local.unwrap(), input));
-				}
-
-				push_instr!(instructions, Instruction::JumpRel(-42069));
-
-				temporary_labels.push((label, instruction_loc, return_value_local));
+				push_instr!(instructions, Instruction::JumpRel(label));
 
 				Value::Local(EMPTY_LOCAL)
 			}
 			NodeKind::Block { ref contents, label } => {
-				let mut return_value_loc = None;
 				let result = node_values.pop().unwrap();
-
 				node_values.truncate(node_values.len() + 1 - contents.len());
 
-				if let Some(label) = label {
-					for (_, instruction_loc, return_value) in 
-						temporary_labels.drain_filter(|(l, _, _)| l == &label) 
-					{
-						if return_value.is_none() {
-							instructions[instruction_loc] = 
-								Instruction::JumpRel((instructions.len() - instruction_loc - 1) as i64);
-						} else {
-							instructions[instruction_loc] = 
-								Instruction::JumpRel((instructions.len() - instruction_loc) as i64);
-						}
+				let label_loc = label_locals[label.into_index()];
+				push_instr!(instructions, Instruction::Move(label_loc, result));
 
-						return_value_loc = return_value;
-					}
-				}
+				labels[label.into_index()] = Some(instructions.len());
 
-				match return_value_loc {
-					Some(location) => {
-						push_instr!(instructions, Instruction::Move(location, result));
-						Value::Local(location)
-					}
-					None => {
-						result
-					}
-				}
+				Value::Local(label_loc)
 			}
 			NodeKind::Struct { .. } => {
 				let id = node.type_.unwrap();
@@ -482,17 +421,28 @@ pub fn compile_expression(
 		};
 
 		node_values.push(evaluation_value);
-		// println!("{:?}", node.kind);
-		// for instruction in &instructions[instr_index ..] {
-		// 	println!(" + {:?}", instruction);
-		// }
-		// println!("{:?}", node_values);
 	}
+
+	// println!("\n---Instructions generated ---");
+	// for (i, instruction) in instructions.iter().enumerate() {
+	// 	for (label, val) in labels.iter().enumerate() {
+	// 		if *val == Some(i) {
+	// 			println!(" -- label {}:", label);
+	// 		}
+	// 	}
+	// 	println!("{:?}", instruction);
+	// }
+
+	// for (label, val) in labels.iter().enumerate() {
+	// 	if *val == Some(instructions.len()) {
+	// 		println!(" -- label {}:", label);
+	// 	}
+	// }
 
 	Ok(Program {
 		layout: std::sync::Arc::new(locals.layout()),
 		instructions,
-		labels: IdVec::new(),
+		labels: labels.into_iter().map(|v| v.unwrap()).collect(),
 		value: node_values.pop().unwrap(),
 	})
 }
