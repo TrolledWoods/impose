@@ -82,15 +82,10 @@ pub fn get_binary_operator_intrinsic(operator: Operator, types: &Types, left_typ
 		(Operator::NEqu, BOOL_TYPE_ID, BOOL_TYPE_ID) =>
 			(IntrinsicKindTwo::NotEqual, BOOL_TYPE_ID),
 
-		(Operator::Equ, F32_TYPE_ID, F32_TYPE_ID) =>
-			(IntrinsicKindTwo::Equal, F32_TYPE_ID),
-		(Operator::NEqu, F32_TYPE_ID, F32_TYPE_ID) =>
-			(IntrinsicKindTwo::NotEqual, F32_TYPE_ID),
-
-		(Operator::Equ, F64_TYPE_ID, F64_TYPE_ID) =>
-			(IntrinsicKindTwo::Equal, F64_TYPE_ID),
-		(Operator::NEqu, F64_TYPE_ID, F64_TYPE_ID) =>
-			(IntrinsicKindTwo::NotEqual, F64_TYPE_ID),
+		(Operator::Equ, TYPE_TYPE_ID, TYPE_TYPE_ID) =>
+			(IntrinsicKindTwo::Equal, BOOL_TYPE_ID),
+		(Operator::NEqu, TYPE_TYPE_ID, TYPE_TYPE_ID) =>
+			(IntrinsicKindTwo::NotEqual, BOOL_TYPE_ID),
 
 		(Operator::Equ, left, right) if is_primitive_int(left) && left == right =>
 			(IntrinsicKindTwo::Equal, BOOL_TYPE_ID),

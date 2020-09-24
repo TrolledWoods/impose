@@ -11,8 +11,8 @@ false :: 0 > 1;
 
 {
 	y := 2.0;
-	dy := 0b0.000001;
-	dx := 0b0.0000001;
+	dy := 0b0.0001;
+	dx := 0b0.00001;
 	{:y_loop loop {
 		x := 0.0 - 2.0;
 		{:x_loop loop {
@@ -28,7 +28,7 @@ false :: 0 > 1;
 				};
 
 				iters = iters + 1;
-				if iters > 500 {
+				if iters > 50 {
 					skip :iterator (true);
 				};
 			}; false};
