@@ -1,5 +1,9 @@
 std :: import "std";
 
-x := if 4 < 2 { 50 } else if 5 > 2 { 20 } else { 500 };
+x := if     4 < 2  50
+	else if 5 > 2  loop { skip loop 20; }
+	else    500;
+
+x = loop skip loop 20;
 
 print_num(x);

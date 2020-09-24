@@ -207,7 +207,7 @@ pub fn compile_expression(
 
 				labels[break_label.into_index()] = Some(instructions.len());
 
-				Value::Local(EMPTY_LOCAL)
+				Value::Local(label_locals[break_label.into_index()])
 			}
 			NodeKind::If { end_label, .. } => {
 				let _true_body = node_values.pop().unwrap();
