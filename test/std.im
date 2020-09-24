@@ -49,13 +49,11 @@ PointerBufferRaw :: type {
 /// Allocates a pointer buffer of u64 elements
 /// TODO: Make this function polymorphic.
 alloc_u64 :: |n_elements: U64| {
-	pointer := buffer_into_raw(alloc(n_elements * 8, 8)).pointer;
-	buffer_from_raw(struct { pointer: pointer, length: n_elements })
+	bit_cast &-U64 (struct { pointer: alloc(n_elements * 8, 8), length: n_elements });
 };
 
 alloc_u8 :: |n_elements: U64| {
-	pointer := bit_cast { pointer: &U64, length: U64 } (alloc(n_elements, 1)).pointer;
-	bit_cast &- U8 (struct { pointer: pointer, length: n_elements })
+	bit_cast &-U64 (struct { pointer: alloc(n_elements,     1), length: n_elements });
 };
 
 dealloc_buffer_u64 :: |buffer: &- U64| {

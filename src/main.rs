@@ -107,11 +107,11 @@ fn main() {
 		}
 	).unwrap();
 
-	let u64_buffer_type_id = types.insert(Type::new(TypeKind::BufferPointer(U64_TYPE_ID)));
+	let u8_type_buffer = types.insert(Type::new(TypeKind::Pointer(U8_TYPE_ID)));
 	// TODO: When u8's happen, fix this!
 	let print_type_id = types.insert(Type::new(TypeKind::FunctionPointer {
 		args: vec![U64_TYPE_ID, U64_TYPE_ID],
-		returns: u64_buffer_type_id,
+		returns: u8_type_buffer,
 	}));
 	scopes.insert_root_resource(
 		&mut resources, 
@@ -119,22 +119,19 @@ fn main() {
 		print_type_id, 
 		ResourceKind::ExternalFunction {
 			func: Box::new(|_, args, returns| {
-				if let &[a, b, c, d, e, f, g, h] = &args[0..8] {
-					let n_elements = usize::from_le_bytes([a, b, c, d, e, f, g, h]);
-					if let &[a, b, c, d, e, f, g, h] = &args[8..16] {
-						let align = usize::from_le_bytes([a, b, c, d, e, f, g, h]);
-						let pointer_bytes = (unsafe { 
-							std::alloc::alloc(std::alloc::Layout::from_size_align(n_elements, align)
-								.unwrap())
-						} as usize).to_le_bytes();
+				use std::convert::TryInto;
+				let n_elements = usize::from_le_bytes((&args[0..8 ]).try_into().unwrap());
+				let align      = usize::from_le_bytes((&args[8..16]).try_into().unwrap());
 
-						returns[0..8].copy_from_slice(&pointer_bytes);
-						returns[8..16].copy_from_slice(&args[0..8]);
-					} else { panic!("bad"); }
-				} else { panic!("bad"); }
+				let pointer = unsafe { 
+					std::alloc::alloc(std::alloc::Layout::from_size_align(n_elements, align)
+						.unwrap())
+				} as usize;
+
+				returns[0..8].copy_from_slice(&pointer.to_le_bytes());
 			}),
 			n_arg_bytes: 16,
-			n_return_bytes: 16,
+			n_return_bytes: 8,
 		}
 	).unwrap();
 
