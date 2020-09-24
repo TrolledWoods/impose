@@ -89,7 +89,7 @@ pub fn compile_expression(
 		}
 
 		// TODO: Get rid of this
-		if !matches!(node.kind, NodeKind::DeclareFunctionArgument { .. }) {
+		if label_locals.len() == 0 && !matches!(node.kind, NodeKind::DeclareFunctionArgument { .. }) {
 			label_locals = ast.locals.labels.iter()
 				.map(|&v| locals.allocate(types.handle(v)))
 				.collect::<Vec<_>>();
