@@ -13,6 +13,7 @@ use lexer::*;
 struct Context<'a, 't> {
 	ast: &'a mut Ast, 
 	scopes: &'a mut Scopes,
+	locals: &'a mut LocalVariables,
 	types: &'a mut Types,
 	scope: ScopeId, 
 	tokens: &'a mut TokenStream<'t>,
@@ -22,10 +23,11 @@ struct Context<'a, 't> {
 }
 
 impl<'a, 't> Context<'a, 't> {
-	fn new_stackframe<'b>(&'b mut self, ast: &'b mut Ast, scope: ScopeId) -> Context<'b, 't> {
+	fn new_stackframe<'b>(&'b mut self, ast: &'b mut Ast, locals: &'b mut LocalVariables, scope: ScopeId) -> Context<'b, 't> {
 		Context {
 			ast,
 			scopes: self.scopes,
+			locals,
 			scope,
 			tokens: self.tokens,
 			resources: self.resources,
@@ -39,6 +41,7 @@ impl<'a, 't> Context<'a, 't> {
 		Context {
 			ast: self.ast,
 			scopes: self.scopes,
+			locals: self.locals,
 			scope: self.scope,
 			tokens: self.tokens,
 			resources: self.resources,
@@ -49,10 +52,12 @@ impl<'a, 't> Context<'a, 't> {
 	}
 
 	fn sub_scope<'b>(&'b mut self) -> Context<'b, 't> {
+		self.locals.push();
 		let sub_scope = self.scopes.create_scope(Some(self.scope));
 		Context {
 			ast: self.ast,
 			scopes: self.scopes,
+			locals: self.locals,
 			scope: sub_scope,
 			tokens: self.tokens,
 			resources: self.resources,
@@ -393,13 +398,13 @@ fn parse_block(mut context: Context, expect_brackets: bool, is_runnable: bool)
 
 				// We have a declaration
 				let value = parse_expression(context.borrow())?;
-				let (mut dependants, variable_name) = context.scopes.declare_member(
-					context.scope, 
-					ustr::ustr(name), 
-					Some(ident_loc), 
-					ScopeMemberKind::LocalVariable
-				)?;
-				context.resources.resolve_dependencies(&mut dependants);
+				let variable_name = context.locals.add_member(
+					context.scopes, *ident_loc, ustr::ustr(name)
+				);
+				
+				// TODO: Should we allow dependencies on local variables?
+				// context.resources.resolve_dependencies(&mut dependants);
+				
 				commands.push(context.ast.insert_node(
 					Node::new(&context, declare_loc, context.scope, NodeKind::Declaration {
 						variable_name, value,
@@ -420,7 +425,8 @@ fn parse_block(mut context: Context, expect_brackets: bool, is_runnable: bool)
 
 				let sub_scope = 
 					context.scopes.create_scope_that_is_maybe_thin(Some(context.scope), true);
-				let mut sub_context = context.new_stackframe(&mut ast, sub_scope);
+				let mut locals = LocalVariables::new();
+				let mut sub_context = context.new_stackframe(&mut ast, &mut locals, sub_scope);
 
 				parse_expression(sub_context.borrow())?;
 
@@ -460,6 +466,8 @@ fn parse_block(mut context: Context, expect_brackets: bool, is_runnable: bool)
 			}
 		}
 	}
+
+	context.locals.pop();
 
 	Ok(context.ast.insert_node(Node::new(&context, &loc, context.scope, NodeKind::Block { contents: commands, label } )))
 }
@@ -509,27 +517,37 @@ fn parse_identifier(
 	let token = context.tokens.next().unwrap();
 	match token.kind {
 		TokenKind::Identifier(name) => {
-			let member = context.scopes.find_or_create_temp(context.scope, name)?;
-
-			let mut sub_members = smallvec::SmallVec::new();
-			while let Some(Token { kind: TokenKind::ConstMember, .. }) = context.tokens.peek() {
-				context.tokens.next();
-				match context.tokens.next() {
-					Some(Token { kind: TokenKind::Identifier(name), .. }) => {
-						sub_members.push(*name);
+			if let Some(member) = context.locals.get(name) {
+				Ok(context.ast.insert_node(Node::new(&context, token, context.scope,
+					NodeKind::Identifier {
+						source: member,
+						const_members: smallvec![],
+						is_type,
 					}
-					_ => {
-						return error!(context.tokens, "Expected member identifier");
+				)))
+			} else {
+				let member = context.scopes.find_or_create_temp(context.scope, name)?;
+
+				let mut sub_members = smallvec::SmallVec::new();
+				while let Some(Token { kind: TokenKind::ConstMember, .. }) = context.tokens.peek() {
+					context.tokens.next();
+					match context.tokens.next() {
+						Some(Token { kind: TokenKind::Identifier(name), .. }) => {
+							sub_members.push(*name);
+						}
+						_ => {
+							return error!(context.tokens, "Expected member identifier");
+						}
 					}
 				}
-			}
 
-			Ok(context.ast.insert_node(Node::new(&context, token, context.scope, 
-				NodeKind::Identifier {
-					source: member,
-					const_members: sub_members,
-					is_type,
-				})))
+				Ok(context.ast.insert_node(Node::new(&context, token, context.scope, 
+					NodeKind::Identifier {
+						source: member,
+						const_members: sub_members,
+						is_type,
+					})))
+			}
 		}
 		_ => unreachable!("Only call parse_identifier when you have an identifier"),
 	}
@@ -611,7 +629,8 @@ fn parse_function(
 	let mut args = Vec::new();
 	let sub_scope = parent_context.scopes.create_scope(Some(parent_context.scope));
 
-	let mut context = parent_context.new_stackframe(&mut ast, sub_scope);
+	let mut variables = LocalVariables::new();
+	let mut context = parent_context.new_stackframe(&mut ast, &mut variables, sub_scope);
 
 	let token = context.tokens.peek().expect("Don't call parse_function without a '|' to start");
 	if let TokenKind::Operator(Operator::BitwiseOrOrLambda) = token.kind {
@@ -1097,12 +1116,14 @@ pub fn parse_code(
 	let (last_loc, tokens) = lex_code(file, code)?;
 
 	let mut ast = Ast::new();
+	let mut locals = LocalVariables::new();
 
 	let mut stream = TokenStream::new(&tokens, last_loc);
 	let context = Context {
 		ast: &mut ast,
 		scopes,
 		scope,
+		locals: &mut locals,
 		types,
 		tokens: &mut stream,
 		resources,
