@@ -1,21 +1,5 @@
 std :: import "std";
 
+x := if 4 < 2 { 50 } else if 5 > 2 { 20 } else { 500 };
 
-random_number := 42;
-
-loop {
-	std\print("Guess a number: ");
-	input := input();
-
-	if input == random_number {
-		skip loop;
-	};
-
-	std\print(if input < random_number { "Too small!\n" } else { "Too big!\n" });
-
-	skip block;
-
-	std\print("This can never happen, thanks");
-};
-
-std\print("You guessed correctly!\n");
+print_num(x);

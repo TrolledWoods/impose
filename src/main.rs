@@ -27,6 +27,10 @@ pub mod resource;
 pub mod stack_frame;
 pub mod align;
 
+lazy_static! {
+	static ref INSTANT: std::time::Instant = std::time::Instant::now();
+}
+
 fn main() {
 	// VERY simple benchmarking
 	let time = std::time::Instant::now();
@@ -165,6 +169,23 @@ fn main() {
 			}),
 			n_arg_bytes: 24,
 			n_return_bytes: 0,
+		}
+	).unwrap();
+
+	let current_time_id = types.insert(Type::new(TypeKind::FunctionPointer {
+		args: vec![],
+		returns: U64_TYPE_ID,
+	}));
+	scopes.insert_root_resource(
+		&mut resources, 
+		ustr::ustr("current_time_ns"), 
+		current_time_id,
+		ResourceKind::ExternalFunction {
+			func: Box::new(|_, _, returns| {
+				returns.copy_from_slice(&(INSTANT.elapsed().as_nanos() as u64).to_le_bytes());
+			}),
+			n_arg_bytes: 0,
+			n_return_bytes: 8,
 		}
 	).unwrap();
 

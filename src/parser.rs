@@ -915,7 +915,7 @@ fn parse_value(
 				NodeKind::Marker(MarkerKind::IfCondition(condition, true_body_label))
 			));
 
-			let true_body = parse_block(context.borrow(), true, true)?;
+			let true_body = parse_expression(context.borrow())?;
 
 			if let Some(TokenKind::Keyword("else")) = context.tokens.peek_kind() {
 				context.tokens.next();
@@ -933,7 +933,7 @@ fn parse_value(
 						)
 				));
 
-				let false_body = parse_block(context.borrow(), true, true)?;
+				let false_body = parse_expression(context.borrow())?;
 
 				let if_statement = context.ast.insert_node(
 					Node::new(&context, token, context.scope, NodeKind::IfWithElse {
@@ -1043,19 +1043,8 @@ fn parse_value(
 			)?;
 
 			// There may be some argument to the break
-			let value = if let Some(TokenKind::Bracket('(')) = context.tokens.peek_kind() {
-				context.tokens.next();
-				let value = parse_expression(context.borrow())?;
-
-				let loc = context.tokens.get_location();
-				match context.tokens.next_kind() {
-					Some(TokenKind::ClosingBracket(')')) => (),
-					_ => {
-						return error!(loc, "Expected closing ')'");
-					}
-				}
-
-				value
+			let value = if !matches!(context.tokens.peek_kind(), Some(TokenKind::Semicolon)) {
+				parse_expression(context.borrow())?
 			} else {
 				context.ast.insert_node(Node::new(&context, &loc, context.scope, NodeKind::EmptyLiteral))
 			};

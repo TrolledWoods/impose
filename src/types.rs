@@ -350,8 +350,11 @@ impl AstTyper {
 				NodeKind::Marker(MarkerKind::IfElseTrueBody { contains, .. }) => {
 					ast.nodes[contains as usize].type_
 				}
-				NodeKind::Marker(_) => {
+				NodeKind::Marker(MarkerKind::IfCondition(_, _)) => {
 					ast.nodes[self.node_id - 1].type_
+				}
+				NodeKind::Marker(_) => {
+					None
 				}
 				NodeKind::Number(_) => {
 					Some(U64_TYPE_ID)
