@@ -245,16 +245,31 @@ impl Scopes {
 	}
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LabelKind {
+	Block,
+	StackFrame,
+	Loop,
+}
+
 // TODO: We want to use this to figure out what to capture in a closure too.
 #[derive(Debug)]
 pub struct LocalVariables {
 	variables: Vec<(Ustr, ScopeMemberId)>,
 	block_stack: Vec<usize>,
+
+	label_names: Vec<((LabelKind, Option<Ustr>), LabelId)>,
+	labels: IdVec<(), LabelId>,
 }
 
 impl LocalVariables {
 	pub fn new() -> Self {
-		Self { variables: Vec::new(), block_stack: Vec::new() }
+		Self { 
+			variables: Vec::new(),
+			block_stack: Vec::new(), 
+			label_names: Vec::new(),
+			labels: IdVec::new(),
+		}
 	}
 
 	pub fn add_member(&mut self, scopes: &mut Scopes, loc: CodeLoc, name: Ustr) -> ScopeMemberId {
@@ -279,8 +294,38 @@ impl LocalVariables {
 		None
 	}
 
+	pub fn get_label(&self, wanted_name: Ustr) -> Option<LabelId> {
+		for &((_, name), id) in self.label_names.iter().rev() {
+			if name == Some(wanted_name) {
+				return Some(id);
+			}
+		}
+
+		None
+	}
+
+	pub fn get_label_by_kind(&self, wanted_kind: LabelKind) -> Option<LabelId> {
+		for &((kind, _), id) in self.label_names.iter().rev() {
+			if kind == wanted_kind {
+				return Some(id);
+			}
+		}
+
+		None
+	}
+
 	pub fn push(&mut self) {
 		self.block_stack.push(self.variables.len());
+	}
+
+	pub fn push_label(&mut self, kind: LabelKind, name: Option<Ustr>) -> LabelId {
+		let id = self.labels.push(());
+		self.label_names.push(((kind, name), id));
+		id
+	}
+
+	pub fn pop_label(&mut self) {
+		self.label_names.pop();
 	}
 
 	pub fn pop(&mut self) {
