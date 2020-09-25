@@ -8,6 +8,10 @@ pub type ConstBuffer = smallvec::SmallVec<[u8; 8]>;
 /// A Value is either a LocalHandle, or a Constant.
 #[derive(Clone, PartialEq)]
 pub enum Value {
+	// We deal with functions in a special way because when targeting C code we have to actually
+	// make a name mangled thing for them, and use the names instead of the values to call them.
+	// This means we can't just have a constant value for them(unfortunately).
+	Function(usize),
 	Local(LocalHandle),
 	// TODO: Rename to indirect
 	Pointer(IndirectLocalHandle),
@@ -17,6 +21,7 @@ pub enum Value {
 impl fmt::Debug for Value {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match self {
+			Value::Function(id) => write!(f, "fn {}", id),
 			Value::Local(handle) => write!(f, "{:?}", handle),
 			Value::Pointer(handle) => write!(f, "{:?}", handle),
 			Value::Constant(buffer) => {
@@ -40,6 +45,7 @@ impl Value {
 	pub fn size(&self) -> usize {
 		match *self {
 			Value::Local(handle) => handle.size,
+			Value::Function(_) => 8,
 			Value::Pointer(IndirectLocalHandle { resulting_size, .. }) => resulting_size,
 			Value::Constant(ref buffer) => buffer.len(),
 		}
@@ -47,6 +53,7 @@ impl Value {
 
 	pub fn get_sub_value(&self, offset: usize, size: usize, align: usize) -> Value {
 		match *self {
+			Value::Function(_) => panic!("Cannot get sub value of function"),
 			Value::Local(handle) => {
 				if handle.size == 0 { return Value::Local(handle); }
 
@@ -369,6 +376,8 @@ impl StackFrameInstance {
 				// reading it. This shouldn't be the case, but it might be.
 				unsafe { std::slice::from_raw_parts(from, local.resulting_size) }
 			}
+			Value::Function(ref num) =>
+				unsafe { std::slice::from_raw_parts(num as *const usize as *const u8, 8) },
 			Value::Constant(ref vector) => vector.as_slice(),
 		}
 	}

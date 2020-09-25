@@ -74,8 +74,8 @@ print_mandelbrot :: |center_x: F64, center_y: F64, size: F64, window_size: U64, 
 
 			*(column + i) =
 				    if is_valid    SOLID 
-			   else if iters > 20  ALMOST 
-			   else if iters > 10  SOMEWHAT
+			   else if iters > 15  ALMOST 
+			   else if iters > 7  SOMEWHAT
 			   else                EMPTY;
 
 			x = x+dx;

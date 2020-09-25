@@ -133,6 +133,9 @@ pub fn compile_expression(
 					Value::Pointer(handle) => {
 						push_move_indirect(&mut instructions, handle, right.clone());
 					},
+					Value::Function(_) => {
+						panic!("Cannot assign to a function");
+					}
 					Value::Constant(_) => {
 						panic!("Cannot assign to a constant");
 					}
@@ -386,6 +389,7 @@ pub fn compile_expression(
 				// so to speak)
 				let from = match node_values.pop().unwrap() {
 					Value::Local(handle) => handle,
+					Value::Function(_) => panic!("Cannot dereference functions"),
 					Value::Constant(_) => panic!("Cannot dereference constants"),
 					Value::Pointer(handle) => {
 						let local = locals.allocate(types.handle(
@@ -543,7 +547,15 @@ fn get_resource_constant(
 
 				Ok((value.len().checked_div(type_handle.size).unwrap_or(1), Value::Local(local)))
 			} else {
-				Ok((value.len().checked_div(type_handle.size).unwrap_or(1), Value::Constant(value.clone())))
+				match types.get(resource.type_.unwrap()).kind {
+					TypeKind::FunctionPointer { .. } => {
+						use std::convert::TryInto;
+						Ok((8, Value::Function(usize::from_le_bytes(value.as_slice().try_into().unwrap()))))
+					}
+					_ => {
+						Ok((value.len().checked_div(type_handle.size).unwrap_or(1), Value::Constant(value.clone())))
+					}
+				}
 			}
 		}
 		ResourceKind::Value(_) =>
