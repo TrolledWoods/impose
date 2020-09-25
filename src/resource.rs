@@ -13,11 +13,12 @@ use crate::DEBUG;
 
 create_id!(ResourceId);
 
-#[derive(Debug)]
 pub struct Resources {
 	compute_queue: VecDeque<ResourceId>,
 	uncomputed_resources: HashSet<ResourceId>,
+
 	pub members: IdVec<Option<Resource>, ResourceId>,
+	pub functions: Vec<FunctionKind>,
 
 	pub code_cache: HashMap<ustr::Ustr, String>,
 }
@@ -29,6 +30,8 @@ impl Resources {
 			compute_queue: Default::default(),
 			uncomputed_resources: Default::default(),
 
+			functions: Vec::new(),
+
 			code_cache: Default::default(),
 		}
 	}
@@ -39,6 +42,20 @@ impl Resources {
 		self.compute_queue.push_back(id);
 
 		id
+	}
+
+	fn insert_function(&mut self, function: FunctionKind) -> usize {
+		// TODO: Find some way to unify this function with create_function?
+		let id = self.functions.len();
+		self.functions.push(function);
+		id
+	}
+
+	pub fn create_function(&mut self, function: FunctionKind) -> ResourceKind {
+		let id = self.functions.len();
+		self.functions.push(function);
+
+		ResourceKind::Done((&id.to_le_bytes() as &[u8]).into(), vec![])
 	}
 	
 	pub fn insert_done(&mut self, resource: Resource) -> ResourceId {
@@ -125,16 +142,13 @@ impl Resources {
 							println!("{:?}", instruction);
 						}
 					}
-
-					member.kind = ResourceKind::Function(ResourceFunction::Value(program));
+					
+					let id = self.insert_function(FunctionKind::Function(program));
+					member.kind = ResourceKind::Done((&id.to_le_bytes() as &[u8]).into(), vec![]);
 
 					self.uncomputed_resources.remove(&member_id);
 					self.return_resource(member_id, member);
 					self.compute_queue.push_back(member_id);
-				}
-				ResourceKind::Function(ResourceFunction::Value(_)) => {
-					// Do nothing here.
-					self.return_resource(member_id, member);
 				}
 				ResourceKind::Value(ResourceValue::File { scope, module_folder, file }) => {
 					// Combine the paths into one coherent path.
@@ -248,7 +262,7 @@ impl Resources {
 						println!("Value: {:?}", value);
 					}
 
-					member.kind = ResourceKind::Value(self.turn_value_into_resource(types, member.type_.unwrap(), &value));
+					member.kind = self.turn_value_into_resource(types, member.type_.unwrap(), &value);
 
 					// We free the instance here so that we can turn the value into a resource
 					// first!
@@ -257,13 +271,9 @@ impl Resources {
 					self.return_resource(member_id, member);
 					self.uncomputed_resources.remove(&member_id);
 				}
-				ResourceKind::Value(ResourceValue::Value(_, _, _, _)) => {
+				ResourceKind::Done(_, _) => {
 					// Do nothing
 					self.return_resource(member_id, member);
-				}
-				ResourceKind::ExternalFunction { .. } => {
-					self.return_resource(member_id, member);
-					self.uncomputed_resources.remove(&member_id);
 				}
 			}
 
@@ -279,7 +289,7 @@ impl Resources {
 	/// module somewhere and thing more neatly about how to deal with it?
 	fn turn_value_into_resource(
 		&mut self, types: &Types, type_: TypeId, value: &[u8],
-	) -> ResourceValue {
+	) -> ResourceKind {
 		let mut pointers_in_type = Vec::new();
 		types.get_pointers_in_type(type_, &mut pointers_in_type, 0);
 
@@ -331,7 +341,7 @@ impl Resources {
 					type_: Some(pointer_in_type.type_behind_pointer),
 					waiting_on_type: Vec::new(),
 					waiting_on_value: None,
-					kind: ResourceKind::Value(kind),
+					kind,
 				});
 
 				if DEBUG {
@@ -346,9 +356,7 @@ impl Resources {
 			}
 		}
 
-		let n_sub_element = if type_handle.size > 0 { value.len() / type_handle.size } else { 0 };
-
-		ResourceValue::Value(type_handle, n_sub_element, value.into(), resource_pointers)
+		ResourceKind::Done(value.into(), resource_pointers)
 	}
 
 	pub fn check_completion(&mut self) {
@@ -566,44 +574,46 @@ pub enum ResourceValue {
 	Typed(Ast),
 	// TODO: When code generation can pause, add a state for that.
 	// TODO: When evaluating can pause, add a state for that.
-	
-	/// The last field is a list of offsets into the ConstBuffer that are actually pointers to other
-	/// resources. These pointers should get set whenever loading the resource to appropriate
-	/// pointers(may have to be done by creating local variables).
-	/// It is a little unfortunate that we may have to do an almost full deep copy whenever loading
-	/// a constant as a pointer, but that might be necessary. Not sure how to reliably make it work
-	/// in any other way.
-	Value(TypeHandle, usize, crate::stack_frame::ConstBuffer, Vec<(usize, ResourceId, TypeHandle)>),
 }
 
 pub enum ResourceFunction {
 	Defined(Ast, Vec<ScopeMemberId>),
 	Typing(Ast, AstTyper, Vec<ScopeMemberId>),
 	Typed(Ast),
-	Value(Program),
+	// TODO: When code generation can pause, add a state for that.
 }
 
-pub enum ResourceKind {
-	// TODO: Make function and external function the same thing, and instead have a buffer
-	// of all the functions that exist, making functions calls just do a lookup into that
-	// buffer to call a function.
+pub enum FunctionKind {
 	ExternalFunction {
 		// TODO: Make a more advanced interface to call external functions
 		func: Box<dyn Fn(&Resources, &[u8], &mut [u8])>,
 		n_arg_bytes: usize,
 		n_return_bytes: usize,
 	},
+	Function(Program),
+}
+
+pub enum ResourceKind {
 	Function(ResourceFunction),
 	Value(ResourceValue),
+
+	/// The last field is a list of offsets into the ConstBuffer that are actually pointers to other
+	/// resources. These pointers should get set whenever loading the resource to appropriate
+	/// pointers(may have to be done by creating local variables).
+	/// It is a little unfortunate that we may have to do an almost full deep copy whenever loading
+	/// a constant as a pointer, but that might be necessary. Not sure how to reliably make it work
+	/// in any other way.
+	Done(crate::stack_frame::ConstBuffer, Vec<(usize, ResourceId, TypeHandle)>),
+	
 	Poison,
 }
 
 impl std::fmt::Debug for ResourceKind {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		match self {
-			ResourceKind::ExternalFunction { .. } => write!(f, "extern func"),
 			ResourceKind::Function { .. } => write!(f, "func"),
 			ResourceKind::Value { .. } => write!(f, "value"),
+			ResourceKind::Done(ref buffer, _) => write!(f, "done {:?}", buffer),
 			ResourceKind::Poison => write!(f, "poison"),
 		}
 	}

@@ -2,7 +2,6 @@
 #![feature(drain_filter)]
 
 #![warn(unused_qualifications)]
-
 #![deny(warnings)]
 
 pub const DEBUG: bool = false;
@@ -46,12 +45,11 @@ fn main() {
 	let mut types = Types::new();
 
 	// -- NICE CONSTANTS --
-	let type_type_handle = types.handle(TYPE_TYPE_ID);
 	scopes.insert_root_resource(
 		&mut resources, 
 		ustr::ustr("Type"), 
 		TYPE_TYPE_ID, 
-		ResourceKind::Value(ResourceValue::Value(type_type_handle, 1, (TYPE_TYPE_ID.into_index() as u64).to_le_bytes().into(), vec![])),
+		ResourceKind::Done((TYPE_TYPE_ID.into_index() as u64).to_le_bytes().into(), vec![]),
 	).unwrap();
 
 	let mut insert_type = |name, type_: TypeId| {
@@ -59,7 +57,7 @@ fn main() {
 			&mut resources, 
 			ustr::ustr(name), 
 			TYPE_TYPE_ID, 
-			ResourceKind::Value(ResourceValue::Value(type_type_handle, 1, (type_.into_index() as u64).to_le_bytes().into(), vec![])),
+			ResourceKind::Done((type_.into_index() as u64).to_le_bytes().into(), vec![]),
 		).unwrap();
 	};
 
@@ -80,194 +78,57 @@ fn main() {
 		args: vec![U8_TYPE_ID],
 		returns: EMPTY_TYPE_ID,
 	}));
+	let function_kind = resources.create_function(FunctionKind::ExternalFunction {
+		func: Box::new(|_, args, _| {
+			use std::io::Write;
+			let arg = args[0];
+			std::io::stdout().lock().write(&[arg]).expect("Putchar write failed");
+		}),
+		n_arg_bytes: 1,
+		n_return_bytes: 0,
+	});
 	scopes.insert_root_resource(
 		&mut resources, 
 		ustr::ustr("put_char"),
 		put_char_type_id, 
-		ResourceKind::ExternalFunction {
-			func: Box::new(|_, args, _| {
-				use std::io::Write;
-				let arg = args[0];
-				std::io::stdout().lock().write(&[arg]).expect("Putchar write failed");
-			}),
-			n_arg_bytes: 1,
-			n_return_bytes: 0,
-		}
+		function_kind,
 	).unwrap();
 
 	let flush_stdout_type_id = types.insert(Type::new(TypeKind::FunctionPointer {
 		args: vec![],
 		returns: EMPTY_TYPE_ID,
 	}));
+	let function_kind = resources.create_function(FunctionKind::ExternalFunction {
+		func: Box::new(|_, _, _| {
+			use std::io::Write;
+			std::io::stdout().lock().flush().unwrap();
+		}),
+		n_arg_bytes: 0,
+		n_return_bytes: 0,
+	});
 	scopes.insert_root_resource(
 		&mut resources, 
 		ustr::ustr("flush"),
 		flush_stdout_type_id, 
-		ResourceKind::ExternalFunction {
-			func: Box::new(|_, _, _| {
-				use std::io::Write;
-				std::io::stdout().lock().flush().unwrap();
-			}),
-			n_arg_bytes: 0,
-			n_return_bytes: 0,
-		}
-	).unwrap();
-
-	let u8_type_buffer = types.insert(Type::new(TypeKind::Pointer(U8_TYPE_ID)));
-	// TODO: When u8's happen, fix this!
-	let print_type_id = types.insert(Type::new(TypeKind::FunctionPointer {
-		args: vec![U64_TYPE_ID, U64_TYPE_ID],
-		returns: u8_type_buffer,
-	}));
-	scopes.insert_root_resource(
-		&mut resources, 
-		ustr::ustr("alloc"), 
-		print_type_id, 
-		ResourceKind::ExternalFunction {
-			func: Box::new(|_, args, returns| {
-				use std::convert::TryInto;
-				let n_elements = usize::from_le_bytes((&args[0..8 ]).try_into().unwrap());
-				let align      = usize::from_le_bytes((&args[8..16]).try_into().unwrap());
-
-				let pointer = unsafe { 
-					std::alloc::alloc(std::alloc::Layout::from_size_align(n_elements, align)
-						.unwrap())
-				} as usize;
-
-				returns[0..8].copy_from_slice(&pointer.to_le_bytes());
-			}),
-			n_arg_bytes: 16,
-			n_return_bytes: 8,
-		}
-	).unwrap();
-
-	// (pointer, size, align)
-	let u8_pointer_type = types.insert(Type::new(TypeKind::Pointer(U8_TYPE_ID)));
-	let print_type_id = types.insert(Type::new(TypeKind::FunctionPointer {
-		args: vec![u8_pointer_type, U64_TYPE_ID, U64_TYPE_ID],
-		returns: EMPTY_TYPE_ID,
-	}));
-	scopes.insert_root_resource(
-		&mut resources, 
-		ustr::ustr("dealloc"), 
-		print_type_id, 
-		ResourceKind::ExternalFunction {
-			func: Box::new(|_, args, _| {
-				if let &[a, b, c, d, e, f, g, h] = &args[0..8] {
-					let pointer = usize::from_le_bytes([a, b, c, d, e, f, g, h]);
-					if let &[a, b, c, d, e, f, g, h] = &args[8..16] {
-						let n_elements = usize::from_le_bytes([a, b, c, d, e, f, g, h]);
-						if let &[a, b, c, d, e, f, g, h] = &args[16..24] {
-							let align = usize::from_le_bytes([a, b, c, d, e, f, g, h]);
-							unsafe { 
-								std::alloc::dealloc(
-									pointer as *mut u8, 
-									std::alloc::Layout::from_size_align(n_elements, align).unwrap(),
-								);
-							}
-						} else { panic!("bad"); }
-					} else { panic!("bad"); }
-				} else { panic!("bad"); }
-			}),
-			n_arg_bytes: 24,
-			n_return_bytes: 0,
-		}
+		function_kind,
 	).unwrap();
 
 	let current_time_id = types.insert(Type::new(TypeKind::FunctionPointer {
 		args: vec![],
 		returns: U64_TYPE_ID,
 	}));
+	let function_kind = resources.create_function(FunctionKind::ExternalFunction {
+		func: Box::new(|_, _, returns| {
+			returns.copy_from_slice(&(INSTANT.elapsed().as_nanos() as u64).to_le_bytes());
+		}),
+		n_arg_bytes: 0,
+		n_return_bytes: 8,
+	});
 	scopes.insert_root_resource(
 		&mut resources, 
 		ustr::ustr("current_time_ns"), 
 		current_time_id,
-		ResourceKind::ExternalFunction {
-			func: Box::new(|_, _, returns| {
-				returns.copy_from_slice(&(INSTANT.elapsed().as_nanos() as u64).to_le_bytes());
-			}),
-			n_arg_bytes: 0,
-			n_return_bytes: 8,
-		}
-	).unwrap();
-
-	let print_type_id = types.insert(Type::new(TypeKind::FunctionPointer {
-		args: vec![U64_TYPE_ID],
-		returns: EMPTY_TYPE_ID,
-	}));
-	scopes.insert_root_resource(
-		&mut resources, 
-		ustr::ustr("print_num"), 
-		print_type_id, 
-		ResourceKind::ExternalFunction {
-			func: Box::new(|_, args, _| {
-				if let &[a, b, c, d, e, f, g, h] = args {
-					print!("{}", i64::from_le_bytes([a, b, c, d, e, f, g, h]));
-				} else { panic!("bad"); }
-			}),
-			n_arg_bytes: 8,
-			n_return_bytes: 0,
-		}
-	).unwrap();
-
-	let print_type_id = types.insert(Type::new(TypeKind::FunctionPointer {
-		args: vec![F64_TYPE_ID],
-		returns: EMPTY_TYPE_ID,
-	}));
-	scopes.insert_root_resource(
-		&mut resources, 
-		ustr::ustr("print_f64"), 
-		print_type_id, 
-		ResourceKind::ExternalFunction {
-			func: Box::new(|_, args, _| {
-				if let &[a, b, c, d, e, f, g, h] = args {
-					print!("{}", f64::from_bits(u64::from_le_bytes([a, b, c, d, e, f, g, h])));
-				} else { panic!("bad"); }
-			}),
-			n_arg_bytes: 8,
-			n_return_bytes: 0,
-		}
-	).unwrap();
-	let print_type_id = types.insert(Type::new(TypeKind::FunctionPointer {
-		args: vec![F32_TYPE_ID],
-		returns: EMPTY_TYPE_ID,
-	}));
-	scopes.insert_root_resource(
-		&mut resources, 
-		ustr::ustr("print_f32"), 
-		print_type_id, 
-		ResourceKind::ExternalFunction {
-			func: Box::new(|_, args, _| {
-				if let &[a, b, c, d] = args {
-					print!("{}", f32::from_bits(u32::from_le_bytes([a, b, c, d])));
-				} else { panic!("bad"); }
-			}),
-			n_arg_bytes: 4,
-			n_return_bytes: 0,
-		}
-	).unwrap();
-
-	let print_type_id = types.insert(Type::new(TypeKind::FunctionPointer {
-		args: vec![],
-		returns: U64_TYPE_ID,
-	}));
-
-	scopes.insert_root_resource(
-		&mut resources, 
-		ustr::ustr("input"), 
-		print_type_id, 
-		ResourceKind::ExternalFunction {
-			func: Box::new(|_, _, returns| {
-				let mut input = String::new();
-
-				std::io::stdin().read_line(&mut input).unwrap();
-
-				let num: i64 = input.trim().parse().unwrap();
-				returns[0..8].copy_from_slice(&num.to_le_bytes());
-			}),
-			n_arg_bytes: 0,
-			n_return_bytes: 8,
-		}
+		function_kind,
 	).unwrap();
 
 	// -- COMPILE STUFF --
@@ -302,7 +163,7 @@ fn main() {
 	error::print_output(&resources);
 
 	// If the value we want got completed, print the result
-	if let ResourceKind::Value(ResourceValue::Value(_, _, ref value, ref _pointer_members))
+	if let ResourceKind::Done(ref value, ref _pointer_members)
 		= resources.resource(id).kind
 	{
 		// TODO: Print pointer stuff out as well.

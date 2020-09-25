@@ -1,6 +1,6 @@
-i := 0;
+put_char(*"a".pointer);
+put_char(*"b".pointer);
+put_char(*"c".pointer);
 
-loop {
-	i = i + 1;
-	if i > 1000  skip loop;
-};
+(|||| |||| |||| |||| |||| ||||5)()()()()()()()()()()()()
+

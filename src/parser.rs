@@ -810,12 +810,7 @@ fn parse_value(
 			let n_bytes = string_bytes.len();
 			let buffer_id = context.resources.insert_done(Resource::new_with_type(
 				token.loc.clone(),
-				ResourceKind::Value(ResourceValue::Value(
-					context.types.handle(U8_TYPE_ID),
-					n_bytes,
-					string.as_bytes().into(),
-					vec![],
-				)),
+				ResourceKind::Done(string.as_bytes().into(), vec![]),
 				U8_TYPE_ID,
 			));
 
@@ -825,12 +820,10 @@ fn parse_value(
 			let id = context.resources.insert_done(
 				Resource::new_with_type(
 					token.loc.clone(),
-					ResourceKind::Value(ResourceValue::Value(
-						context.types.handle(string_type),
-						1,
+					ResourceKind::Done(
 						smallvec![0, 0, 0, 0, 0, 0, 0, 0, a, b, c, d, e, f, g, h],
 						vec![(0, buffer_id, context.types.handle(U8_TYPE_ID))],
-					)),
+					),
 					string_type,
 				)
 			);

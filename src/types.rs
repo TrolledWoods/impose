@@ -524,7 +524,7 @@ impl AstTyper {
 								}
 
 								match resources.resource(id).kind {
-									ResourceKind::Value(ResourceValue::Value(_, _, ref value, _)) => {
+									ResourceKind::Done(ref value, _) => {
 										if let &[a, b, c, d, e, f, g, h] = value.as_slice() {
 											let id = usize::from_le_bytes([a, b, c, d, e, f, g, h]);
 											if id >= types.types.len() {

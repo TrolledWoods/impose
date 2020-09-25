@@ -47,7 +47,7 @@ pub fn run_instructions(
 				);
 			}
 			Instruction::GetAddressOfResource(to, resource_id) => {
-				if let ResourceKind::Value(ResourceValue::Value(_, _, ref val, _)) = 
+				if let ResourceKind::Done(ref val, _) = 
 					resources.resource(resource_id).kind
 				{
 					let bytes = (val.as_ptr() as u64).to_le_bytes();
@@ -65,20 +65,15 @@ pub fn run_instructions(
 				// and don't crash if the function is not defined yet, just pause the execution
 				// and continue when it is ready.
 
-				let id = stack_frame_instance.get_u64(calling) as u32;
+				let id = stack_frame_instance.get_u64(calling) as usize;
 
-				use crate::id::Id;
-				let resource = resources.resource(
-					ResourceId::create(id)
-				);
-
-				match resource.kind {
-					ResourceKind::Function(ResourceFunction::Value(ref program)) => {
+				match resources.functions[id] {
+					FunctionKind::Function(ref program) => {
 						let mut sub_stack_frame_instance = 
 							program.layout.create_instance_with_func_args(
 								args.iter().map(|(index, value, _)| (
-									*index,
-									stack_frame_instance.get_value(value),
+										*index,
+										stack_frame_instance.get_value(value),
 								))
 							);
 
@@ -90,7 +85,7 @@ pub fn run_instructions(
 
 						stack_frame_instance.insert_into_local(returns, &return_value);
 					}
-					ResourceKind::ExternalFunction { ref func, n_arg_bytes, n_return_bytes } => {
+					FunctionKind::ExternalFunction { ref func, n_arg_bytes, n_return_bytes } => {
 						let mut arg_buffer = vec![0; n_arg_bytes];
 						let mut return_buffer = vec![0; n_return_bytes]; 
 
@@ -102,11 +97,6 @@ pub fn run_instructions(
 
 						func(resources, &arg_buffer, &mut return_buffer);
 						stack_frame_instance.insert_into_local(returns, &return_buffer);
-					}
-					_ => {
-						unreachable!(
-							"Resource is not function! This should have been caught in type checking"
-						);
 					}
 				}
 			}

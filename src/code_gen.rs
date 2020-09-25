@@ -488,7 +488,7 @@ fn get_resource_pointer(
 	// TODO: Also optimize direct pointers to constants.
 	let resource = resources.resource(id);
 	match resource.kind {
-		ResourceKind::Value(ResourceValue::Value(_, _, _, ref pointer_members)) 
+		ResourceKind::Done(_, ref pointer_members) 
 			if pointer_members.len() == 0 => 
 		{
 			// There is an instruction for this!
@@ -526,10 +526,11 @@ fn get_resource_constant(
 	let resource = resources.resource(id);
 	match resource.kind {
 		ResourceKind::Poison => panic!("Used poison. TODO: Return"),
-		ResourceKind::ExternalFunction { .. } |
 		ResourceKind::Function { .. } =>
 			Ok((1, id.into_index().into())),
-		ResourceKind::Value(ResourceValue::Value(type_handle, n_values, ref value, ref pointer_members)) => {
+		ResourceKind::Done(ref value, ref pointer_members) => {
+			let type_handle = types.handle(resource.type_.unwrap());
+
 			if pointer_members.len() > 0 {
 				// TODO: Deal with pointers in pointer buffers.
 
@@ -542,9 +543,9 @@ fn get_resource_constant(
 					get_resource_pointer(types, instructions, locals, loc, resources, sub_resource_id, local.sub_local(offset, 8, 8), sub_type_handle)?;
 				}
 
-				Ok((n_values, Value::Local(local)))
+				Ok((value.len() / type_handle.size, Value::Local(local)))
 			} else {
-				Ok((n_values, Value::Constant(value.clone())))
+				Ok((value.len() / type_handle.size, Value::Constant(value.clone())))
 			}
 		}
 		ResourceKind::Value(_) =>
