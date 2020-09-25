@@ -37,6 +37,14 @@ impl fmt::Debug for Value {
 }
 
 impl Value {
+	pub fn size(&self) -> usize {
+		match *self {
+			Value::Local(handle) => handle.size,
+			Value::Pointer { .. } => 8,
+			Value::Constant(ref buffer) => buffer.len(),
+		}
+	}
+
 	pub fn get_sub_value(&self, offset: usize, size: usize, align: usize) -> Value {
 		match *self {
 			Value::Local(handle) => {

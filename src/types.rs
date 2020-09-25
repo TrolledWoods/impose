@@ -430,11 +430,17 @@ impl AstTyper {
 							types.type_to_string(condition_type));
 					}
 					
-					if ast.nodes[true_body as usize].type_ != ast.nodes[false_body as usize].type_ {
-						return error!(node, "if and else blocks have to have the same types");
-					}
+					let return_type = combine_types(
+						node,
+						types,
+						ast.nodes[true_body as usize].type_.unwrap(),
+						ast.nodes[false_body as usize].type_.unwrap(),
+					)?;
 
-					ast.nodes[true_body as usize].type_
+					ast.nodes[true_body  as usize].type_ = Some(return_type);
+					ast.nodes[false_body as usize].type_ = Some(return_type);
+
+					Some(return_type)
 				}
 				NodeKind::Resource(id) => {
 					let resource = resources.resource(id);
@@ -634,21 +640,16 @@ impl AstTyper {
 				NodeKind::Block { ref contents, label } => {
 					let type_ = ast.nodes[*contents.last().unwrap() as usize].type_.unwrap();
 
-					if !compare_and_change(ast.locals.labels.get_mut(label), type_) {
-						return error!(
-							ast.nodes[*contents.last().unwrap() as usize], 
-							"Incompatible types, block doesn't return this type"
-						);
-					}
+					let label_val = ast.locals.labels.get_mut(label);
+					*label_val = combine_types(node, types, *label_val, type_)?;
 
 					Some(*ast.locals.labels.get(label))
 				}
 				NodeKind::Skip { label, value } => {
 					let type_ = ast.nodes[value as usize].type_.unwrap();
 
-					if !compare_and_change(ast.locals.labels.get_mut(label), type_) {
-						return error!(node, "Incompatible types, label doens't have this type");
-					}
+					let label_val = ast.locals.labels.get_mut(label);
+					*label_val = combine_types(node, types, *label_val, type_)?;
 
 					Some(NEVER_TYPE_ID)
 				},
@@ -695,10 +696,10 @@ impl AstTyper {
 	}
 }
 
-pub fn compare_and_change(a: &mut TypeId, b: TypeId) -> bool {
-	if *a == NEVER_TYPE_ID {
-		*a = b;
-		true 
-	}else if b == NEVER_TYPE_ID { true }
-	else { *a == b }
+#[inline]
+pub fn combine_types(loc: &impl Location, types: &Types, a: TypeId, b: TypeId) -> Result<TypeId, ()> {
+	if a == NEVER_TYPE_ID { Ok(b) }
+	else if b == NEVER_TYPE_ID { Ok(a) }
+	else if a == b { Ok(a) }
+	else { error!(loc, "Types '{}' and '{}' do not match", types.type_to_string(a), types.type_to_string(b)) }
 }

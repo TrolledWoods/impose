@@ -16,6 +16,7 @@ pub fn run_instructions(
 		instr_pointer += 1;
 
 		match *instruction {
+			Instruction::DebugLocation(_) => (),
 			Instruction::IndirectMove(into, ref from) => {
 				stack_frame_instance.insert_value_into_indirect_local(into, from);
 			}

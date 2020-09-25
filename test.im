@@ -1,1 +1,10 @@
-3 + 5
+
+
+
+{:hello
+	if 2 < 6 {
+		skip :hello 0xf
+	} else {
+		skip :hello 0xa
+	}
+}

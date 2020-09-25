@@ -1,5 +1,6 @@
 use std::fmt;
 
+use crate::{DEBUG, print_location};
 use crate::intrinsic::*;
 use crate::parser::*;
 use crate::types::*;
@@ -17,6 +18,8 @@ macro_rules! push_instr {
 }
 
 pub enum Instruction {
+	DebugLocation(CodeLoc),
+
 	IntrinsicTwoArgs(IntrinsicKindTwo, LocalHandle, Value, Value),
 
 	SetAddressOf(LocalHandle, LocalHandle),
@@ -37,6 +40,8 @@ pub enum Instruction {
 impl fmt::Debug for Instruction {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		match self {
+			Instruction::DebugLocation(loc)
+				=> write!(f, " -- {:?} -- ", loc),
 			Instruction::IntrinsicTwoArgs(intrinsic, result, a, b)
 				=> write!(f, "{:?} = {:?} {:?}, {:?}", result, intrinsic, a, b),
 			Instruction::GetAddressOfResource(to, id) =>
@@ -94,6 +99,8 @@ pub fn compile_expression(
 				.map(|&v| locals.allocate(types.handle(v)))
 				.collect::<Vec<_>>();
 		}
+
+		push_instr!(instructions, Instruction::DebugLocation(node.loc));
 
 		let evaluation_value = match node.kind {
 			NodeKind::BitCast { into_type: _, value: _ } => {
@@ -218,22 +225,29 @@ pub fn compile_expression(
 				Value::Local(EMPTY_LOCAL)
 			}
 			NodeKind::IfWithElse { end_label, .. } => {
+				// TODO: Do more sophisticated stuff with never types.
+
 				let false_body = node_values.pop().unwrap();
 				let true_body = node_values.pop().unwrap();
 				let _condition = node_values.pop().unwrap();
 
-				if let Value::Local(local) = true_body {
-					push_instr!(instructions, Instruction::Move(
-						local, 
-						false_body,
-					));
-				} else {
-					panic!("This can't be a constant bruh");
-				}
+				let return_value = match (true_body.size(), false_body.size()) {
+					(0, 0) => Value::Local(EMPTY_LOCAL),
+					(_, 0) => true_body,
+					(0, _) => false_body,
+					(_, _) => {
+						let handle = if let Value::Local(handle) = true_body { handle }
+							else { panic!() };
+
+						push_instr!(instructions, Instruction::Move(handle, false_body));
+
+						true_body
+					}
+				};
 
 				labels[end_label.into_index()] = Some(instructions.len());
 
-				true_body
+				return_value
 			}
 			NodeKind::Skip { label, .. } => {
 				let value = node_values.pop().unwrap();
@@ -423,21 +437,27 @@ pub fn compile_expression(
 		node_values.push(evaluation_value);
 	}
 
-	// println!("\n---Instructions generated ---");
-	// for (i, instruction) in instructions.iter().enumerate() {
-	// 	for (label, val) in labels.iter().enumerate() {
-	// 		if *val == Some(i) {
-	// 			println!(" -- label {}:", label);
-	// 		}
-	// 	}
-	// 	println!("{:?}", instruction);
-	// }
+	if DEBUG {
+		println!("\n---Instructions generated ---");
+		for (i, instruction) in instructions.iter().enumerate() {
+			for (label, val) in labels.iter().enumerate() {
+				if *val == Some(i) {
+					println!(" -- label {}:", label);
+				}
+			}
+			if let Instruction::DebugLocation(loc) = *instruction {
+				print_location(resources.code_cache.get(&loc.file).unwrap(), &loc, "");
+			} else {
+				println!("{:?}", instruction);
+			}
+		}
 
-	// for (label, val) in labels.iter().enumerate() {
-	// 	if *val == Some(instructions.len()) {
-	// 		println!(" -- label {}:", label);
-	// 	}
-	// }
+		for (label, val) in labels.iter().enumerate() {
+			if *val == Some(instructions.len()) {
+				println!(" -- label {}:", label);
+			}
+		}
+	}
 
 	Ok(Program {
 		layout: std::sync::Arc::new(locals.layout()),
