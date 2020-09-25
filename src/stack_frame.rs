@@ -130,10 +130,11 @@ impl fmt::Debug for IndirectLocalHandle {
 		if self.pointer_offset != 0 {
 			write!(f, "+{}", self.pointer_offset)?;
 		}
-		write!(f, ":{})", self.resulting_size)?;
+		write!(f, ":{})", 8)?;
 		if self.offset != 0 {
 			write!(f, "+{}", self.offset)?;
 		}
+		write!(f, ":{}", self.resulting_size)?;
 		Ok(())
 	}
 }
@@ -308,7 +309,7 @@ impl StackFrameLayout {
 const STACK_FRAME_ALIGNMENT: usize = std::mem::size_of::<ForceAlignment>();
 
 #[repr(align(8))]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct ForceAlignment([u8; 8]);
 
 pub struct StackFrameInstance {
@@ -324,7 +325,7 @@ impl StackFrameInstance {
 	pub fn address_of_local(&self, local: LocalHandle) -> *const u8 {
 		let (pos, _) = self.layout.local_pos_and_size(local);
 		unsafe {
-			(self.buffer.as_ptr() as *const u8).add(pos)
+			self.buffer_ptr().add(pos)
 		}
 	}
 
@@ -357,7 +358,7 @@ impl StackFrameInstance {
 			}
 			Value::Pointer(local) => {
 				let pointer_pos = self.layout.local_pos(local.pointer) + local.pointer_offset;
-				let from = self.get_at_index::<*const u8>(pointer_pos).wrapping_add(local.offset);
+				let from = unsafe { self.get_at_index::<*const u8>(pointer_pos).add(local.offset) };
 
 				// TODO: Check that the pointer is aligned properly.
 
@@ -374,11 +375,11 @@ impl StackFrameInstance {
 
 	pub fn insert_value_into_indirect_local(&mut self, local: IndirectLocalHandle, value: &Value) {
 		let pointer_pos = self.layout.local_pos(local.pointer) + local.pointer_offset;
-		let to = self.get_at_index::<*mut u8>(pointer_pos).wrapping_add(local.offset);
 
 		// SAFETY: There is no safety. The programming language we are running is not a
 		// safe programming language, which means it cannot by nature be safe.
 		unsafe {
+			let to = self.get_at_index::<*mut u8>(pointer_pos).add(local.offset);
 			std::ptr::copy(self.get_value(value).as_ptr(), to, local.resulting_size);
 		}
 	}
@@ -414,8 +415,13 @@ impl StackFrameInstance {
 		debug_assert!(is_aligned(std::mem::align_of::<T>(), index));
 
 		unsafe {
-			*(self.buffer.as_ptr().add(index) as *const T)
+			*(self.buffer_ptr().add(index) as *const T)
 		}
+	}
+
+	#[inline]
+	fn buffer_ptr(&self) -> *const u8 {
+		self.buffer.as_ptr() as *const u8
 	}
 
 	pub fn insert_into_index(&mut self, index: usize, data: &[u8]) {
@@ -425,7 +431,7 @@ impl StackFrameInstance {
 	}
 
 	fn bytes(&self) -> &[u8] {
-		let slice_ptr = self.buffer.as_ptr();
+		let slice_ptr = self.buffer_ptr();
 
 		// SAFETY:
 		// slice_ptr is aligned to a u8 properly, and isn't null(because it came from a slice).

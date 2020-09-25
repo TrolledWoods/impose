@@ -2,7 +2,7 @@
 #![feature(drain_filter)]
 
 #![warn(unused_qualifications)]
-#![deny(warnings)]
+// #![deny(warnings)]
 
 pub const DEBUG: bool = false;
 

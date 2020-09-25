@@ -1,3 +1,12 @@
 complex :: import "complex";
 
-complex\print_mandelbrot(0.0, 0.0, 2.0, 100.0, 0.5);
+time_mandelbrot :: || {
+	time := current_time_ns();
+	complex\print_mandelbrot(0.0, 0.0, 2.0, 100, 0.5);
+	current_time_ns() - time
+};
+
+// dump_code(bit_cast () -> Empty (complex\print_mandelbrot));
+// dump_code(bit_cast () -> Empty (time_mandelbrot));
+
+time_mandelbrot()

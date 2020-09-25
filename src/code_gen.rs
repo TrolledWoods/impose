@@ -126,7 +126,6 @@ pub fn compile_expression(
 				let right = node_values.pop().unwrap();
 				let left = node_values.pop().unwrap();
 
-				let new_value = locals.allocate(types.handle(node.type_.unwrap()));
 				match left {
 					Value::Local(handle) => {
 						push_move(&mut instructions, handle, right.clone());
@@ -139,8 +138,7 @@ pub fn compile_expression(
 					}
 				};
 
-				push_move(&mut instructions, new_value, right);
-				Value::Local(new_value)
+				right
 			}
 			NodeKind::IntrinsicTwo(kind) => {
 				let right = node_values.pop().unwrap();

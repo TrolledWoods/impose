@@ -49,81 +49,48 @@ pub fn get_binary_operator_intrinsic(operator: Operator, types: &Types, left_typ
 	-> Option<(IntrinsicKindTwo, TypeId)>
 {
 	Some(match (operator, left_type, right_type) {
-		(Operator::Add, F64_TYPE_ID, F64_TYPE_ID) =>
-			(IntrinsicKindTwo::AddF64, F64_TYPE_ID),
-		(Operator::Add, F32_TYPE_ID, F32_TYPE_ID) =>
-			(IntrinsicKindTwo::AddF32, F32_TYPE_ID),
-		(Operator::Add, left, right) if is_primitive_int(left) && left == right =>
-			(IntrinsicKindTwo::AddI, left),
+		(Operator::Add, F64_TYPE_ID, F64_TYPE_ID) => (IntrinsicKindTwo::AddF64, F64_TYPE_ID),
+		(Operator::Add, F32_TYPE_ID, F32_TYPE_ID) => (IntrinsicKindTwo::AddF32, F32_TYPE_ID),
+		(Operator::Add, left, right) if is_primitive_int(left) && left == right => (IntrinsicKindTwo::AddI, left),
 
-		(Operator::Sub, F64_TYPE_ID, F64_TYPE_ID) =>
-			(IntrinsicKindTwo::SubF64, F64_TYPE_ID),
-		(Operator::Sub, F32_TYPE_ID, F32_TYPE_ID) =>
-			(IntrinsicKindTwo::SubF32, F32_TYPE_ID),
-		(Operator::Sub, left, right) if is_primitive_int(left) && left == right =>
-			(IntrinsicKindTwo::SubI, left),
+		(Operator::Sub, F64_TYPE_ID, F64_TYPE_ID) => (IntrinsicKindTwo::SubF64, F64_TYPE_ID),
+		(Operator::Sub, F32_TYPE_ID, F32_TYPE_ID) => (IntrinsicKindTwo::SubF32, F32_TYPE_ID),
+		(Operator::Sub, left, right) if is_primitive_int(left) && left == right => (IntrinsicKindTwo::SubI, left),
 
-		(Operator::MulOrDeref, F64_TYPE_ID, F64_TYPE_ID) =>
-			(IntrinsicKindTwo::MulF64, F64_TYPE_ID),
-		(Operator::MulOrDeref, F32_TYPE_ID, F32_TYPE_ID) =>
-			(IntrinsicKindTwo::MulF32, F32_TYPE_ID),
-		(Operator::MulOrDeref, left, right) if is_primitive_int(left) && left == right =>
-			(IntrinsicKindTwo::MulI, left),
+		(Operator::MulOrDeref, F64_TYPE_ID, F64_TYPE_ID) => (IntrinsicKindTwo::MulF64, F64_TYPE_ID),
+		(Operator::MulOrDeref, F32_TYPE_ID, F32_TYPE_ID) => (IntrinsicKindTwo::MulF32, F32_TYPE_ID),
+		(Operator::MulOrDeref, left, right) if is_primitive_int(left) && left == right => (IntrinsicKindTwo::MulI, left),
 
-		(Operator::Div, F64_TYPE_ID, F64_TYPE_ID) =>
-			(IntrinsicKindTwo::DivF64, F64_TYPE_ID),
-		(Operator::Div, F32_TYPE_ID, F32_TYPE_ID) =>
-			(IntrinsicKindTwo::DivF32, F32_TYPE_ID),
-		(Operator::Div, left, right) if is_primitive_int(left) && left == right =>
-			(IntrinsicKindTwo::DivI, left),
+		(Operator::Div, F64_TYPE_ID, F64_TYPE_ID) => (IntrinsicKindTwo::DivF64, F64_TYPE_ID),
+		(Operator::Div, F32_TYPE_ID, F32_TYPE_ID) => (IntrinsicKindTwo::DivF32, F32_TYPE_ID),
+		(Operator::Div, left, right) if is_primitive_int(left) && left == right => (IntrinsicKindTwo::DivI, left),
 
-		(Operator::Equ, BOOL_TYPE_ID, BOOL_TYPE_ID) =>
-			(IntrinsicKindTwo::Equal, BOOL_TYPE_ID),
-		(Operator::NEqu, BOOL_TYPE_ID, BOOL_TYPE_ID) =>
-			(IntrinsicKindTwo::NotEqual, BOOL_TYPE_ID),
+		(Operator::Equ,  BOOL_TYPE_ID, BOOL_TYPE_ID) => (IntrinsicKindTwo::Equal, BOOL_TYPE_ID),
+		(Operator::NEqu, BOOL_TYPE_ID, BOOL_TYPE_ID) => (IntrinsicKindTwo::NotEqual, BOOL_TYPE_ID),
 
-		(Operator::Equ, TYPE_TYPE_ID, TYPE_TYPE_ID) =>
-			(IntrinsicKindTwo::Equal, BOOL_TYPE_ID),
-		(Operator::NEqu, TYPE_TYPE_ID, TYPE_TYPE_ID) =>
-			(IntrinsicKindTwo::NotEqual, BOOL_TYPE_ID),
+		(Operator::Equ,  TYPE_TYPE_ID, TYPE_TYPE_ID) => (IntrinsicKindTwo::Equal, BOOL_TYPE_ID),
+		(Operator::NEqu, TYPE_TYPE_ID, TYPE_TYPE_ID) => (IntrinsicKindTwo::NotEqual, BOOL_TYPE_ID),
 
-		(Operator::Equ, left, right) if is_primitive_int(left) && left == right =>
-			(IntrinsicKindTwo::Equal, BOOL_TYPE_ID),
-		(Operator::NEqu, left, right) if is_primitive_int(left) && left == right =>
-			(IntrinsicKindTwo::NotEqual, BOOL_TYPE_ID),
-		(Operator::Less, left, right) if is_primitive_int(left) && left == right =>
-			(IntrinsicKindTwo::Less, BOOL_TYPE_ID),
-		(Operator::LessEqu, left, right) if is_primitive_int(left) && left == right =>
-			(IntrinsicKindTwo::LessEqu, BOOL_TYPE_ID),
-		(Operator::Greater, left, right) if is_primitive_int(left) && left == right =>
-			(IntrinsicKindTwo::Greater, BOOL_TYPE_ID),
-		(Operator::GreaterEqu, left, right) if is_primitive_int(left) && left == right =>
-			(IntrinsicKindTwo::GreaterEqu, BOOL_TYPE_ID),
+		(Operator::Equ,        left, right) if is_primitive_int(left) && left == right => (IntrinsicKindTwo::Equal, BOOL_TYPE_ID),
+		(Operator::NEqu,       left, right) if is_primitive_int(left) && left == right => (IntrinsicKindTwo::NotEqual, BOOL_TYPE_ID),
+		(Operator::Less,       left, right) if is_primitive_int(left) && left == right => (IntrinsicKindTwo::Less, BOOL_TYPE_ID),
+		(Operator::LessEqu,    left, right) if is_primitive_int(left) && left == right => (IntrinsicKindTwo::LessEqu, BOOL_TYPE_ID),
+		(Operator::Greater,    left, right) if is_primitive_int(left) && left == right => (IntrinsicKindTwo::Greater, BOOL_TYPE_ID),
+		(Operator::GreaterEqu, left, right) if is_primitive_int(left) && left == right => (IntrinsicKindTwo::GreaterEqu, BOOL_TYPE_ID),
 
-		(Operator::Less, F32_TYPE_ID, F32_TYPE_ID) =>
-			(IntrinsicKindTwo::LessF32, BOOL_TYPE_ID),
-		(Operator::LessEqu, F32_TYPE_ID, F32_TYPE_ID) =>
-			(IntrinsicKindTwo::LessEquF32, BOOL_TYPE_ID),
-		(Operator::Greater, F32_TYPE_ID, F32_TYPE_ID) =>
-			(IntrinsicKindTwo::GreaterF32, BOOL_TYPE_ID),
-		(Operator::GreaterEqu, F32_TYPE_ID, F32_TYPE_ID) =>
-			(IntrinsicKindTwo::GreaterEquF32, BOOL_TYPE_ID),
+		(Operator::Less,       F32_TYPE_ID, F32_TYPE_ID) => (IntrinsicKindTwo::LessF32, BOOL_TYPE_ID),
+		(Operator::LessEqu,    F32_TYPE_ID, F32_TYPE_ID) => (IntrinsicKindTwo::LessEquF32, BOOL_TYPE_ID),
+		(Operator::Greater,    F32_TYPE_ID, F32_TYPE_ID) => (IntrinsicKindTwo::GreaterF32, BOOL_TYPE_ID),
+		(Operator::GreaterEqu, F32_TYPE_ID, F32_TYPE_ID) => (IntrinsicKindTwo::GreaterEquF32, BOOL_TYPE_ID),
 
-		(Operator::Less, F64_TYPE_ID, F64_TYPE_ID) =>
-			(IntrinsicKindTwo::LessF64, BOOL_TYPE_ID),
-		(Operator::LessEqu, F64_TYPE_ID, F64_TYPE_ID) =>
-			(IntrinsicKindTwo::LessEquF64, BOOL_TYPE_ID),
-		(Operator::Greater, F64_TYPE_ID, F64_TYPE_ID) =>
-			(IntrinsicKindTwo::GreaterF64, BOOL_TYPE_ID),
-		(Operator::GreaterEqu, F64_TYPE_ID, F64_TYPE_ID) =>
-			(IntrinsicKindTwo::GreaterEquF64, BOOL_TYPE_ID),
+		(Operator::Less,       F64_TYPE_ID, F64_TYPE_ID) => (IntrinsicKindTwo::LessF64, BOOL_TYPE_ID),
+		(Operator::LessEqu,    F64_TYPE_ID, F64_TYPE_ID) => (IntrinsicKindTwo::LessEquF64, BOOL_TYPE_ID),
+		(Operator::Greater,    F64_TYPE_ID, F64_TYPE_ID) => (IntrinsicKindTwo::GreaterF64, BOOL_TYPE_ID),
+		(Operator::GreaterEqu, F64_TYPE_ID, F64_TYPE_ID) => (IntrinsicKindTwo::GreaterEquF64, BOOL_TYPE_ID),
 
-		(Operator::BitAndOrPointer, left, right) if is_primitive_int(left) && left == right =>
-			(IntrinsicKindTwo::BitAnd, left),
-		(Operator::BitwiseOrOrLambda, left, right) if is_primitive_int(left) && left == right =>
-			(IntrinsicKindTwo::BitOr, left),
-		(Operator::BitXor, left, right) if is_primitive_int(left) && left == right =>
-			(IntrinsicKindTwo::BitXor, left),
+		(Operator::BitAndOrPointer,   left, right) if is_primitive_int(left) && left == right => (IntrinsicKindTwo::BitAnd, left),
+		(Operator::BitwiseOrOrLambda, left, right) if is_primitive_int(left) && left == right => (IntrinsicKindTwo::BitOr, left),
+		(Operator::BitXor,            left, right) if is_primitive_int(left) && left == right => (IntrinsicKindTwo::BitXor, left),
 
 		(Operator::Add, left, U64_TYPE_ID) => {
 			if let TypeKind::Pointer(internal) = types.get(left).kind {
@@ -161,28 +128,20 @@ pub fn get_binary_operator_intrinsic(operator: Operator, types: &Types, left_typ
 pub fn run_intrinsic_two(intrinsic: IntrinsicKindTwo, buf: &mut u64, a: &[u8], b: &[u8]) {
 	match intrinsic {
 		IntrinsicKindTwo::AddI   => *buf = buf_to_u64(a).wrapping_add(buf_to_u64(b)),
-		IntrinsicKindTwo::AddF64 =>
-			*buf = (f64::from_bits(buf_to_u64(a)) + f64::from_bits(buf_to_u64(b))).to_bits(),
-		IntrinsicKindTwo::AddF32 =>
-			*buf = (f32::from_bits(buf_to_u32(a)) + f32::from_bits(buf_to_u32(b))).to_bits() as u64,
+		IntrinsicKindTwo::AddF64 => *buf = (f64::from_bits(buf_to_u64(a)) + f64::from_bits(buf_to_u64(b))).to_bits(),
+		IntrinsicKindTwo::AddF32 => *buf = (f32::from_bits(buf_to_u32(a)) + f32::from_bits(buf_to_u32(b))).to_bits() as u64,
 
 		IntrinsicKindTwo::SubI   => *buf = buf_to_u64(a).wrapping_sub(buf_to_u64(b)),
-		IntrinsicKindTwo::SubF64 =>
-			*buf = (f64::from_bits(buf_to_u64(a)) - f64::from_bits(buf_to_u64(b))).to_bits(),
-		IntrinsicKindTwo::SubF32 =>
-			*buf = (f32::from_bits(buf_to_u32(a)) - f32::from_bits(buf_to_u32(b))).to_bits() as u64,
+		IntrinsicKindTwo::SubF64 => *buf = (f64::from_bits(buf_to_u64(a)) - f64::from_bits(buf_to_u64(b))).to_bits(),
+		IntrinsicKindTwo::SubF32 => *buf = (f32::from_bits(buf_to_u32(a)) - f32::from_bits(buf_to_u32(b))).to_bits() as u64,
 
 		IntrinsicKindTwo::DivI   => *buf = buf_to_u64(a) / buf_to_u64(b),
-		IntrinsicKindTwo::DivF64 =>
-			*buf = (f64::from_bits(buf_to_u64(a)) / f64::from_bits(buf_to_u64(b))).to_bits(),
-		IntrinsicKindTwo::DivF32 =>
-			*buf = (f32::from_bits(buf_to_u32(a)) / f32::from_bits(buf_to_u32(b))).to_bits() as u64,
+		IntrinsicKindTwo::DivF64 => *buf = (f64::from_bits(buf_to_u64(a)) / f64::from_bits(buf_to_u64(b))).to_bits(),
+		IntrinsicKindTwo::DivF32 => *buf = (f32::from_bits(buf_to_u32(a)) / f32::from_bits(buf_to_u32(b))).to_bits() as u64,
 
 		IntrinsicKindTwo::MulI   => *buf = buf_to_u64(a).wrapping_mul(buf_to_u64(b)),
-		IntrinsicKindTwo::MulF64 =>
-			*buf = (f64::from_bits(buf_to_u64(a)) * f64::from_bits(buf_to_u64(b))).to_bits(),
-		IntrinsicKindTwo::MulF32 =>
-			*buf = (f32::from_bits(buf_to_u32(a)) * f32::from_bits(buf_to_u32(b))).to_bits() as u64,
+		IntrinsicKindTwo::MulF64 => *buf = (f64::from_bits(buf_to_u64(a)) * f64::from_bits(buf_to_u64(b))).to_bits(),
+		IntrinsicKindTwo::MulF32 => *buf = (f32::from_bits(buf_to_u32(a)) * f32::from_bits(buf_to_u32(b))).to_bits() as u64,
 
 		IntrinsicKindTwo::Equal      => *buf = (buf_to_u64(a) == buf_to_u64(b)) as u64,
 		IntrinsicKindTwo::NotEqual   => *buf = (buf_to_u64(a) != buf_to_u64(b)) as u64,
@@ -205,8 +164,8 @@ pub fn run_intrinsic_two(intrinsic: IntrinsicKindTwo, buf: &mut u64, a: &[u8], b
 		IntrinsicKindTwo::BitOr  => *buf = buf_to_u64(a) | buf_to_u64(b),
 		IntrinsicKindTwo::BitXor => *buf = buf_to_u64(a) ^ buf_to_u64(b),
 
-		IntrinsicKindTwo::PointerAdd { size } => *buf = buf_to_u64(a).wrapping_add(buf_to_u64(b) * size),
-		IntrinsicKindTwo::PointerSub { size } => *buf = buf_to_u64(a).wrapping_sub(buf_to_u64(b) * size),
+		IntrinsicKindTwo::PointerAdd { size } => *buf  = buf_to_u64(a).wrapping_add(buf_to_u64(b) * size),
+		IntrinsicKindTwo::PointerSub { size } => *buf  = buf_to_u64(a).wrapping_sub(buf_to_u64(b) * size),
 		IntrinsicKindTwo::PointerDiff { size } => *buf = buf_to_u64(a).wrapping_sub(buf_to_u64(b)) / size,
 	};
 }
