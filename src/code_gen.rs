@@ -10,13 +10,6 @@ use crate::stack_frame::*;
 use crate::operator::*;
 use crate::code_loc::*;
 
-macro_rules! push_instr {
-	($instrs:expr, $instr:expr) => {{
-		// println!("{} {}", line!(), column!());
-		$instrs.push($instr);
-	}}
-}
-
 pub enum Instruction {
 	DebugLocation(CodeLoc),
 
@@ -100,7 +93,7 @@ pub fn compile_expression(
 				.collect::<Vec<_>>();
 		}
 
-		push_instr!(instructions, Instruction::DebugLocation(node.loc));
+		instructions.push(Instruction::DebugLocation(node.loc));
 
 		let evaluation_value = match node.kind {
 			NodeKind::BitCast { into_type: _, value: _ } => {
@@ -136,17 +129,17 @@ pub fn compile_expression(
 				let new_value = locals.allocate(types.handle(node.type_.unwrap()));
 				match left {
 					Value::Local(handle) => {
-						push_instr!(instructions, Instruction::Move(handle, right.clone()));
+						push_move(&mut instructions, handle, right.clone());
 					},
 					Value::Pointer(handle) => {
-						push_instr!(instructions, Instruction::IndirectMove(handle, right.clone()));
+						push_move_indirect(&mut instructions, handle, right.clone());
 					},
 					Value::Constant(_) => {
 						panic!("Cannot assign to a constant");
 					}
 				};
 
-				push_instr!(instructions, Instruction::Move(new_value, right));
+				push_move(&mut instructions, new_value, right);
 				Value::Local(new_value)
 			}
 			NodeKind::IntrinsicTwo(kind) => {
@@ -154,7 +147,7 @@ pub fn compile_expression(
 				let left  = node_values.pop().unwrap();
 
 				let result = locals.allocate(types.handle(node.type_.unwrap()));
-				push_instr!(instructions, Instruction::IntrinsicTwoArgs(kind, result, left, right));
+				instructions.push(Instruction::IntrinsicTwoArgs(kind, result, left, right));
 				Value::Local(result)
 			},
 			NodeKind::DeclareFunctionArgument { variable_name, .. } => {
@@ -172,7 +165,7 @@ pub fn compile_expression(
 				scopes.member_mut(variable_name).storage_loc = Some(location);
 				
 				let input = node_values.pop().unwrap();
-				push_instr!(instructions, Instruction::Move(location, input));
+				push_move(&mut instructions, location, input);
 
 				Value::Local(EMPTY_LOCAL)
 			}
@@ -183,7 +176,7 @@ pub fn compile_expression(
 			}
 			NodeKind::Marker(MarkerKind::IfCondition(_, label)) => {
 				let value = node_values.pop().unwrap();
-				push_instr!(instructions, Instruction::JumpRelIfZero(value, label));
+				instructions.push(Instruction::JumpRelIfZero(value, label));
 				Value::Local(EMPTY_LOCAL)
 			}
 			NodeKind::Marker(
@@ -194,13 +187,10 @@ pub fn compile_expression(
 				let local = locals.allocate(
 					types.handle(ast.nodes[contains as usize].type_.unwrap())
 				);
-				push_instr!(
-					instructions, 
-					Instruction::Move(local, node_values.pop().unwrap())
-				);
+				push_move(&mut instructions, local, node_values.pop().unwrap());
 
 				// Jump instruction to skip else
-				push_instr!(instructions, Instruction::JumpRel(false_body_label));
+				instructions.push(Instruction::JumpRel(false_body_label));
 
 				labels[true_body_label.into_index()] = Some(instructions.len());
 
@@ -210,7 +200,7 @@ pub fn compile_expression(
 				node_values.pop().unwrap(); // Loop body
 				node_values.pop().unwrap(); // Loop head marker
 
-				push_instr!(instructions, Instruction::JumpRel(label));
+				instructions.push(Instruction::JumpRel(label));
 
 				labels[break_label.into_index()] = Some(instructions.len());
 
@@ -239,7 +229,7 @@ pub fn compile_expression(
 						let handle = if let Value::Local(handle) = true_body { handle }
 							else { panic!() };
 
-						push_instr!(instructions, Instruction::Move(handle, false_body));
+						push_move(&mut instructions, handle, false_body);
 
 						true_body
 					}
@@ -251,11 +241,9 @@ pub fn compile_expression(
 			}
 			NodeKind::Skip { label, .. } => {
 				let value = node_values.pop().unwrap();
-				push_instr!(instructions,
-					Instruction::Move(label_locals[label.into_index()], value)
-				);
+				push_move(&mut instructions, label_locals[label.into_index()], value);
 
-				push_instr!(instructions, Instruction::JumpRel(label));
+				instructions.push(Instruction::JumpRel(label));
 
 				Value::Local(EMPTY_LOCAL)
 			}
@@ -264,7 +252,7 @@ pub fn compile_expression(
 				node_values.truncate(node_values.len() + 1 - contents.len());
 
 				let label_loc = label_locals[label.into_index()];
-				push_instr!(instructions, Instruction::Move(label_loc, result));
+				push_move(&mut instructions, label_loc, result);
 
 				labels[label.into_index()] = Some(instructions.len());
 
@@ -281,7 +269,7 @@ pub fn compile_expression(
 						for (_, offset, type_handle) in type_members.iter().rev() {
 							let sub_local = 
 								local.sub_local(*offset, type_handle.size, type_handle.align);
-							push_instr!(instructions, Instruction::Move(sub_local, node_values.pop().unwrap()));
+							push_move(&mut instructions, sub_local, node_values.pop().unwrap());
 						}
 					}
 					_ => unreachable!(),
@@ -369,7 +357,7 @@ pub fn compile_expression(
 
 				let calling = node_values.pop().unwrap();
 
-				push_instr!(instructions, Instruction::Call { calling, returns, args });
+				instructions.push(Instruction::Call { calling, returns, args });
 
 				Value::Local(returns)
 			}
@@ -386,12 +374,12 @@ pub fn compile_expression(
 						let local = locals.allocate(types.handle(
 								ast.nodes[operand as usize].type_.unwrap()
 						));
-						push_instr!(instructions, Instruction::Move(local, value));
+						push_move(&mut instructions, local, value);
 						local
 					}
 				};
 
-				push_instr!(instructions, Instruction::SetAddressOf(to, from));
+				instructions.push(Instruction::SetAddressOf(to, from));
 				Value::Local(to)
 			}
 			NodeKind::UnaryOperator { operator: Operator::MulOrDeref, operand } => {
@@ -405,7 +393,7 @@ pub fn compile_expression(
 						let local = locals.allocate(types.handle(
 							ast.nodes[operand as usize].type_.unwrap()
 						));
-						push_instr!(instructions, Instruction::Move(local, Value::Pointer(handle)));
+						push_move(&mut instructions, local, Value::Pointer(handle));
 						local
 					}
 				};
@@ -446,7 +434,7 @@ pub fn compile_expression(
 				}
 			}
 			if let Instruction::DebugLocation(loc) = *instruction {
-				print_location(resources.code_cache.get(&loc.file).unwrap(), &loc, "");
+				// print_location(resources.code_cache.get(&loc.file).unwrap(), &loc, "");
 			} else {
 				println!("{:?}", instruction);
 			}
@@ -465,6 +453,22 @@ pub fn compile_expression(
 		labels: labels.into_iter().map(|v| v.unwrap()).collect(),
 		value: node_values.pop().unwrap(),
 	})
+}
+
+fn push_move_indirect(instructions: &mut Vec<Instruction>, into: IndirectLocalHandle, from: Value) {
+	if from.size() > 0 {
+		assert_eq!(into.resulting_size, from.size());
+
+		instructions.push(Instruction::IndirectMove(into, from));
+	}
+}
+
+fn push_move(instructions: &mut Vec<Instruction>, into: LocalHandle, from: Value) {
+	if from.size() > 0 {
+		assert_eq!(into.size, from.size());
+
+		instructions.push(Instruction::Move(into, from));
+	}
 }
 
 /// Returns a pointer to a resource, either by copying the resource onto the stack and taking a
@@ -488,7 +492,7 @@ fn get_resource_pointer(
 			if pointer_members.len() == 0 => 
 		{
 			// There is an instruction for this!
-			push_instr!(instructions, Instruction::GetAddressOfResource(local, id));
+			instructions.push(Instruction::GetAddressOfResource(local, id));
 			Ok(())
 		}
 		_ => {
@@ -500,12 +504,12 @@ fn get_resource_pointer(
 				Value::Local(local) => local,
 				_ => {
 					let value_local = locals.allocate_several(sub_type_handle, n_values);
-					push_instr!(instructions, Instruction::Move(value_local, value));
+					instructions.push(Instruction::Move(value_local, value));
 					value_local
 				}
 			};
 
-			push_instr!(instructions, Instruction::SetAddressOf(local, value_local));
+			instructions.push(Instruction::SetAddressOf(local, value_local));
 			Ok(())
 		}
 	}
@@ -531,7 +535,7 @@ fn get_resource_constant(
 
 				let local = locals.allocate(type_handle);
 
-				push_instr!(instructions, Instruction::Move(local, Value::Constant(value.clone())));
+				push_move(instructions, local, Value::Constant(value.clone()));
 
 				for &(offset, sub_resource_id, sub_type_handle) in pointer_members {
 					// Put the resource pointer into the right local.

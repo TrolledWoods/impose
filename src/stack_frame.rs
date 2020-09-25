@@ -121,7 +121,7 @@ pub struct IndirectLocalHandle {
 	// TODO: This is not really necessary, but we have it here
 	// for now, because we do not always know the sizes we want in
 	// operations currently.
-	resulting_size: usize,
+	pub resulting_size: usize,
 }
 
 impl fmt::Debug for IndirectLocalHandle {
