@@ -87,6 +87,19 @@ impl Types {
 
 		self.types.push(type_)
 	}
+	
+	pub fn insert_function(&mut self, args: Vec<TypeId>, returns: TypeId) -> TypeId {
+		let type_ = Type::new(TypeKind::FunctionPointer { args, returns });
+		
+		// Try to find a type that is already the same.
+		for (id, self_type) in self.types.iter_ids() {
+			if *self_type == type_ {
+				return id;
+			}
+		}
+
+		self.types.push(type_)
+	}
 
 	/// Pushes to the pointer_inside buffer you passed in the pointers it found inside.
 	///

@@ -74,62 +74,98 @@ fn main() {
 	insert_type("Empty", EMPTY_TYPE_ID);
 	insert_type("Bool",  BOOL_TYPE_ID);
 
-	let put_char_type_id = types.insert(Type::new(TypeKind::FunctionPointer {
-		args: vec![U8_TYPE_ID],
-		returns: EMPTY_TYPE_ID,
-	}));
-	let function_kind = resources.create_function(FunctionKind::ExternalFunction {
-		func: Box::new(|_, args, _| {
-			use std::io::Write;
-			let arg = args[0];
-			std::io::stdout().lock().write(&[arg]).expect("Putchar write failed");
-		}),
-		n_arg_bytes: 1,
-		n_return_bytes: 0,
-	});
-	scopes.insert_root_resource(
-		&mut resources, 
-		ustr::ustr("put_char"),
-		put_char_type_id, 
-		function_kind,
-	).unwrap();
+	{
+		use std::convert::TryInto;
+		let buffer_pointer = types.insert(Type::new(TypeKind::BufferPointer(U8_TYPE_ID)));
+		let function_kind = resources.create_function(FunctionKind::ExternalFunction {
+			func: Box::new(|_, args, _| {
+				let string_pointer = usize::from_le_bytes(args[..8].try_into().unwrap()) as *const u8;
+				let length = usize::from_le_bytes(args[8..16].try_into().unwrap());
 
-	let flush_stdout_type_id = types.insert(Type::new(TypeKind::FunctionPointer {
-		args: vec![],
-		returns: EMPTY_TYPE_ID,
-	}));
-	let function_kind = resources.create_function(FunctionKind::ExternalFunction {
-		func: Box::new(|_, _, _| {
-			use std::io::Write;
-			std::io::stdout().lock().flush().unwrap();
-		}),
-		n_arg_bytes: 0,
-		n_return_bytes: 0,
-	});
-	scopes.insert_root_resource(
-		&mut resources, 
-		ustr::ustr("flush"),
-		flush_stdout_type_id, 
-		function_kind,
-	).unwrap();
+				let slice = unsafe {
+					std::slice::from_raw_parts(string_pointer, length)
+				};
 
-	let current_time_id = types.insert(Type::new(TypeKind::FunctionPointer {
-		args: vec![],
-		returns: U64_TYPE_ID,
-	}));
-	let function_kind = resources.create_function(FunctionKind::ExternalFunction {
-		func: Box::new(|_, _, returns| {
-			returns.copy_from_slice(&(INSTANT.elapsed().as_nanos() as u64).to_le_bytes());
-		}),
-		n_arg_bytes: 0,
-		n_return_bytes: 8,
-	});
-	scopes.insert_root_resource(
-		&mut resources, 
-		ustr::ustr("current_time_ns"), 
-		current_time_id,
-		function_kind,
-	).unwrap();
+				print!("{}", std::str::from_utf8(slice).unwrap());
+			}), n_arg_bytes: 16, n_return_bytes: 0, });
+		scopes.insert_root_resource(&mut resources, ustr::ustr("print"),
+			types.insert_function(vec![buffer_pointer], EMPTY_TYPE_ID),
+			function_kind,
+		).unwrap();
+	}
+
+	{
+		use std::convert::TryInto;
+		let pointer_u8 = types.insert(Type::new(TypeKind::Pointer(U8_TYPE_ID)));
+		let function_kind = resources.create_function(FunctionKind::ExternalFunction {
+			func: Box::new(|_, args, returns| {
+				let size  = usize::from_le_bytes(args[0..8 ].try_into().unwrap());
+				let align = usize::from_le_bytes(args[8..16].try_into().unwrap());
+				returns.copy_from_slice(
+					&(unsafe {
+						std::alloc::alloc(std::alloc::Layout::from_size_align(size, align).unwrap())
+					} as usize).to_le_bytes()
+				);
+			}), n_arg_bytes: 16, n_return_bytes: 8, });
+		scopes.insert_root_resource(&mut resources, ustr::ustr("alloc"),
+			types.insert_function(vec![U64_TYPE_ID, U64_TYPE_ID], pointer_u8),
+			function_kind,
+		).unwrap();
+	}
+
+	{
+		use std::convert::TryInto;
+		let pointer_u8 = types.insert(Type::new(TypeKind::Pointer(U8_TYPE_ID)));
+		let function_kind = resources.create_function(FunctionKind::ExternalFunction {
+			func: Box::new(|_, args, _| {
+				let pointer = usize::from_le_bytes(args[0..8 ].try_into().unwrap()) as *mut u8;
+				let size    = usize::from_le_bytes(args[0..8 ].try_into().unwrap());
+				let align   = usize::from_le_bytes(args[8..16].try_into().unwrap());
+				unsafe {
+					std::alloc::dealloc(pointer, std::alloc::Layout::from_size_align(size, align).unwrap())
+				};
+			}), n_arg_bytes: 24, n_return_bytes: 0, });
+		scopes.insert_root_resource(&mut resources, ustr::ustr("free"),
+			types.insert_function(vec![pointer_u8, U64_TYPE_ID, U64_TYPE_ID], EMPTY_TYPE_ID),
+			function_kind,
+		).unwrap();
+	}
+
+	{
+		let function_kind = resources.create_function(FunctionKind::ExternalFunction {
+			func: Box::new(|_, args, _| {
+				use std::io::Write;
+				let arg = args[0];
+				std::io::stdout().lock().write(&[arg]).expect("Putchar write failed");
+			}), n_arg_bytes: 1, n_return_bytes: 0, });
+		scopes.insert_root_resource(&mut resources, ustr::ustr("put_char"),
+			types.insert_function(vec![U8_TYPE_ID], EMPTY_TYPE_ID),
+			function_kind,
+		).unwrap();
+	}
+
+	{
+		let function_kind = resources.create_function(FunctionKind::ExternalFunction {
+			func: Box::new(|_, _, _| {
+				use std::io::Write;
+				std::io::stdout().lock().flush().unwrap();
+			}), n_arg_bytes: 0, n_return_bytes: 0, });
+		scopes.insert_root_resource(&mut resources, ustr::ustr("flush"),
+			types.insert_function(vec![], EMPTY_TYPE_ID), 
+			function_kind,
+		).unwrap();
+	}
+
+	{
+		let function_kind = resources.create_function(FunctionKind::ExternalFunction {
+			func: Box::new(|_, _, returns| {
+				returns.copy_from_slice(&(INSTANT.elapsed().as_nanos() as u64).to_le_bytes());
+			}), n_arg_bytes: 0, n_return_bytes: 8, });
+		scopes.insert_root_resource(&mut resources, ustr::ustr("current_time_ns"), 
+			types.insert_function(vec![], U64_TYPE_ID),
+			function_kind,
+		).unwrap();
+	}
 
 	// -- COMPILE STUFF --
 	let scope = scopes.super_scope;

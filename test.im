@@ -1,6 +1,17 @@
-put_char(*"a".pointer);
-put_char(*"b".pointer);
-put_char(*"c".pointer);
+mem_copy :: |to: &U8, from: &U8, n_bytes: U64| {
+	i := 0;
+	loop {
+		*(to + i) = *(from + i);
 
-(|||| |||| |||| |||| |||| ||||5)()()()()()()()()()()()()
+		if (i = i+1) >= n_bytes  skip loop;
+	};
+};
 
+a := &0xffff_ffff__ffff_ffff;
+b := bit_cast &U64 (alloc(8, 8));
+
+mem_copy(bit_cast &U8 (b), bit_cast &U8 (a), 8);
+
+free(bit_cast &U8 (b), 8, 8);
+
+*b

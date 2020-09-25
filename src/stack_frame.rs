@@ -40,7 +40,7 @@ impl Value {
 	pub fn size(&self) -> usize {
 		match *self {
 			Value::Local(handle) => handle.size,
-			Value::Pointer { .. } => 8,
+			Value::Pointer(IndirectLocalHandle { resulting_size, .. }) => resulting_size,
 			Value::Constant(ref buffer) => buffer.len(),
 		}
 	}
