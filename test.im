@@ -1,15 +1,21 @@
+my_function :: || {
+	loop {
+		x := if 4 < 5 {
+			skip loop 50;
+		} else {
+			60
+		};
 
-
-loop {
-	x := if 4 < 5 {
-		skip loop 50;
-
-		50;
-		20;
-		10;
-	} else {
-		60
+		x + 5;
 	};
-
-	x + 5;
 };
+
+dump_code(bit_cast () -> Empty (|| 2 + 4));
+
+
+
+
+
+
+
+
