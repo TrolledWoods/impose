@@ -543,9 +543,9 @@ fn get_resource_constant(
 					get_resource_pointer(types, instructions, locals, loc, resources, sub_resource_id, local.sub_local(offset, 8, 8), sub_type_handle)?;
 				}
 
-				Ok((value.len() / type_handle.size, Value::Local(local)))
+				Ok((value.len().checked_div(type_handle.size).unwrap_or(1), Value::Local(local)))
 			} else {
-				Ok((value.len() / type_handle.size, Value::Constant(value.clone())))
+				Ok((value.len().checked_div(type_handle.size).unwrap_or(1), Value::Constant(value.clone())))
 			}
 		}
 		ResourceKind::Value(_) =>

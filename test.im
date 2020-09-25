@@ -1,21 +1,3 @@
-my_function :: || {
-	loop {
-		x := if 4 < 5 {
-			skip loop 50;
-		} else {
-			60
-		};
+complex :: import "complex";
 
-		x + 5;
-	};
-};
-
-dump_code(bit_cast () -> Empty (|| 2 + 4));
-
-
-
-
-
-
-
-
+complex\print_mandelbrot(0.0, 0.0, 2.0, 100.0, 0.5);

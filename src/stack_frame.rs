@@ -323,7 +323,9 @@ pub struct StackFrameInstance {
 impl StackFrameInstance {
 	pub fn address_of_local(&self, local: LocalHandle) -> *const u8 {
 		let (pos, _) = self.layout.local_pos_and_size(local);
-		&self.bytes()[pos]
+		unsafe {
+			(self.buffer.as_ptr() as *const u8).add(pos)
+		}
 	}
 
 	pub fn get_u32(&self, value: &Value) -> u32 {
@@ -412,12 +414,14 @@ impl StackFrameInstance {
 		debug_assert!(is_aligned(std::mem::align_of::<T>(), index));
 
 		unsafe {
-			*(&self.bytes()[index] as *const u8 as *const T)
+			*(self.buffer.as_ptr().add(index) as *const T)
 		}
 	}
 
 	pub fn insert_into_index(&mut self, index: usize, data: &[u8]) {
-		self.bytes_mut()[index..index + data.len()].copy_from_slice(data);
+		unsafe {
+			std::ptr::copy(data.as_ptr(), (self.buffer.as_mut_ptr() as *mut u8).add(index), data.len());
+		}
 	}
 
 	fn bytes(&self) -> &[u8] {
