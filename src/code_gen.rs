@@ -93,7 +93,7 @@ pub fn compile_expression(
 				.collect::<Vec<_>>();
 		}
 
-		instructions.push(Instruction::DebugLocation(node.loc));
+		// instructions.push(Instruction::DebugLocation(node.loc));
 
 		let evaluation_value = match node.kind {
 			NodeKind::BitCast { into_type: _, value: _ } => {

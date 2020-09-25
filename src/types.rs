@@ -648,10 +648,38 @@ impl AstTyper {
 					} else {
 						return error!(node, "Cannot assign nothing to a variable");
 					}
-					None
+					
+					Some(EMPTY_TYPE_ID)
 				}
 				NodeKind::Block { ref contents, label } => {
-					let type_ = ast.nodes[*contents.last().unwrap() as usize].type_.unwrap();
+					let mut is_never_type = false;
+					for &content_node_id in contents.iter() {
+						if is_never_type {
+							if !matches!(ast.nodes[content_node_id as usize].kind, NodeKind::EmptyLiteral) {
+								warning!(
+									ast.nodes[content_node_id as usize],
+									"Dead code"
+								);
+							}
+						}
+
+						if ast.nodes[content_node_id as usize].type_.unwrap() == NEVER_TYPE_ID {
+							is_never_type = true;
+						}
+					}
+
+					if is_never_type && !matches!(ast.nodes[*contents.last().unwrap() as usize].kind, NodeKind::EmptyLiteral) {
+						return error!(
+							ast.nodes[*contents.last().unwrap() as usize],
+							"Cannot use dead code as return expression"
+						);
+					}
+
+					let type_ = if is_never_type {
+						NEVER_TYPE_ID
+					} else {
+						ast.nodes[*contents.last().unwrap() as usize].type_.unwrap()
+					};
 
 					let label_val = ast.locals.labels.get_mut(label);
 					*label_val = combine_types(node, types, *label_val, type_)?;
