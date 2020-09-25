@@ -140,9 +140,9 @@ fn main() {
 	).unwrap();
 
 	// (pointer, size, align)
-	let u64_pointer_type = types.insert(Type::new(TypeKind::Pointer(U64_TYPE_ID)));
+	let u8_pointer_type = types.insert(Type::new(TypeKind::Pointer(U8_TYPE_ID)));
 	let print_type_id = types.insert(Type::new(TypeKind::FunctionPointer {
-		args: vec![u64_pointer_type, U64_TYPE_ID, U64_TYPE_ID],
+		args: vec![u8_pointer_type, U64_TYPE_ID, U64_TYPE_ID],
 		returns: EMPTY_TYPE_ID,
 	}));
 	scopes.insert_root_resource(
