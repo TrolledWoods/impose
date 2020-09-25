@@ -3,7 +3,9 @@
 
 #![warn(unused_qualifications)]
 
-pub const DEBUG: bool = true;
+#![deny(warnings)]
+
+pub const DEBUG: bool = false;
 
 #[macro_use]
 extern crate lazy_static;

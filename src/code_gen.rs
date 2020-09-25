@@ -1,6 +1,6 @@
 use std::fmt;
 
-use crate::{DEBUG, print_location};
+use crate::DEBUG;
 use crate::intrinsic::*;
 use crate::parser::*;
 use crate::types::*;
@@ -433,7 +433,7 @@ pub fn compile_expression(
 					println!(" -- label {}:", label);
 				}
 			}
-			if let Instruction::DebugLocation(loc) = *instruction {
+			if let Instruction::DebugLocation(_) = *instruction {
 				// print_location(resources.code_cache.get(&loc.file).unwrap(), &loc, "");
 			} else {
 				println!("{:?}", instruction);
