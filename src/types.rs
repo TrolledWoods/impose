@@ -443,11 +443,17 @@ pub enum NodeKind {
 	TypeBufferPointer,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct TypeStackElement {
+	type_: TypeId,
+	loc: CodeLoc,
+}
+
 pub struct AstTyper {
 	/// Each element in this corresponds to an ast node.
 	/// Once done, this list should be the same length as the ast.
 	node_id: usize,
-	type_stack: Vec<TypeId>,
+	type_stack: Vec<TypeStackElement>,
 
 	pub ast: Ast,
 }
@@ -481,7 +487,7 @@ impl AstTyper {
 					let member_types = &self.type_stack[stack_len..];
 					let type_ = types.insert_struct(
 						members.iter().zip(member_types).map(|((name, _), type_)|
-							(*name, *type_)
+							(*name, type_.type_)
 						));
 					self.type_stack.truncate(stack_len);
 					Node::new(
@@ -496,14 +502,14 @@ impl AstTyper {
 					Node::new(
 						node,
 						NodeKind::Marker(marker_kind),
-						self.type_stack.pop().unwrap(),
+						self.type_stack.pop().unwrap().type_,
 					)
 				}
 				parser::NodeKind::Marker(marker_kind @ parser::MarkerKind::IfCondition(_, _)) => {
 					Node::new(
 						node,
 						NodeKind::Marker(marker_kind),
-						self.type_stack.pop().unwrap(),
+						self.type_stack.pop().unwrap().type_,
 					)
 				}
 				parser::NodeKind::Marker(kind) => {
@@ -528,7 +534,7 @@ impl AstTyper {
 					)
 				}
 				parser::NodeKind::DeclareFunctionArgument { variable_name, .. } => {
-					scopes.member_mut(variable_name).type_ = Some(self.type_stack.pop().unwrap());
+					scopes.member_mut(variable_name).type_ = Some(self.type_stack.pop().unwrap().type_);
 
 					Node::new(
 						node,
@@ -538,7 +544,7 @@ impl AstTyper {
 				}
 				parser::NodeKind::MemberAccess(_, sub_name) => {
 					let type_id = self.type_stack.pop().unwrap();
-					let type_kind = &types.get(type_id).kind;
+					let type_kind = &types.get(type_id.type_).kind;
 					
 					let type_ = match *type_kind {
 						TypeKind::U64 => {
@@ -579,11 +585,12 @@ impl AstTyper {
 
 					Node::new(
 						node,
-						NodeKind::MemberAccess(type_id, sub_name),
+						NodeKind::MemberAccess(type_id.type_, sub_name),
 						type_,
 					)
 				}
 				parser::NodeKind::Loop(_, b, break_label) => {
+					let _ = self.type_stack.pop().unwrap();
 					Node::new(
 						node,
 						NodeKind::Loop(b, break_label),
@@ -606,21 +613,21 @@ impl AstTyper {
 					)
 				}
 				parser::NodeKind::IfWithElse { end_label, .. } => {
-					let false_body_type = self.type_stack.pop().unwrap();
-					let true_body_type = self.type_stack.pop().unwrap();
-					let condition_type = self.type_stack.pop().unwrap();
+					let false_body = self.type_stack.pop().unwrap();
+					let true_body  = self.type_stack.pop().unwrap();
+					let condition  = self.type_stack.pop().unwrap();
 
-					if condition_type != BOOL_TYPE_ID {
-						return error!(node,
+					if condition.type_ != BOOL_TYPE_ID {
+						return error!(condition.loc,
 							"If condition has to be Bool, got {}",
-							types.type_to_string(condition_type));
+							types.type_to_string(condition.type_));
 					}
 					
 					let return_type = combine_types(
 						node,
 						types,
-						true_body_type,
-						false_body_type,
+						true_body.type_,
+						false_body.type_,
 					)?;
 
 					Node::new(
@@ -649,24 +656,21 @@ impl AstTyper {
 					)
 				}
 				parser::NodeKind::BitCast { into_type: _, value: _ } => {
-					let value_type_handle =
-						types.handle(self.type_stack.pop().unwrap());
-					let into_type_handle =
-						types.handle(self.type_stack.pop().unwrap());
+					let value = self.type_stack.pop().unwrap();
+					let value_type_handle = types.handle(value.type_);
+					let into = self.type_stack.pop().unwrap();
+					let into_type_handle = types.handle(into.type_);
 
 					if into_type_handle.size != value_type_handle.size {
-						return error!(node,
-							"Bit casting requires the type you're casting to and the type you're\
-							casting from to be the same size in bits(casting from '{}' to '{}')",
-							types.type_to_string(value_type_handle.id),
-							types.type_to_string(into_type_handle.id)
-						);
+						info!(value.loc, "This is {}", types.type_to_string(value_type_handle.id));
+						info!(into.loc, "This is {}", types.type_to_string(into_type_handle.id));
+						return error!(node, "You can only bitcast types with the same size");
 					}
 
 					Node::new(
 						node,
 						NodeKind::BitCast,
-						into_type_handle.id,
+						into.type_,
 					)
 				}
 				parser::NodeKind::Identifier { source: mut id, const_members: ref sub_members, is_type } => {
@@ -766,18 +770,18 @@ impl AstTyper {
 					// pointer type
 					let func_type = self.type_stack[stack_loc - 1];
 					if let Type { kind: TypeKind::FunctionPointer { ref args, returns }, .. }
-						= types.get(func_type)
+						= types.get(func_type.type_)
 					{
 						if arg_list.len() != args.len() {
 							return error!(node.loc, "Expected {} arguments, got {}", 
 								args.len(), arg_list.len());
 						}
 
-						for (&wanted, &got) in args.iter().zip(arg_list) {
-							if wanted != got {
+						for (&wanted, got) in args.iter().zip(arg_list) {
+							if wanted != got.type_ {
 								return error!(node, "Expected '{}', got '{}'",
 									types.type_to_string(wanted), 
-									types.type_to_string(got),
+									types.type_to_string(got.type_),
 								);
 							}
 						}
@@ -786,7 +790,7 @@ impl AstTyper {
 
 						Node::new(
 							node,
-							NodeKind::FunctionCall(func_type),
+							NodeKind::FunctionCall(func_type.type_),
 							*returns,
 						)
 					} else {
@@ -794,28 +798,28 @@ impl AstTyper {
 					}
 				}
 				parser::NodeKind::BinaryOperator { operator, .. } => {
-					let right_type = self.type_stack.pop().unwrap();
-					let left_type = self.type_stack.pop().unwrap();
+					let right = self.type_stack.pop().unwrap();
+					let left  = self.type_stack.pop().unwrap();
 
 					if let Operator::Assign = operator {
-						if left_type != right_type {
+						if left.type_ != right.type_ {
 							return error!(node,
 								"Cannot assign {} to {}",
-								types.type_to_string(right_type),
-								types.type_to_string(left_type),
+								types.type_to_string(right.type_),
+								types.type_to_string(left.type_),
 							);
 						}
 
 						Node::new(
 							node,
 							NodeKind::Assign,
-							left_type,
+							left.type_,
 						)
 					} else {
 						// Generate an intrinsic for the combination of types.
 						// TODO: Move this to a separate file at least, to hide the mess a bit.
 						let (intrinsic, return_type) =
-							match get_binary_operator_intrinsic(operator, types, left_type, right_type)
+							match get_binary_operator_intrinsic(operator, types, left.type_, right.type_)
 						{
 							Some(value) => value,
 							None => return error!(node, "This combination of operator and types does not exist"),
@@ -831,11 +835,11 @@ impl AstTyper {
 				parser::NodeKind::UnaryOperator { operand: _, operator } => {
 					let type_ = match operator {
 						Operator::BitAndOrPointer => types.insert(Type::new(
-							TypeKind::Pointer(self.type_stack.pop().unwrap())
+							TypeKind::Pointer(self.type_stack.pop().unwrap().type_)
 						)),
 						Operator::MulOrDeref => {
 							if let TypeKind::Pointer(sub_type) 
-								= types.get(self.type_stack.pop().unwrap()).kind
+								= types.get(self.type_stack.pop().unwrap().type_).kind
 							{
 								sub_type
 							} else {
@@ -852,7 +856,7 @@ impl AstTyper {
 					)
 				},
 				parser::NodeKind::Declaration { variable_name, .. } => {
-					scopes.member_mut(variable_name).type_ = Some(self.type_stack.pop().unwrap());
+					scopes.member_mut(variable_name).type_ = Some(self.type_stack.pop().unwrap().type_);
 					
 					Node::new(
 						node,
@@ -863,11 +867,11 @@ impl AstTyper {
 				parser::NodeKind::Block { ref contents, label } => {
 					let stack_bottom = self.type_stack.len() - contents.len();
 					let content_types = &self.type_stack[stack_bottom..];
-					let is_never_type = content_types.iter().find(|&&v| v == NEVER_TYPE_ID).is_some();
+					let is_never_type = content_types.iter().find(|v| v.type_ == NEVER_TYPE_ID).is_some();
 
-					if is_never_type && !matches!(*content_types.last().unwrap(), EMPTY_TYPE_ID) {
+					if is_never_type && !matches!(content_types.last().unwrap().type_, EMPTY_TYPE_ID) {
 						return error!(
-							node,
+							content_types.last().unwrap().loc,
 							"Cannot use dead code as return expression"
 						);
 					}
@@ -875,7 +879,7 @@ impl AstTyper {
 					let type_ = if is_never_type {
 						NEVER_TYPE_ID
 					} else {
-						*content_types.last().unwrap()
+						content_types.last().unwrap().type_
 					};
 
 					self.type_stack.truncate(stack_bottom);
@@ -890,7 +894,7 @@ impl AstTyper {
 					)
 				}
 				parser::NodeKind::Skip { label, value: _ } => {
-					let type_ = self.type_stack.pop().unwrap();
+					let type_ = self.type_stack.pop().unwrap().type_;
 
 					let label_val = self.ast.locals.labels.get_mut(label);
 					*label_val = combine_types(node, types, *label_val, type_)?;
@@ -904,7 +908,7 @@ impl AstTyper {
 
 				// --- Type expressions ---
 				parser::NodeKind::GetType(_) => {
-					let type_ = self.type_stack.pop().unwrap();
+					let type_ = self.type_stack.pop().unwrap().type_;
 					Node::new(
 						node,
 						NodeKind::GetType(type_),
@@ -912,9 +916,9 @@ impl AstTyper {
 					)
 				}
 				parser::NodeKind::TypeFunctionPointer { ref arg_list, return_type: returns } => {
-					let return_type = returns.map(|_| self.type_stack.pop().unwrap());
+					let return_type = returns.map(|_| self.type_stack.pop().unwrap().type_);
 					let kind = TypeKind::FunctionPointer {
-						args: arg_list.iter().map(|_| self.type_stack.pop().unwrap()).rev().collect(),
+						args: arg_list.iter().map(|_| self.type_stack.pop().unwrap().type_).rev().collect(),
 						returns: match return_type {
 							Some(return_type) => return_type,
 							None => types.insert(Type::new(TypeKind::EmptyType)),
@@ -932,7 +936,7 @@ impl AstTyper {
 					let stack_len = self.type_stack.len() - args.len();
 					let struct_args = &self.type_stack[stack_len ..];
 					let type_ = types.insert_struct(args.iter().enumerate().map(|(i, (name, _))|
-						(*name, struct_args[i])
+						(*name, struct_args[i].type_)
 					));
 					self.type_stack.truncate(stack_len);
 					Node::new(
@@ -942,7 +946,7 @@ impl AstTyper {
 					)
 				}
 				parser::NodeKind::TypePointer(_) => {
-					let pointing_to_type = self.type_stack.pop().unwrap();
+					let pointing_to_type = self.type_stack.pop().unwrap().type_;
 					Node::new(
 						node,
 						NodeKind::TypePointer,
@@ -950,7 +954,7 @@ impl AstTyper {
 					)
 				}
 				parser::NodeKind::TypeBufferPointer(_) => {
-					let pointing_to_type = self.type_stack.pop().unwrap();
+					let pointing_to_type = self.type_stack.pop().unwrap().type_;
 					Node::new(
 						node,
 						NodeKind::TypeBufferPointer,
@@ -959,12 +963,10 @@ impl AstTyper {
 				}
 			};
 
-			// This will get removed later, it's just a check to make sure I don't do something
-			// bad for now.
-			let id = self.ast.nodes.len();
-			assert_eq!(self.node_id, id);
-
-			self.type_stack.push(new_node.type_.unwrap());
+			self.type_stack.push(TypeStackElement {
+				type_: new_node.type_.unwrap(),
+				loc: new_node.loc,
+			});
 			self.ast.nodes.push(new_node);
 
 			self.node_id += 1;
