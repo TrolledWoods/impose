@@ -8,6 +8,7 @@ use crate::align::*;
 use crate::code_loc::*;
 use crate::operator::*;
 use crate::error::*;
+use crate::stack_frame::*;
 
 pub const TYPE_TYPE_ID:   TypeId = TypeId::create_raw(0);
 pub const U64_TYPE_ID:    TypeId = TypeId::create_raw(1);
@@ -377,12 +378,9 @@ impl Location for Node {
 pub enum NodeKind {
 	Marker(parser::MarkerKind),
 	MemberAccess(TypeId, ustr::Ustr),
-	Number(i128),
-	Float(f64),
+	Constant(ConstBuffer),
 
 	IntrinsicTwo(IntrinsicKindTwo),
-
-	EmptyLiteral,
 	Identifier(ScopeMemberId),
 
 	BitCast,
@@ -522,14 +520,14 @@ impl AstTyper {
 				parser::NodeKind::Number(number) => {
 					Node::new(
 						node,
-						NodeKind::Number(number),
+						NodeKind::Constant((number as u64).to_le_bytes().as_slice().into()),
 						U64_TYPE_ID,
 					)
 				}
 				parser::NodeKind::Float(number) => {
 					Node::new(
 						node,
-						NodeKind::Float(number),
+						NodeKind::Constant(number.to_bits().to_le_bytes().as_slice().into()),
 						F64_TYPE_ID,
 					)
 				}
@@ -651,7 +649,7 @@ impl AstTyper {
 				parser::NodeKind::EmptyLiteral => {
 					Node::new(
 						node,
-						NodeKind::EmptyLiteral,
+						NodeKind::Constant(smallvec![]),
 						EMPTY_TYPE_ID,
 					)
 				}

@@ -1,11 +1,13 @@
-vec := vec\add(vec\new(4, 2), vec\new(6, 4));
-assert(vec.x == 10);
-assert(vec.y == 6);
+vec := vec\add(vec\new(4.0, 2.0), vec\new(6.0, 4.0));
+assert(vec.x > 9.9);
+assert(vec.x < 10.1);
+assert(vec.y > 5.9);
+assert(vec.y < 6.1);
 
 vec :: {
-	VecU64 :: type { x: U64, y: U64 };
-	new :: |x: U64, y: U64| struct { x: x, y: y };
-	add :: |a: VecU64, b: VecU64| struct { x: a.x + b.x, y: a.y + b.y };
+	VecF64 :: type { x: F64, y: F64 };
+	new :: |x: F64, y: F64| struct { x: x, y: y };
+	add :: |a: VecF64, b: VecF64| struct { x: a.x + b.x, y: a.y + b.y };
 };
 
 a :: || 6;

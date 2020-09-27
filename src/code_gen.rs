@@ -309,16 +309,8 @@ pub fn compile_expression(
 					_ => panic!("bleh"),
 				}
 			}
-			NodeKind::Number(num) => {
-				// TODO: Check that the number fits, although I guess this should
-				// be down further up in the pipeline
-				(num as u64).into()
-			}
-			NodeKind::Float(num) => {
-				num.to_bits().into()
-			}
-			NodeKind::EmptyLiteral => {
-				Value::Local(EMPTY_LOCAL)
+			NodeKind::Constant(ref value) => {
+				Value::Constant(value.clone())
 			}
 			NodeKind::FunctionCall(type_) => {
 				// Get the type of the function

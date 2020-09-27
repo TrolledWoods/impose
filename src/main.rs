@@ -1,5 +1,6 @@
 #![feature(assoc_char_funcs)]
 #![feature(drain_filter)]
+#![feature(array_methods)]
 
 // #![warn(unused_qualifications)]
 #![deny(warnings)]
