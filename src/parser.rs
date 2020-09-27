@@ -824,6 +824,11 @@ fn parse_value(
 			)?;
 
 			let operand = parse_expression_rec(context.borrow(), unary_priority)?;
+
+			if operator == Operator::BitAndOrPointer {
+				make_lvalue(context.borrow(), operand)?;
+			}
+
 			context.ast.insert_node(Node::new(&context, token, context.scope, NodeKind::UnaryOperator { operator, operand }))
 		}
 		TokenKind::NumericLiteral(number) => {

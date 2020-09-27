@@ -17,7 +17,10 @@ pub enum Instruction {
 	SetAddressOf(LocalHandle, LocalHandle),
 	GetAddressOfResource(LocalHandle, ResourceId),
 
-	IndirectMove(IndirectLocalHandle, Value),
+	Dereference(LocalHandle, Value),
+
+	/// Moves to the pointer at LocalHandle.
+	IndirectMove(LocalHandle, Value),
 	Move(LocalHandle, Value),
 
 	JumpRel(LabelId),
@@ -40,10 +43,11 @@ impl fmt::Debug for Instruction {
 				write!(f, "{:?} = resource({:?})", to, id),
 			Instruction::SetAddressOf(to, from) =>
 				write!(f, "{:?} = &{:?}", to, from),
-			Instruction::IndirectMove(into, from) => write!(f, "mov {:?} = {:?}", into, from),
-			Instruction::Move(a, b) => write!(f, "mov {:?} = {:?}", a, b),
+			Instruction::IndirectMove(into, from) => write!(f, "*{:?} = {:?}", into, from),
+			Instruction::Move(a, b) => write!(f, "{:?} = {:?}", a, b),
 			Instruction::JumpRel(a) => write!(f, "jump {:?}", a),
 			Instruction::JumpRelIfZero(value, a) => write!(f, "jump {:?} if {:?} == 0", a, value),
+			Instruction::Dereference(to, from) => write!(f, "{:?} = *{:?}", to, from),
 			Instruction::Call { calling, returns, ref args } => {
 				write!(f, "call {:?} with ", calling)?;
 				for arg in args.iter() {
@@ -98,6 +102,30 @@ pub fn compile_expression(
 			NodeKind::BitCast => {
 				node_values.pop().unwrap()
 			}
+			NodeKind::ScopeMemberReference(member_id) => {
+				let member = scopes.member(member_id);
+				match member.kind {
+					ScopeMemberKind::UndefinedDependency(_) => panic!("Cannot run code_gen on undefined dependencies(they have to have been caught in the typer)"),
+					ScopeMemberKind::Indirect(_) => unreachable!("the member function on Scopes should handle indirects and shouldn't return one of them"),
+					ScopeMemberKind::LocalVariable => {
+						let to = locals.allocate(types.handle(member.type_.unwrap()));
+						let from = match scopes.member(member_id).storage_loc {
+							Some(value) => value,
+							None => panic!("Invalid thing, \nScopes: {:?}, \nInstructions: {:?}", scopes, instructions),
+						};
+
+						instructions.push(Instruction::SetAddressOf(to, from));
+						
+						Value::Local(to)
+					}
+					ScopeMemberKind::Constant(id) => {
+						let to = locals.allocate(types.handle(member.type_.unwrap()));
+						get_resource_pointer(types, &mut instructions, &mut locals, &node.loc, resources, id, to, types.handle(member.type_.unwrap()))?;
+						Value::Local(to)
+					}
+					ScopeMemberKind::Label => panic!("Cannot do labels"),
+				}
+			}
 			NodeKind::Identifier(member_id) => {
 				match scopes.member(member_id).kind {
 					ScopeMemberKind::UndefinedDependency(_) => panic!("Cannot run code_gen on undefined dependencies(they have to have been caught in the typer)"),
@@ -123,10 +151,11 @@ pub fn compile_expression(
 
 				match left {
 					Value::Local(handle) => {
-						push_move(&mut instructions, handle, right.clone());
-					},
-					Value::Pointer(handle) => {
-						push_move_indirect(&mut instructions, handle, right.clone());
+						push_move_indirect(
+							&mut instructions,
+							handle,
+							right.clone(),
+						);
 					},
 					Value::Function(_) => {
 						panic!("Cannot assign to a function");
@@ -270,43 +299,9 @@ pub fn compile_expression(
 
 				Value::Local(local)
 			}
-			NodeKind::MemberAccess(member, sub_name) => {
-				let id = member;
-				let type_kind = &types.get(id).kind;
-
+			NodeKind::MemberAccess { offset, size } => {
 				let value = node_values.pop().unwrap();
-
-				// TODO: We don't wanna recheck the name twice, 
-				match type_kind {
-					TypeKind::U64 => {
-						if sub_name == "low" {
-							value.get_sub_value(0, 4, 4)
-						} else if sub_name == "high" {
-							value.get_sub_value(4, 4, 4)
-						} else {
-							panic!("bleh");
-						}
-					}
-					TypeKind::BufferPointer(_) => {
-						if sub_name == "pointer" {
-							value.get_sub_value(0, 8, 8)
-						} else if sub_name == "length" {
-							value.get_sub_value(8, 8, 8)
-						} else {
-							panic!("bleh");
-						}
-					}
-					TypeKind::Struct { ref members } => {
-						members.iter().find_map(|(name, offset, handle)| {
-							if *name == sub_name {
-								Some(value.get_sub_value(*offset, handle.size, handle.align))
-							} else {
-								None
-							}
-						}).expect("Struct does not contain member, should be caught in type check")
-					}
-					_ => panic!("bleh"),
-				}
+				value.get_sub_value(offset, size, types.handle(node.type_).align)
 			}
 			NodeKind::Constant(ref value) => {
 				Value::Constant(value.clone())
@@ -348,41 +343,13 @@ pub fn compile_expression(
 				let (_, value) = get_resource_constant(types, &mut instructions, &mut locals, &node.loc, resources, id)?;
 				value
 			}
-
-			NodeKind::Reference => {
-				let to = locals.allocate(types.handle(node.type_));
-				let from = match node_values.pop().unwrap() {
-					Value::Local(handle) => handle,
-					value => {
-						let local = locals.allocate_raw(value.size(), 1);
-						push_move(&mut instructions, local, value);
-						local
-					}
-				};
-
-				instructions.push(Instruction::SetAddressOf(to, from));
-				Value::Local(to)
-			}
 			NodeKind::Dereference => {
-				// Get a local, no matter what!
-				// (only 1 level indirect access, so you cannot indirectly access an indirect
-				// so to speak)
-				let from = match node_values.pop().unwrap() {
-					Value::Local(handle) => handle,
-					Value::Function(_) => panic!("Cannot dereference functions"),
-					Value::Constant(_) => panic!("Cannot dereference constants"),
-					Value::Pointer(handle) => {
-						// TODO: Is it fine to not have any alignment here?
-						let local = locals.allocate_raw(handle.resulting_size, 1);
-						push_move(&mut instructions, local, Value::Pointer(handle));
-						local
-					}
-				};
-
-				let size = types.handle(node.type_).size;
+				let from = node_values.pop().unwrap();
+				let to = locals.allocate(types.handle(node.type_));
+				instructions.push(Instruction::Dereference(to, from));
 
 				// Make a pointer value.
-				Value::Pointer(from.indirect_local_handle_to_self(size))
+				Value::Local(to)
 			}
 		};
 
@@ -419,9 +386,9 @@ pub fn compile_expression(
 	})
 }
 
-fn push_move_indirect(instructions: &mut Vec<Instruction>, into: IndirectLocalHandle, from: Value) {
+fn push_move_indirect(instructions: &mut Vec<Instruction>, into: LocalHandle, from: Value) {
 	if from.size() > 0 {
-		assert_eq!(into.resulting_size, from.size());
+		assert_eq!(into.size, 8);
 
 		instructions.push(Instruction::IndirectMove(into, from));
 	}

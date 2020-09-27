@@ -32,6 +32,12 @@ pub fn run_instructions(
 					instr_pointer = program.labels[a.into_index()];
 				}
 			}
+			Instruction::Dereference(to, ref from) => {
+				let u8_pointer = (stack_frame_instance.get_u64(from) as usize) as *const u8;
+
+				let slice = unsafe { std::slice::from_raw_parts(u8_pointer, to.size) };
+				stack_frame_instance.insert_into_local(to, slice);
+			}
 			Instruction::IntrinsicTwoArgs(intrinsic, result, ref a, ref b) => {
 				let a = stack_frame_instance.get_value(a);
 				let b = stack_frame_instance.get_value(b);

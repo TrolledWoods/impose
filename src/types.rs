@@ -369,10 +369,12 @@ impl Location for Node {
 #[derive(Debug)]
 pub enum NodeKind {
 	Marker(parser::MarkerKind),
-	MemberAccess(TypeId, ustr::Ustr),
+	MemberAccess { offset: usize, size: usize },
 	Constant(ConstBuffer),
 
 	IntrinsicTwo(IntrinsicKindTwo),
+
+	ScopeMemberReference(ScopeMemberId),
 	Identifier(ScopeMemberId),
 
 	BitCast,
@@ -382,7 +384,6 @@ pub enum NodeKind {
 	Resource(ResourceId),
 	FunctionCall(TypeId),
 
-	Reference,
 	Dereference,
 
 	/// # Members
@@ -516,37 +517,43 @@ impl AstTyper {
 				parser::NodeKind::MemberAccess(_, sub_name) => {
 					let type_id = self.type_stack.pop().unwrap();
 					let type_kind = &types.get(type_id.type_).kind;
+					let type_kind = match (type_kind, node.is_lvalue) {
+						(TypeKind::Pointer(type_id), true) => &types.get(*type_id).kind,
+						(ref kind, false) => kind,
+						(_, _) => return error!(node, "lvalue cannot contain this type(internal compiler error, should have been caught in parsing step)"),
+					};
 					
-					let type_ = match *type_kind {
+					let (type_, offset, size) = match *type_kind {
 						TypeKind::U64 => {
 							if sub_name == "low" {
-								U32_TYPE_ID
+								(U32_TYPE_ID, 0, 4)
 							} else if sub_name == "high" {
-								U32_TYPE_ID
+								(U32_TYPE_ID, 4, 4)
 							} else {
 								return error!(node, "This member does not exist on U64");
 							}
 						}
 						TypeKind::BufferPointer(sub_type) => {
 							if sub_name == "pointer" {
-								types.insert(Type::new(TypeKind::Pointer(sub_type)))
+								(types.insert(Type::new(TypeKind::Pointer(sub_type))),
+								 0,8)
 							} else if sub_name == "length" {
-								U64_TYPE_ID
+								(U64_TYPE_ID, 8, 8)
 							} else {
 								return error!(node, "This member does not exist on BufferPointer");
 							}
 						}
 						TypeKind::Struct { ref members } => {
-							let mut type_ = None;
-							for (name, _, handle) in members {
-								if *name == sub_name {
-									type_ = Some(handle.id);
+							let mut value = None;
+							for &(name, offset, handle) in members {
+								if name == sub_name {
+									value = Some((handle.id, offset, handle.size));
 									break;
 								}
 							}
 							
-							if let Some(type_) = type_ {
-								type_
+							if let Some(value) = value {
+								value
 							} else {
 								return error!(node, "This member does not exist in struct");
 							}
@@ -554,11 +561,24 @@ impl AstTyper {
 						_ => return error!(node, "Type {} does not have members", types.type_to_string(type_id.type_)),
 					};
 
-					Node::new(
-						node,
-						NodeKind::MemberAccess(type_id.type_, sub_name),
-						type_,
-					)
+					if node.is_lvalue {
+						self.ast.nodes.push(Node::new(
+							node,
+							NodeKind::Constant(offset.to_le_bytes().as_slice().into()),
+							U64_TYPE_ID,
+						));
+						Node::new(
+							node,
+							NodeKind::IntrinsicTwo(IntrinsicKindTwo::AddI),
+							types.insert(Type::new(TypeKind::Pointer(type_))),
+						)
+					} else {
+						Node::new(
+							node,
+							NodeKind::MemberAccess { offset, size },
+							type_,
+						)
+					}
 				}
 				parser::NodeKind::Loop(_, b, break_label) => {
 					let _ = self.type_stack.pop().unwrap();
@@ -670,11 +690,19 @@ impl AstTyper {
 						match member.kind {
 							ScopeMemberKind::LocalVariable => {
 								if let Some(type_) = member.type_ {
-									Node::new(
-										node,
-										NodeKind::Identifier(id),
-										type_,
-									)
+									if !node.is_lvalue {
+										Node::new(
+											node,
+											NodeKind::Identifier(id),
+											type_,
+										)
+									} else {
+										Node::new(
+											node,
+											NodeKind::ScopeMemberReference(id),
+											types.insert(Type::new(TypeKind::Pointer(type_))),
+										)
+									}
 								} else {
 									return error!(node, "Type is not assigned, is the variable not declared? (This is probably a compiler problem)");
 								}
@@ -772,19 +800,23 @@ impl AstTyper {
 					let left  = self.type_stack.pop().unwrap();
 
 					if let Operator::Assign = operator {
-						if left.type_ != right.type_ {
-							return error!(node,
-								"Cannot assign {} to {}",
-								types.type_to_string(right.type_),
-								types.type_to_string(left.type_),
-							);
-						}
+						if let TypeKind::Pointer(left_internal) = types.get(left.type_).kind {
+							if left_internal != right.type_ {
+								return error!(node,
+									"Cannot assign {} to {}",
+									types.type_to_string(right.type_),
+									types.type_to_string(left_internal),
+								);
+							}
 
-						Node::new(
-							node,
-							NodeKind::Assign,
-							left.type_,
-						)
+							Node::new(
+								node,
+								NodeKind::Assign,
+								right.type_,
+							)
+						} else {
+							return error!(node, "Internal compiler error; Assign can only assign to lvalues(i.e pointers)");
+						}
 					} else {
 						let (intrinsic, return_type) =
 							match get_binary_operator_intrinsic(operator, types, left.type_, right.type_)
@@ -821,25 +853,30 @@ impl AstTyper {
 				parser::NodeKind::UnaryOperator { operand: _, operator } => {
 					match operator {
 						Operator::BitAndOrPointer => {
-							let type_ = types.insert(Type::new(
-								TypeKind::Pointer(self.type_stack.pop().unwrap().type_)
-							));
+							let operand = self.ast.nodes.pop().unwrap();
+							self.type_stack.pop();
 
-							Node::new(
-								node,
-								NodeKind::Reference,
-								type_,
-							)
+							if !operand.is_lvalue {
+								return error!(node, "You can only take a pointer to an lvalue(internal compiler error, this should have been caught in parser)");
+							}
+
+							operand
 						},
 						Operator::MulOrDeref => {
 							if let TypeKind::Pointer(sub_type) 
 								= types.get(self.type_stack.pop().unwrap().type_).kind
 							{
-								Node::new(
-									node,
-									NodeKind::Dereference,
-									sub_type,
-								)
+								if node.is_lvalue {
+									// lvalue deref is a noop. It's like a boundary between
+									// normal stuff and an lvalue.
+									self.ast.nodes.pop().unwrap()
+								} else {
+									Node::new(
+										node,
+										NodeKind::Dereference,
+										sub_type,
+									)
+								}
 							} else {
 								return error!(node, "Can only dereference pointers");
 							}
