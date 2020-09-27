@@ -905,7 +905,6 @@ impl AstTyper {
 				// --- Type expressions ---
 				parser::NodeKind::GetType(_) => {
 					let type_ = self.type_stack.pop().unwrap();
-					println!("Got type {}", types.type_to_string(type_));
 					Node::new(
 						node,
 						NodeKind::GetType(type_),

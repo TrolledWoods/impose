@@ -1,0 +1,17 @@
+vec := vec\add(vec\new(4, 2), vec\new(6, 4));
+assert(vec.x == 10);
+assert(vec.y == 6);
+
+vec :: {
+	VecU64 :: type { x: U64, y: U64 };
+	new :: |x: U64, y: U64| struct { x: x, y: y };
+	add :: |a: VecU64, b: VecU64| struct { x: a.x + b.x, y: a.y + b.y };
+};
+
+a :: || 6;
+b :: || c;
+c :: || a;
+
+assert(b()()() == 6);
+
+// TODO: When recursion is implemented, add a test for that.
