@@ -381,12 +381,10 @@ pub enum NodeKind {
 
 	Resource(ResourceId),
 	FunctionCall(TypeId),
-	BinaryOperator {
-		operator: Operator,
-	},
-	UnaryOperator {
-		operator: Operator,
-	},
+
+	Reference,
+	Dereference,
+
 	/// # Members
 	/// 0: Condition member
 	/// 1: Body
@@ -414,23 +412,6 @@ pub enum NodeKind {
 	Skip {
 		label: LabelId,
 	},
-
-	/// Returns the type of a type expression as a value instead of a type.
-	GetType(TypeId),
-
-	// Type expressions
-	// Type expressions have all their data in their types, and are never turned into bytecode.
-	// The 'type' that they have is not the type of the value, but the value itself. I.e.,
-	// the type of a TypeIdentifier produced from U64 is U64, as opposed to
-	// Identifier from U64 which would be of type Type.
-	//
-	// GetType makes the type of a typeexpression node into a constant value, to make it
-	// usable for other nodes.
-	/// Exactly the same as an identifier but it is a type expression.
-	TypeFunctionPointer,
-	TypeStruct,
-	TypePointer,
-	TypeBufferPointer,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -840,27 +821,33 @@ impl AstTyper {
 					}
 				},
 				parser::NodeKind::UnaryOperator { operand: _, operator } => {
-					let type_ = match operator {
-						Operator::BitAndOrPointer => types.insert(Type::new(
-							TypeKind::Pointer(self.type_stack.pop().unwrap().type_)
-						)),
+					match operator {
+						Operator::BitAndOrPointer => {
+							let type_ = types.insert(Type::new(
+								TypeKind::Pointer(self.type_stack.pop().unwrap().type_)
+							));
+
+							Node::new(
+								node,
+								NodeKind::Reference,
+								type_,
+							)
+						},
 						Operator::MulOrDeref => {
 							if let TypeKind::Pointer(sub_type) 
 								= types.get(self.type_stack.pop().unwrap().type_).kind
 							{
-								sub_type
+								Node::new(
+									node,
+									NodeKind::Dereference,
+									sub_type,
+								)
 							} else {
 								return error!(node, "Can only dereference pointers");
 							}
 						}
 						_ => return error!(node, "Unhandled operator (compiler error)"),
-					};
-
-					Node::new(
-						node,
-						NodeKind::UnaryOperator { operator },
-						type_,
-					)
+					}
 				},
 				parser::NodeKind::Declaration { variable_name, .. } => {
 					scopes.member_mut(variable_name).type_ = Some(self.type_stack.pop().unwrap().type_);

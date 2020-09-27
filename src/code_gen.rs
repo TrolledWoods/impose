@@ -7,7 +7,6 @@ use crate::parser::MarkerKind;
 use crate::scopes::*;
 use crate::resource::*;
 use crate::stack_frame::*;
-use crate::operator::*;
 use crate::code_loc::*;
 
 pub enum Instruction {
@@ -350,7 +349,7 @@ pub fn compile_expression(
 				value
 			}
 
-			NodeKind::UnaryOperator { operator: Operator::BitAndOrPointer } => {
+			NodeKind::Reference => {
 				let to = locals.allocate(types.handle(node.type_));
 				let from = match node_values.pop().unwrap() {
 					Value::Local(handle) => handle,
@@ -364,7 +363,7 @@ pub fn compile_expression(
 				instructions.push(Instruction::SetAddressOf(to, from));
 				Value::Local(to)
 			}
-			NodeKind::UnaryOperator { operator: Operator::MulOrDeref } => {
+			NodeKind::Dereference => {
 				// Get a local, no matter what!
 				// (only 1 level indirect access, so you cannot indirectly access an indirect
 				// so to speak)
@@ -385,22 +384,6 @@ pub fn compile_expression(
 				// Make a pointer value.
 				Value::Pointer(from.indirect_local_handle_to_self(size))
 			}
-
-			// Get the type of some value as a constant.
-			NodeKind::GetType(type_) => {
-				Value::Constant(type_.into_index().to_le_bytes().into())
-			}
-
-			// Type expressions evaluate types with the typing system at typing type, we do not
-			// need to generate any instructions for them.
-			NodeKind::TypeStruct |
-			NodeKind::TypeFunctionPointer |
-			NodeKind::TypeBufferPointer |
-			NodeKind::TypePointer => {
-				continue;
-			},
-
-			_ => todo!()
 		};
 
 		node_values.push(evaluation_value);
