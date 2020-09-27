@@ -1,8 +1,9 @@
 #![feature(assoc_char_funcs)]
 #![feature(drain_filter)]
+#![feature(bindings_after_at)]
 
-#![warn(unused_qualifications)]
-// #![deny(warnings)]
+// #![warn(unused_qualifications)]
+#![deny(warnings)]
 
 pub const DEBUG: bool = false;
 

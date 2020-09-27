@@ -72,6 +72,15 @@ pub struct IdVec<T, I> where I: Id {
 	_phantom: std::marker::PhantomData<I>,
 }
 
+impl<T, I> Clone for IdVec<T, I> where T: Clone, I: Id {
+	fn clone(&self) -> Self {
+		Self { 
+			contents: self.contents.clone(),
+			_phantom: std::marker::PhantomData,
+		}
+	}
+}
+
 impl<T, I> Default for IdVec<T, I> where I: Id {
 	fn default() -> Self {
 		Self {

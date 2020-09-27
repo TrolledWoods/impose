@@ -253,7 +253,7 @@ pub enum LabelKind {
 }
 
 // TODO: We want to use this to figure out what to capture in a closure too.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LocalVariables {
 	variables: Vec<(Ustr, ScopeMemberId)>,
 	block_stack: Vec<usize>,

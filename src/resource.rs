@@ -75,7 +75,8 @@ impl Resources {
 				},
 				ResourceKind::Function(ResourceFunction::Defined(ast, arguments)) => {
 					// TODO: Maybe we should get rid of this state?
-					member.kind = ResourceKind::Function(ResourceFunction::Typing(ast, AstTyper::new(), arguments));
+					let locals = ast.locals.clone();
+					member.kind = ResourceKind::Function(ResourceFunction::Typing(ast, AstTyper::new(locals), arguments));
 					self.return_resource(member_id, member);
 					self.compute_queue.push_back(member_id);
 				}
@@ -104,7 +105,7 @@ impl Resources {
 					}).collect();
 
 					member.type_ = 
-						ast.nodes.last().unwrap().type_.map(|return_type| {
+						typer.ast.nodes.last().unwrap().type_.map(|return_type| {
 							types.insert(Type::new(TypeKind::FunctionPointer {
 								args: arg_types,
 								returns: return_type,
@@ -112,7 +113,7 @@ impl Resources {
 						});
 
 					self.resolve_dependencies(&mut member.waiting_on_type);
-					member.kind = ResourceKind::Function(ResourceFunction::Typed(ast));
+					member.kind = ResourceKind::Function(ResourceFunction::Typed(typer.ast));
 					self.return_resource(member_id, member);
 					self.compute_queue.push_back(member_id);
 				}
@@ -196,7 +197,8 @@ impl Resources {
 					self.compute_queue.push_back(member_id);
 				}
 				ResourceKind::Value(ResourceValue::Defined(ast)) => {
-					member.kind = ResourceKind::Value(ResourceValue::Typing(ast, AstTyper::new()));
+					let locals = ast.locals.clone();
+					member.kind = ResourceKind::Value(ResourceValue::Typing(ast, AstTyper::new(locals)));
 					self.return_resource(member_id, member);
 					self.compute_queue.push_back(member_id);
 				}
@@ -218,8 +220,9 @@ impl Resources {
 						}
 					}
 
-					member.type_ = ast.nodes.last().unwrap().type_;
-					member.kind = ResourceKind::Value(ResourceValue::Typed(ast));
+					member.type_ = Some(typer.ast.nodes.last().unwrap().type_.unwrap());
+					// TODO: Make this taking of the ast a little more convenient maybe?
+					member.kind = ResourceKind::Value(ResourceValue::Typed(typer.ast));
 					self.resolve_dependencies(&mut member.waiting_on_type);
 					self.return_resource(member_id, member);
 					self.compute_queue.push_back(member_id);
@@ -569,17 +572,17 @@ pub enum ResourceValue {
 		module_folder: ustr::Ustr, 
 		file: ustr::Ustr
 	},
-	Defined(Ast),
-	Typing(Ast, AstTyper),
-	Typed(Ast),
+	Defined(crate::parser::Ast),
+	Typing(crate::parser::Ast, AstTyper),
+	Typed(crate::types::Ast),
 	// TODO: When code generation can pause, add a state for that.
 	// TODO: When evaluating can pause, add a state for that.
 }
 
 pub enum ResourceFunction {
-	Defined(Ast, Vec<ScopeMemberId>),
-	Typing(Ast, AstTyper, Vec<ScopeMemberId>),
-	Typed(Ast),
+	Defined(crate::parser::Ast, Vec<ScopeMemberId>),
+	Typing(crate::parser::Ast, AstTyper, Vec<ScopeMemberId>),
+	Typed(crate::types::Ast),
 	// TODO: When code generation can pause, add a state for that.
 }
 

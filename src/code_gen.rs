@@ -2,8 +2,8 @@ use std::fmt;
 
 use crate::DEBUG;
 use crate::intrinsic::*;
-use crate::parser::*;
 use crate::types::*;
+use crate::parser::MarkerKind;
 use crate::scopes::*;
 use crate::resource::*;
 use crate::stack_frame::*;
