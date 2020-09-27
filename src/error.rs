@@ -120,6 +120,7 @@ macro_rules! info {
 	}}
 }
 
+#[allow(unused)]
 macro_rules! warning {
 	($location:expr, $($format_message:tt)+) => {{
 		warning(Warning(Vec::new(), Message {

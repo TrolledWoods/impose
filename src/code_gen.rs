@@ -147,7 +147,7 @@ pub fn compile_expression(
 				instructions.push(Instruction::IntrinsicTwoArgs(kind, result, left, right));
 				Value::Local(result)
 			},
-			NodeKind::DeclareFunctionArgument { variable_name, .. } => {
+			NodeKind::DeclareFunctionArgument(variable_name) => {
 				let scope_member = scopes.member_mut(variable_name);
 
 				let location = locals.allocate(types.handle(scope_member.type_.unwrap()));
@@ -272,7 +272,7 @@ pub fn compile_expression(
 				Value::Local(local)
 			}
 			NodeKind::MemberAccess(member, sub_name) => {
-				let id = ast.nodes[member as usize].type_.unwrap();
+				let id = member;
 				let type_kind = &types.get(id).kind;
 
 				let value = node_values.pop().unwrap();
@@ -320,11 +320,9 @@ pub fn compile_expression(
 			NodeKind::EmptyLiteral => {
 				Value::Local(EMPTY_LOCAL)
 			}
-			NodeKind::FunctionCall { function_pointer, ref arg_list } => {
+			NodeKind::FunctionCall(type_) => {
 				// Get the type of the function
-				let (arg_types, return_type) = match types.get(
-					ast.nodes[function_pointer as usize].type_.unwrap()
-				).kind {
+				let (arg_types, return_type) = match types.get(type_).kind {
 					TypeKind::FunctionPointer { ref args, returns } => (args, returns),
 					_ => unreachable!("´The function pointer wasn't of type function pointer!?"),
 				};
@@ -333,7 +331,7 @@ pub fn compile_expression(
 
 				let returns = locals.allocate(types.handle(return_type));
 
-				let arg_list = &node_values[node_values.len() - arg_list.len() ..];
+				let arg_list = &node_values[node_values.len() - arg_types.len() ..];
 
 				// TODO: If I have zst:s, this won't handle them properly.
 				let mut offset_ctr = 0;
@@ -397,17 +395,16 @@ pub fn compile_expression(
 			}
 
 			// Get the type of some value as a constant.
-			NodeKind::GetType(node) => {
-				let type_ = ast.nodes[node as usize].type_.unwrap().into_index() as u64;
-				Value::Constant(type_.to_le_bytes().into())
+			NodeKind::GetType(type_) => {
+				Value::Constant(type_.into_index().to_le_bytes().into())
 			}
 
 			// Type expressions evaluate types with the typing system at typing type, we do not
 			// need to generate any instructions for them.
-			NodeKind::TypeStruct { .. } |
-			NodeKind::TypeFunctionPointer { .. } |
-			NodeKind::TypeBufferPointer(_) |
-			NodeKind::TypePointer(_) => {
+			NodeKind::TypeStruct |
+			NodeKind::TypeFunctionPointer |
+			NodeKind::TypeBufferPointer |
+			NodeKind::TypePointer => {
 				continue;
 			},
 
