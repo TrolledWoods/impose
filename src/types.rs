@@ -56,10 +56,11 @@ impl Types {
 		TypeHandle { id, size: type_.size, align: type_.align }
 	}
 
-	pub fn insert_struct(&mut self, type_: impl Iterator<Item = (ustr::Ustr, TypeId)>) -> TypeId {
+	pub fn create_struct(&self, type_: impl Iterator<Item = Result<(ustr::Ustr, TypeId), ()>>) -> Result<Type, ()> {
 		let mut full_member_data = Vec::new();
 		let mut offset = 0;
-		for (name, member_type_id) in type_ {
+		for member in type_ {
+			let (name, member_type_id) = member?;
 			let member_type_handle = self.handle(member_type_id);
 			let aligned_off = to_aligned(member_type_handle.align, offset);
 			full_member_data.push((name, aligned_off, member_type_handle));
@@ -67,16 +68,7 @@ impl Types {
 			offset = aligned_off + member_type_handle.size;
 		}
 
-		let type_ = Type::new(TypeKind::Struct { members: full_member_data });
-
-		// Try to find a type that is already the same.
-		for (id, self_type) in self.types.iter_ids() {
-			if *self_type == type_ {
-				return id;
-			}
-		}
-
-		self.types.push(type_)
+		Ok(Type::new(TypeKind::Struct { members: full_member_data }))
 	}
 
 	pub fn insert(&mut self, type_: Type) -> TypeId {
@@ -484,10 +476,11 @@ impl AstTyper {
 				parser::NodeKind::Struct { ref members } => {
 					let stack_len = self.type_stack.len() - members.len();
 					let member_types = &self.type_stack[stack_len..];
-					let type_ = types.insert_struct(
+					let type_ = types.create_struct(
 						members.iter().zip(member_types).map(|((name, _), type_)|
-							(*name, type_.type_)
-						));
+							Ok((*name, type_.type_))
+						))?;
+					let type_ = types.insert(type_);
 					self.type_stack.truncate(stack_len);
 					Node::new(
 						node,
@@ -533,7 +526,7 @@ impl AstTyper {
 					)
 				}
 				parser::NodeKind::DeclareFunctionArgument { variable_name, .. } => {
-					scopes.member_mut(variable_name).type_ = Some(self.type_stack.pop().unwrap().type_);
+					scopes.member_mut(variable_name).type_ = Some(get_type(types, &self.ast, self.type_stack.pop().unwrap())?);
 
 					Node::new(
 						node,
@@ -579,7 +572,7 @@ impl AstTyper {
 								return error!(node, "This member does not exist in struct");
 							}
 						}
-						_ => return error!(node, "This type doesn't have members"),
+						_ => return error!(node, "Type {} does not have members", types.type_to_string(type_id.type_)),
 					};
 
 					Node::new(
@@ -659,7 +652,7 @@ impl AstTyper {
 					let value = self.type_stack.pop().unwrap();
 					let value_type_handle = types.handle(value.type_);
 					let into = self.type_stack.pop().unwrap();
-					let into_type_handle = types.handle(into.type_);
+					let into_type_handle = types.handle(get_type(types, &self.ast, into)?);
 
 					if into_type_handle.size != value_type_handle.size {
 						info!(value.loc, "This is {}", types.type_to_string(value_type_handle.id));
@@ -670,7 +663,7 @@ impl AstTyper {
 					Node::new(
 						node,
 						NodeKind::BitCast,
-						into.type_,
+						into_type_handle.id,
 					)
 				}
 				parser::NodeKind::Identifier { source: mut id, const_members: ref sub_members, is_type } => {
@@ -694,20 +687,28 @@ impl AstTyper {
 					}
 
 					let member = scopes.member(id);
-					let final_type = if !is_type {
+					if !is_type {
 						match member.kind {
 							ScopeMemberKind::LocalVariable => {
 								if let Some(type_) = member.type_ {
-									type_
+									Node::new(
+										node,
+										NodeKind::Identifier(id),
+										type_,
+									)
 								} else {
 									return error!(node, "Type is not assigned, is the variable not declared? (This is probably a compiler problem)");
 								}
 							} 
-							ScopeMemberKind::Constant(id) => {
-								if let Some(type_) = resources.resource(id).type_ {
-									type_
+							ScopeMemberKind::Constant(scope_member_id) => {
+								if let Some(type_) = resources.resource(scope_member_id).type_ {
+									Node::new(
+										node,
+										NodeKind::Identifier(id),
+										type_,
+									)
 								} else {
-									return Ok(Some(Dependency::Type(node.loc, id)));
+									return Ok(Some(Dependency::Type(node.loc, scope_member_id)));
 								}
 							}
 							ScopeMemberKind::UndefinedDependency(_) => {
@@ -733,15 +734,11 @@ impl AstTyper {
 
 								match resources.resource(id).kind {
 									ResourceKind::Done(ref value, _) => {
-										if let &[a, b, c, d, e, f, g, h] = value.as_slice() {
-											let id = usize::from_le_bytes([a, b, c, d, e, f, g, h]);
-											if id >= types.types.len() {
-												return error!(node, "Invalid type id");
-											}
-											TypeId::create(id as u32)
-										} else {
-											unreachable!("The value of a type has to be a 64 bit value");
-										}
+										Node::new(
+											node,
+											NodeKind::Constant(value.clone()),
+											TYPE_TYPE_ID,
+										)
 									}
 									ResourceKind::Value(_) => {
 										return Ok(Some(Dependency::Value(node.loc, id)));
@@ -754,13 +751,7 @@ impl AstTyper {
 							}
 							_ => return error!(node, "A Type identifier has to be constant"), 
 						}
-					};
-
-					Node::new(
-						node,
-						NodeKind::Identifier(id),
-						final_type,
-					)
+					}
 				}
 				parser::NodeKind::FunctionCall { ref arg_list, .. } => {
 					let stack_loc = self.type_stack.len() - arg_list.len();
@@ -924,57 +915,74 @@ impl AstTyper {
 
 				// --- Type expressions ---
 				parser::NodeKind::GetType(_) => {
-					let type_ = self.type_stack.pop().unwrap().type_;
+					let type_ = get_type(types, &self.ast, self.type_stack.pop().unwrap())?;
 					Node::new(
 						node,
-						NodeKind::GetType(type_),
+						type_to_const(type_),
 						TYPE_TYPE_ID,
 					)
 				}
 				parser::NodeKind::TypeFunctionPointer { ref arg_list, return_type: returns } => {
-					let return_type = returns.map(|_| self.type_stack.pop().unwrap().type_);
+					let return_type = match returns {
+						Some(_) => Some(get_type(types, &self.ast, self.type_stack.pop().unwrap())?),
+						None => None
+					};
 					let kind = TypeKind::FunctionPointer {
-						args: arg_list.iter().map(|_| self.type_stack.pop().unwrap().type_).rev().collect(),
+						args: arg_list.iter().map(
+							|_| get_type(types, &self.ast, self.type_stack.pop().unwrap())
+						).rev().collect::<Result<_, ()>>()?,
 						returns: match return_type {
 							Some(return_type) => return_type,
 							None => types.insert(Type::new(TypeKind::EmptyType)),
 						}
 					};
 
+					let new_len = self.ast.nodes.len() - arg_list.len() - returns.is_some() as usize;
+					self.ast.nodes.truncate(new_len);
+
+					let type_ = types.insert(Type::new(kind));
 					Node::new(
 						node,
-						NodeKind::TypeFunctionPointer,
-						types.insert(Type::new(kind)),
+						type_to_const(type_),
+						TYPE_TYPE_ID,
 					)
 				}
 				parser::NodeKind::TypeStruct { ref args } => {
 					// Figure out the wanted offsets of the arguments.
 					let stack_len = self.type_stack.len() - args.len();
 					let struct_args = &self.type_stack[stack_len ..];
-					let type_ = types.insert_struct(args.iter().enumerate().map(|(i, (name, _))|
-						(*name, struct_args[i].type_)
-					));
+					let type_ = types.create_struct(args.iter().enumerate().map(|(i, (name, _))|
+						Ok((*name, get_type(types, &self.ast, struct_args[i])?))
+					))?;
+					let type_ = types.insert(type_);
+					self.ast.nodes.truncate(struct_args[0].node_id);
 					self.type_stack.truncate(stack_len);
 					Node::new(
 						node,
-						NodeKind::TypeStruct,
-						type_
+						type_to_const(type_),
+						TYPE_TYPE_ID
 					)
 				}
 				parser::NodeKind::TypePointer(_) => {
-					let pointing_to_type = self.type_stack.pop().unwrap().type_;
+					let pointing_to_type =
+						get_type(types, &self.ast, self.type_stack.pop().unwrap())?;
+					let type_ = types.insert(Type::new(TypeKind::Pointer(pointing_to_type)));
+					self.ast.nodes.pop();
 					Node::new(
 						node,
-						NodeKind::TypePointer,
-						types.insert(Type::new(TypeKind::Pointer(pointing_to_type))),
+						type_to_const(type_),
+						TYPE_TYPE_ID,
 					)
 				}
 				parser::NodeKind::TypeBufferPointer(_) => {
-					let pointing_to_type = self.type_stack.pop().unwrap().type_;
+					let pointing_to_type =
+						get_type(types, &self.ast, self.type_stack.pop().unwrap())?;
+					let type_ = types.insert(Type::new(TypeKind::BufferPointer(pointing_to_type)));
+					self.ast.nodes.pop();
 					Node::new(
 						node,
-						NodeKind::TypeBufferPointer,
-						types.insert(Type::new(TypeKind::BufferPointer(pointing_to_type))),
+						type_to_const(type_),
+						TYPE_TYPE_ID,
 					)
 				}
 			};
@@ -989,13 +997,46 @@ impl AstTyper {
 			self.node_id += 1;
 
 			// for &type_ in self.type_stack.iter() {
-			// 	types.print(type_);
-			// 	print!(" ");
+			// 	print!("(");
+			// 	types.print(type_.type_);
+			// 	print!(")");
 			// }
 			// println!();
 		}
 
 		Ok(None)
+	}
+}
+
+fn type_to_const(id: TypeId) -> NodeKind {
+	NodeKind::Constant(id.into_index().to_le_bytes().as_slice().into())
+}
+
+fn get_type(types: &Types, ast: &Ast, element: TypeStackElement) -> Result<TypeId, ()> {
+	if element.type_ != TYPE_TYPE_ID {
+		return error!(element.loc, "This needs to be a type(internal compiler error)");
+	}
+
+	match &ast.nodes[element.node_id].kind {
+		NodeKind::Constant(ref buffer) => {
+			use std::convert::TryInto;
+			match buffer.as_slice().try_into() {
+				Ok(buffer) => {
+					let id = usize::from_le_bytes(buffer);
+					if id >= types.types.len() {
+						return error!(element.loc, "Invalid type id");
+					}
+
+					Ok(TypeId::create(id as u32))
+				}
+				Err(_) => {
+					return error!(element.loc, "Not a 64 bit value");
+				}
+			}
+		}
+		_ => {
+			return error!(element.loc, "Types have to be constant");
+		}
 	}
 }
 
