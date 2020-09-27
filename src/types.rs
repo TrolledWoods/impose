@@ -383,17 +383,13 @@ pub enum NodeKind {
 	IntrinsicTwo(IntrinsicKindTwo),
 
 	EmptyLiteral,
-	Identifier
-	{
+	Identifier {
 		source: ScopeMemberId, 
 		const_members: smallvec::SmallVec<[ustr::Ustr; 3]>,
 		is_type: bool,
 	},
 
-	BitCast {
-		into_type: AstNodeId,
-		value: AstNodeId,
-	},
+	BitCast,
 
 	Assign,
 
@@ -404,47 +400,36 @@ pub enum NodeKind {
 	},
 	BinaryOperator {
 		operator: Operator,
-		left:  AstNodeId,
-		right: AstNodeId,
 	},
 	UnaryOperator {
 		operator: Operator,
-		operand: AstNodeId,
 	},
 	/// # Members
 	/// 0: Condition member
 	/// 1: Body
-	If {
-		condition: AstNodeId,
-		body: AstNodeId,
-		end_label: LabelId,
-	},
+	If(LabelId),
 	/// # Members
 	/// 0: Condition member
 	/// 1: True body
 	/// 2: False body
 	IfWithElse {
-		condition : AstNodeId,
-		true_body : AstNodeId,
-		false_body: AstNodeId,
 		end_label: LabelId,
 	},
 
-	Loop(AstNodeId, LabelId, LabelId),
+	Loop(LabelId, LabelId),
 
 	Struct {
 		members: Vec<(ustr::Ustr, AstNodeId)>,
 	},
 
 	DeclareFunctionArgument { variable_name: ScopeMemberId, type_node: AstNodeId },
-	Declaration { variable_name: ScopeMemberId, value: AstNodeId, },
+	Declaration { variable_name: ScopeMemberId, },
 	Block {
 		contents: Vec<AstNodeId>,
 		label: LabelId,
 	},
 	Skip {
 		label: LabelId,
-		value: AstNodeId,
 	},
 
 	/// Returns the type of a type expression as a value instead of a type.
@@ -607,14 +592,14 @@ impl AstTyper {
 						type_,
 					)
 				}
-				parser::NodeKind::Loop(a, b, break_label) => {
+				parser::NodeKind::Loop(_, b, break_label) => {
 					Node::new(
 						node,
-						NodeKind::Loop(a, b, break_label),
+						NodeKind::Loop(b, break_label),
 						*self.ast.locals.labels.get(break_label),
 					)
 				}
-				parser::NodeKind::If { condition, body, end_label } => {
+				parser::NodeKind::If { condition, body: _, end_label } => {
 					let condition_type = self.ast.nodes[condition as usize].type_.unwrap();
 					if condition_type != BOOL_TYPE_ID {
 						return error!(node,
@@ -625,7 +610,7 @@ impl AstTyper {
 					// If on its own never returns a type
 					Node::new(
 						node,
-						NodeKind::If { condition, body, end_label },
+						NodeKind::If(end_label),
 						EMPTY_TYPE_ID,
 					)
 				}
@@ -649,7 +634,7 @@ impl AstTyper {
 
 					Node::new(
 						node,
-						NodeKind::IfWithElse { true_body, false_body, condition, end_label },
+						NodeKind::IfWithElse { end_label },
 						return_type,
 					)
 				}
@@ -684,7 +669,7 @@ impl AstTyper {
 
 					Node::new(
 						node,
-						NodeKind::BitCast { into_type, value },
+						NodeKind::BitCast,
 						into_type_handle.id,
 					)
 				}
@@ -866,7 +851,7 @@ impl AstTyper {
 
 					Node::new(
 						node,
-						NodeKind::UnaryOperator { operand, operator },
+						NodeKind::UnaryOperator { operator },
 						type_,
 					)
 				},
@@ -879,7 +864,7 @@ impl AstTyper {
 					
 					Node::new(
 						node,
-						NodeKind::Declaration { variable_name, value },
+						NodeKind::Declaration { variable_name },
 						EMPTY_TYPE_ID,
 					)
 				}
@@ -930,7 +915,7 @@ impl AstTyper {
 
 					Node::new(
 						node,
-						NodeKind::Skip { label, value },
+						NodeKind::Skip { label },
 						NEVER_TYPE_ID,
 					)
 				},

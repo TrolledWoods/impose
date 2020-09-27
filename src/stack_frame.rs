@@ -60,8 +60,8 @@ impl Value {
 				debug_assert!(offset + size <= handle.size);
 
 				// Check that our align is aligned if the handle is aligned.
-				debug_assert!(is_aligned(align, handle.align));
-				debug_assert!(is_aligned(align, offset));
+				// debug_assert!(is_aligned(align, handle.align));
+				// debug_assert!(is_aligned(align, offset));
 
 				Value::Local(LocalHandle {
 					offset: handle.offset + offset,
@@ -233,6 +233,22 @@ impl Locals {
 			offset: 0,
 			size:  type_.size,
 			align: type_.align,
+		}
+	}
+
+	pub fn allocate_raw(&mut self, size: usize, align: usize) -> LocalHandle {
+		if size == 0 { return EMPTY_LOCAL; }
+
+		let id = self.locals.push(Local {
+			size:  size,
+			align: align,
+		});
+
+		LocalHandle {
+			id,
+			offset: 0,
+			size,
+			align,
 		}
 	}
 
@@ -421,7 +437,7 @@ impl StackFrameInstance {
 	/// or if the alignment of the type is bigger than the max alignment.
 	pub fn get_at_index<T>(&self, index: usize) -> T where T: Copy {
 		debug_assert!(std::mem::align_of::<T>() <= STACK_FRAME_ALIGNMENT);
-		debug_assert!(is_aligned(std::mem::align_of::<T>(), index));
+		// debug_assert!(is_aligned(std::mem::align_of::<T>(), index));
 
 		unsafe {
 			*(self.buffer_ptr().add(index) as *const T)

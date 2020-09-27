@@ -96,7 +96,7 @@ pub fn compile_expression(
 		// instructions.push(Instruction::DebugLocation(node.loc));
 
 		let evaluation_value = match node.kind {
-			NodeKind::BitCast { into_type: _, value: _ } => {
+			NodeKind::BitCast => {
 				node_values.pop().unwrap()
 			}
 			NodeKind::Identifier { source: member_id, const_members: ref sub_members, is_type } => {
@@ -159,13 +159,10 @@ pub fn compile_expression(
 
 				continue;
 			}
-			NodeKind::Declaration { variable_name, value } => {
-				let location = locals.allocate(
-					types.handle(ast.nodes[value as usize].type_.unwrap())
-				);
-				scopes.member_mut(variable_name).storage_loc = Some(location);
-				
+			NodeKind::Declaration { variable_name } => {
 				let input = node_values.pop().unwrap();
+				let location = locals.allocate_raw(input.size(), 1);
+				scopes.member_mut(variable_name).storage_loc = Some(location);
 				push_move(&mut instructions, location, input);
 
 				Value::Local(EMPTY_LOCAL)
@@ -197,7 +194,7 @@ pub fn compile_expression(
 
 				Value::Local(local)
 			}
-			NodeKind::Loop(_, label, break_label) => {
+			NodeKind::Loop(label, break_label) => {
 				node_values.pop().unwrap(); // Loop body
 				node_values.pop().unwrap(); // Loop head marker
 
@@ -207,7 +204,7 @@ pub fn compile_expression(
 
 				Value::Local(label_locals[break_label.into_index()])
 			}
-			NodeKind::If { end_label, .. } => {
+			NodeKind::If(end_label) => {
 				let _true_body = node_values.pop().unwrap();
 				let _condition = node_values.pop().unwrap();
 
@@ -367,14 +364,12 @@ pub fn compile_expression(
 				value
 			}
 
-			NodeKind::UnaryOperator { operator: Operator::BitAndOrPointer, operand } => {
+			NodeKind::UnaryOperator { operator: Operator::BitAndOrPointer } => {
 				let to = locals.allocate(types.handle(node.type_.unwrap()));
 				let from = match node_values.pop().unwrap() {
 					Value::Local(handle) => handle,
 					value => {
-						let local = locals.allocate(types.handle(
-								ast.nodes[operand as usize].type_.unwrap()
-						));
+						let local = locals.allocate_raw(value.size(), 1);
 						push_move(&mut instructions, local, value);
 						local
 					}
@@ -383,7 +378,7 @@ pub fn compile_expression(
 				instructions.push(Instruction::SetAddressOf(to, from));
 				Value::Local(to)
 			}
-			NodeKind::UnaryOperator { operator: Operator::MulOrDeref, operand } => {
+			NodeKind::UnaryOperator { operator: Operator::MulOrDeref } => {
 				// Get a local, no matter what!
 				// (only 1 level indirect access, so you cannot indirectly access an indirect
 				// so to speak)
@@ -392,9 +387,8 @@ pub fn compile_expression(
 					Value::Function(_) => panic!("Cannot dereference functions"),
 					Value::Constant(_) => panic!("Cannot dereference constants"),
 					Value::Pointer(handle) => {
-						let local = locals.allocate(types.handle(
-							ast.nodes[operand as usize].type_.unwrap()
-						));
+						// TODO: Is it fine to not have any alignment here?
+						let local = locals.allocate_raw(handle.resulting_size, 1);
 						push_move(&mut instructions, local, Value::Pointer(handle));
 						local
 					}
