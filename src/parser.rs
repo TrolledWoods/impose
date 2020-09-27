@@ -50,6 +50,19 @@ impl<'a, 't> Context<'a, 't> {
 		}
 	}
 
+	fn borrow_meta<'b>(&'b mut self) -> Context<'b, 't> {
+		Context {
+			ast: self.ast,
+			scopes: self.scopes,
+			scope: self.scope,
+			tokens: self.tokens,
+			resources: self.resources,
+			is_meta: true,
+			folder: self.folder,
+			types: self.types,
+		}
+	}
+
 	fn sub_scope<'b>(&'b mut self) -> Context<'b, 't> {
 		self.ast.locals.push();
 		let sub_scope = self.scopes.create_scope(Some(self.scope));
@@ -481,6 +494,8 @@ fn parse_block(mut context: Context, expect_brackets: bool, is_runnable: bool)
 fn parse_type_expr_value(
 	mut context: Context
 ) -> Result<AstNodeId, ()> {
+	assert!(context.is_meta);
+
 	let token = context.tokens.expect_peek(|| "Expected type expression")?;
 	match token.kind {
 		TokenKind::Operator(Operator::BitAndOrPointer) => {
@@ -649,7 +664,7 @@ fn parse_function(
 
 					let colon = context.tokens.next();
 					if matches!(colon, Some(Token { kind: TokenKind::Colon, .. })) {
-						let type_node = parse_type_expr_value(context.borrow())?;
+						let type_node = parse_type_expr_value(context.borrow_meta())?;
 
 						context.ast.insert_node(Node::new(&context, loc, sub_scope, 
 							NodeKind::DeclareFunctionArgument {
@@ -703,7 +718,7 @@ fn parse_expression(
 		}
 		TokenKind::Keyword("type") => {
 			context.tokens.next();
-			let id = parse_type_expr_value(context.borrow())?;
+			let id = parse_type_expr_value(context.borrow_meta())?;
 			
 			Ok(context.ast.insert_node(Node::new(&context, 
 				token, 
@@ -955,7 +970,7 @@ fn parse_value(
 		TokenKind::Keyword("bit_cast") => {
 			context.tokens.next();
 
-			let into_type = parse_type_expr_value(context.borrow())?;
+			let into_type = parse_type_expr_value(context.borrow_meta())?;
 
 			match context.tokens.next() {
 				Some(Token { kind: TokenKind::Bracket('('), .. }) => (),

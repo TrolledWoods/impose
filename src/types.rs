@@ -1004,6 +1004,11 @@ impl AstTyper {
 			// println!();
 		}
 
+		// println!("");
+		// for node in &self.ast.nodes {
+		// 	println!("{}: {:?}", types.type_to_string(node.type_), node.kind);
+		// }
+
 		Ok(None)
 	}
 }
