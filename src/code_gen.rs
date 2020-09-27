@@ -143,7 +143,7 @@ pub fn compile_expression(
 				let right = node_values.pop().unwrap();
 				let left  = node_values.pop().unwrap();
 
-				let result = locals.allocate(types.handle(node.type_.unwrap()));
+				let result = locals.allocate(types.handle(node.type_));
 				instructions.push(Instruction::IntrinsicTwoArgs(kind, result, left, right));
 				Value::Local(result)
 			},
@@ -179,7 +179,7 @@ pub fn compile_expression(
 				// Instruction to move the value into a new local, so that the else can
 				// also use that same local
 				let local = locals.allocate(
-					types.handle(ast.nodes[contains as usize].type_.unwrap())
+					types.handle(ast.nodes[contains as usize].type_)
 				);
 				push_move(&mut instructions, local, node_values.pop().unwrap());
 
@@ -253,7 +253,7 @@ pub fn compile_expression(
 				Value::Local(label_loc)
 			}
 			NodeKind::Struct { .. } => {
-				let id = node.type_.unwrap();
+				let id = node.type_;
 				let handle = types.handle(id);
 				let type_kind = &types.get(id).kind;
 
@@ -359,7 +359,7 @@ pub fn compile_expression(
 			}
 
 			NodeKind::UnaryOperator { operator: Operator::BitAndOrPointer } => {
-				let to = locals.allocate(types.handle(node.type_.unwrap()));
+				let to = locals.allocate(types.handle(node.type_));
 				let from = match node_values.pop().unwrap() {
 					Value::Local(handle) => handle,
 					value => {
@@ -388,7 +388,7 @@ pub fn compile_expression(
 					}
 				};
 
-				let size = types.handle(node.type_.unwrap()).size;
+				let size = types.handle(node.type_).size;
 
 				// Make a pointer value.
 				Value::Pointer(from.indirect_local_handle_to_self(size))

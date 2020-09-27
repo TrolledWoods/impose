@@ -105,12 +105,10 @@ impl Resources {
 					}).collect();
 
 					member.type_ = 
-						typer.ast.nodes.last().unwrap().type_.map(|return_type| {
-							types.insert(Type::new(TypeKind::FunctionPointer {
-								args: arg_types,
-								returns: return_type,
-							}))
-						});
+						Some(types.insert(Type::new(TypeKind::FunctionPointer {
+							args: arg_types,
+							returns: typer.ast.nodes.last().unwrap().type_,
+						})));
 
 					self.resolve_dependencies(&mut member.waiting_on_type);
 					member.kind = ResourceKind::Function(ResourceFunction::Typed(typer.ast));
@@ -214,7 +212,7 @@ impl Resources {
 						}
 					}
 
-					member.type_ = Some(typer.ast.nodes.last().unwrap().type_.unwrap());
+					member.type_ = Some(typer.ast.nodes.last().unwrap().type_);
 					// TODO: Make this taking of the ast a little more convenient maybe?
 					member.kind = ResourceKind::Value(ResourceValue::Typed(typer.ast));
 					self.resolve_dependencies(&mut member.waiting_on_type);

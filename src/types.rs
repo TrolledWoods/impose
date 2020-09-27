@@ -346,7 +346,7 @@ pub struct Node {
 	// later.
 	pub scope: ScopeId,
 	pub kind: NodeKind,
-	pub type_: Option<TypeId>,
+	pub type_: TypeId,
 	pub is_lvalue: bool,
 	/// Meta data is for typing and other things to use, and shouldn't be included
 	/// in the actual code output.
@@ -362,7 +362,7 @@ impl Node {
 			is_lvalue: old_node.is_lvalue, 
 			is_meta_data: old_node.is_meta_data,
 			// TODO: Remove the option here
-			type_: Some(type_),
+			type_,
 		}
 	}
 }
@@ -598,7 +598,7 @@ impl AstTyper {
 					)
 				}
 				parser::NodeKind::If { condition, body: _, end_label } => {
-					let condition_type = self.ast.nodes[condition as usize].type_.unwrap();
+					let condition_type = self.ast.nodes[condition as usize].type_;
 					if condition_type != BOOL_TYPE_ID {
 						return error!(node,
 							"If condition has to be Bool, got {}",
@@ -964,7 +964,7 @@ impl AstTyper {
 			};
 
 			self.type_stack.push(TypeStackElement {
-				type_: new_node.type_.unwrap(),
+				type_: new_node.type_,
 				loc: new_node.loc,
 			});
 			self.ast.nodes.push(new_node);
