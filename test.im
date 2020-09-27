@@ -1,3 +1,0 @@
-complex :: import "complex";
-
-complex\print_mandelbrot(0.0, 0.0, 2.0, 10, 0.6);

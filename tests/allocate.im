@@ -1,0 +1,9 @@
+a := bit_cast &U64 (alloc(16, 8));
+
+*a = 20;
+*(a + 1) = 50;
+
+assert(*a == 20);
+assert(*(a + 1) == 50);
+
+free(bit_cast &U8 (a), 16, 8);

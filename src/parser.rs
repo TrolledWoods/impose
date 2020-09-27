@@ -7,6 +7,8 @@ use crate::resource::*;
 use crate::types::*;
 use crate::code_loc::*;
 
+use std::path::Path;
+
 mod lexer;
 use lexer::*;
 
@@ -18,7 +20,7 @@ struct Context<'a, 't> {
 	tokens: &'a mut TokenStream<'t>,
 	resources: &'a mut Resources,
 	is_meta: bool,
-	folder: ustr::Ustr,
+	folder: &'a Path,
 }
 
 impl<'a, 't> Context<'a, 't> {
@@ -1000,21 +1002,13 @@ fn parse_value(
 			if let Some(Token { kind: TokenKind::StringLiteral(module_name), loc }) 
 				= context.tokens.next()
 			{
-				if module_name.contains('\\') {
-					return error!(loc, "Module name cannot contain '\\'");
-				}
-
-				let mut file_pos = String::new();
-				file_pos.push_str(&context.folder);
-				file_pos.push('\\');
-				file_pos.push_str(module_name);
-
+				let mut new_file = context.folder.to_path_buf();
+				new_file.push(module_name);
 				let id = context.resources.insert(Resource::new(
 					*loc,
 					ResourceKind::Value(ResourceValue::File {
 						scope: context.scope,
-						module_folder: file_pos.as_str().into(),
-						file: file_pos.as_str().into(),
+						file: new_file,
 					}),
 				));
 
@@ -1100,8 +1094,8 @@ fn try_parse_list<'t, V>(
 }
 
 pub fn parse_code(
-	folder: ustr::Ustr,
-	file: ustr::Ustr,
+	folder: &Path,
+	file: &Path,
 	code: &str,
 	resources: &mut Resources,
 	scopes: &mut Scopes,
@@ -1109,7 +1103,7 @@ pub fn parse_code(
 	scope: ScopeId,
 	is_value: bool,
 ) -> Result<Ast, ()> {
-	let (last_loc, tokens) = lex_code(file, code)?;
+	let (last_loc, tokens) = lex_code(file.to_str().unwrap().into(), code)?;
 
 	let mut ast = Ast::new();
 

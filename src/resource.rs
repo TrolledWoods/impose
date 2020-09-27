@@ -151,15 +151,9 @@ impl Resources {
 					self.return_resource(member_id, member);
 					self.compute_queue.push_back(member_id);
 				}
-				ResourceKind::Value(ResourceValue::File { scope, module_folder, file }) => {
-					// Combine the paths into one coherent path.
-					let mut path = PathBuf::new();
-					for sub_path in file.split('\\') {
-						path.push(sub_path);
-					}
-					path.set_extension("im");
-
-					let code = match std::fs::read_to_string(&path) {
+				ResourceKind::Value(ResourceValue::File { scope, ref file }) => {
+					let module_folder = file.parent().unwrap();
+					let code = match std::fs::read_to_string(file) {
 						Ok(code) => code,
 						Err(err) => {
 							member.kind = ResourceKind::Poison;
@@ -171,7 +165,7 @@ impl Resources {
 					};
 
 					let ast = match parse_code(
-						module_folder,
+						&module_folder,
 						file,
 						&code,
 						self,
@@ -182,7 +176,7 @@ impl Resources {
 					) {
 						Ok(value) => value,
 						Err(()) => {
-							self.code_cache.insert(file, code);
+							self.code_cache.insert(file.to_str().unwrap().into(), code);
 							member.kind = ResourceKind::Poison;
 							self.return_resource(member_id, member);
 							self.make_resource_poison(member_id);
@@ -190,7 +184,7 @@ impl Resources {
 						}
 					};
 
-					self.code_cache.insert(file, code);
+					self.code_cache.insert(file.to_str().unwrap().into(), code);
 
 					member.kind = ResourceKind::Value(ResourceValue::Defined(ast));
 					self.return_resource(member_id, member);
@@ -569,8 +563,7 @@ pub enum ResourceValue {
 	/// Lex a file, with a folder where sub modules go.
 	File {
 		scope: ScopeId,
-		module_folder: ustr::Ustr, 
-		file: ustr::Ustr
+		file: PathBuf,
 	},
 	Defined(crate::parser::Ast),
 	Typing(crate::parser::Ast, AstTyper),

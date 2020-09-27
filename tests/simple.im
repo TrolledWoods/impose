@@ -1,0 +1,21 @@
+a := 5;
+assert(a == 5);
+
+b := 2;
+assert(b - 2 == 0);
+
+value := bit_cast { a: U8, other: U32 } (1);
+assert(bit_cast Bool (value.a));
+
+assert(MY_UNORDERED_CONSTANT == 42);
+MY_UNORDERED_CONSTANT :: 42;
+
+shadow_x := 2;
+shadow_x := "Hello";
+shadow_x := 96;
+
+{
+	shadow_x := "Hello again :D";
+};
+
+assert(shadow_x == 96);

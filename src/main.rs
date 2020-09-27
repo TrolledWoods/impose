@@ -29,18 +29,127 @@ pub mod resource;
 pub mod stack_frame;
 pub mod align;
 
+mod command_line;
+
+use scopes::*;
+use types::*;
+use resource::*;
+
+
 lazy_static! {
 	static ref INSTANT: std::time::Instant = std::time::Instant::now();
 }
 
+/// Compiles a file with a unique set of constants. Prints errors.
+fn compile_file_separate(file: &std::path::Path) -> Result<stack_frame::ConstBuffer, ()> {
+	assert!(file.is_file());
+
+	let (mut scopes, mut resources, mut types) = setup_constants();
+
+	// -- COMPILE STUFF --
+	let scope = scopes.super_scope;
+	let id = resources.insert(Resource::new(
+		code_loc::CodeLoc { file: ustr::ustr("no"), line: 0, column: 0 },
+		ResourceKind::Value(ResourceValue::File {
+			scope,
+			file: file.to_path_buf(),
+		}),
+	));
+
+	// Compute stuff until we are out of things to compute
+	while match resources.compute_one(&mut types, &mut scopes) {
+		Ok(should_continue) => {
+			should_continue
+		}
+		Err(()) => {
+			false
+		}
+	} {}
+
+	// See if it's ready
+	resources.check_completion();
+
+	error::print_output(&resources);
+
+	// If the value we want got completed, print the result
+	if let ResourceKind::Done(ref value, ref _pointer_members) = resources.resource(id).kind {
+		Ok(value.clone())
+	} else {
+		Err(())
+	}
+}
+
+fn test_several(folder: &std::path::Path) {
+	println!("Running tests in directory {:?}", folder);
+	for entry in std::fs::read_dir(folder).unwrap() {
+		let entry = entry.unwrap();
+		let path = entry.path();
+
+		if path.extension().map(|v| v.to_str().unwrap()) == Some("im") {
+			let result = std::thread::spawn(move || {
+				compile_file_separate(&path)
+			}).join();
+			match result {
+				Ok(Ok(_)) => println!("Test '{:?}' succeeded", entry.path()),
+				_ => println!("Test '{:?}' FAILED", entry.path()),
+			}
+		}
+	}
+}
+
 fn main() {
-	// VERY simple benchmarking
-	let time = std::time::Instant::now();
+	let config = match command_line::parse_arguments() {
+		Ok(config) => config,
+		Err(err) => {
+			println!("{}", err);
+			return;
+		}
+	};
 
-	use scopes::*;
-	use types::*;
-	use resource::*;
+	let timer = std::time::Instant::now();
 
+	match config.mode {
+		command_line::Mode::TestFolder(path) => {
+			test_several(&path);
+		}
+		command_line::Mode::CompileFile(path) => {
+			match compile_file_separate(&path) {
+				Ok(value) => {
+					println!("Value: {:?}", value);
+				}
+				Err(()) => (),
+			}
+		}
+	}
+
+	println!("Finished in {:.3} seconds", timer.elapsed().as_secs_f32());
+}
+
+fn print_location(code: &str, loc: &code_loc::CodeLoc, message: &str) {
+	if let Some(line) = code.lines().nth(loc.line as usize - 1) {
+		println!("{:>5} | {}", loc.line, line);
+
+		print!("        ");
+
+		let mut chars = line.chars();
+		for _ in 1..loc.column {
+			if let Some(c) = chars.next() {
+				if c.is_whitespace() {
+					print!("{}", c);
+				} else {
+					print!(" ");
+				}
+			} else {
+				print!("X");
+			}
+		}
+		println!("^-- {}", message);
+	} else {
+		println!("After code: {}", message);
+	}
+}
+
+fn setup_constants() -> (Scopes, Resources, Types) {
 	let mut scopes = Scopes::new();
 	let mut resources = Resources::new();
 	let mut types = Types::new();
@@ -91,6 +200,19 @@ fn main() {
 			}), n_arg_bytes: 16, n_return_bytes: 0, });
 		scopes.insert_root_resource(&mut resources, ustr::ustr("print"),
 			types.insert_function(vec![buffer_pointer], EMPTY_TYPE_ID),
+			function_kind,
+		).unwrap();
+	}
+
+	{
+		let function_kind = resources.create_function(FunctionKind::ExternalFunction {
+			func: Box::new(|_, args, _| {
+				if args[0] == 0 {
+					panic!("Failed to execute");
+				}
+			}), n_arg_bytes: 1, n_return_bytes: 0, });
+		scopes.insert_root_resource(&mut resources, ustr::ustr("assert"),
+			types.insert_function(vec![BOOL_TYPE_ID], EMPTY_TYPE_ID),
 			function_kind,
 		).unwrap();
 	}
@@ -205,76 +327,6 @@ fn main() {
 		).unwrap();
 	}
 
-	// -- COMPILE STUFF --
-	let scope = scopes.super_scope;
-	let id = resources.insert(Resource::new(
-		code_loc::CodeLoc { file: ustr::ustr("no"), line: 0, column: 0 },
-		ResourceKind::Value(ResourceValue::File {
-			scope,
-			module_folder: "test".into(),
-			file: "test".into(),
-		}),
-	));
-
-	// Compute stuff until we are out of things to compute
-	while match resources.compute_one(&mut types, &mut scopes) {
-		Ok(should_continue) => {
-			should_continue
-		}
-		Err(()) => {
-			false
-		}
-	} {}
-
-	if DEBUG {
-		println!("\n\n --- TYPES --- ");
-		types.print_types();
-	}
-
-	// See if it's ready
-	resources.check_completion();
-
-	error::print_output(&resources);
-
-	// If the value we want got completed, print the result
-	if let ResourceKind::Done(ref value, ref _pointer_members)
-		= resources.resource(id).kind
-	{
-		// TODO: Print pointer stuff out as well.
-
-		if value.len() > 0 {
-			println!("\n\n --- RESULT ---");
-			print!(" > ");
-			for b in value.iter() {
-				print!("{:X} ", b);
-			}
-			println!();
-		}
-
-		println!("Completed compilation in {:?}", time.elapsed());
-	}
+	(scopes, resources, types)
 }
 
-fn print_location(code: &str, loc: &code_loc::CodeLoc, message: &str) {
-	if let Some(line) = code.lines().nth(loc.line as usize - 1) {
-		println!("{:>5} | {}", loc.line, line);
-
-		print!("        ");
-
-		let mut chars = line.chars();
-		for _ in 1..loc.column {
-			if let Some(c) = chars.next() {
-				if c.is_whitespace() {
-					print!("{}", c);
-				} else {
-					print!(" ");
-				}
-			} else {
-				print!("X");
-			}
-		}
-		println!("^-- {}", message);
-	} else {
-		println!("After code: {}", message);
-	}
-}

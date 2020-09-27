@@ -13,7 +13,7 @@ lazy_static! {
 }
 
 pub fn print_output(resources: &Resources) {
-	let logger = LOGGER.lock().unwrap();
+	let mut logger = LOGGER.lock().unwrap();
 
 	if logger.errors.len() > 0 {
 		print_message_list(
@@ -28,6 +28,9 @@ pub fn print_output(resources: &Resources) {
 			logger.warnings.iter().map(|Warning(info, message)| (info.as_slice(), message))
 		);
 	}
+
+	logger.errors.clear();
+	logger.warnings.clear();
 }
 
 fn print_message_list<'a>(
