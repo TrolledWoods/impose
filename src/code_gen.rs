@@ -99,11 +99,7 @@ pub fn compile_expression(
 			NodeKind::BitCast => {
 				node_values.pop().unwrap()
 			}
-			NodeKind::Identifier { source: member_id, const_members: ref sub_members, is_type } => {
-				assert!(!is_type, "Identifier that is type should be meta");
-
-				assert_eq!(sub_members.len(), 0, "Const member access should be resolved in type checking!");
-
+			NodeKind::Identifier(member_id) => {
 				match scopes.member(member_id).kind {
 					ScopeMemberKind::UndefinedDependency(_) => panic!("Cannot run code_gen on undefined dependencies(they have to have been caught in the typer)"),
 					ScopeMemberKind::Indirect(_) => unreachable!("the member function on Scopes should handle indirects and shouldn't return one of them"),

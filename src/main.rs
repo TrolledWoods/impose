@@ -90,8 +90,8 @@ fn test_several(folder: &std::path::Path) {
 				compile_file_separate(&path)
 			}).join();
 			match result {
-				Ok(Ok(_)) => println!("Test '{:?}' succeeded", entry.path()),
-				_ => println!("Test '{:?}' FAILED", entry.path()),
+				Ok(Ok(_)) => println!("Test {:?} succeeded", entry.path()),
+				_ => println!("Test {:?} FAILED", entry.path()),
 			}
 		}
 	}

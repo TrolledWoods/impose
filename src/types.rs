@@ -383,11 +383,7 @@ pub enum NodeKind {
 	IntrinsicTwo(IntrinsicKindTwo),
 
 	EmptyLiteral,
-	Identifier {
-		source: ScopeMemberId, 
-		const_members: smallvec::SmallVec<[ustr::Ustr; 3]>,
-		is_type: bool,
-	},
+	Identifier(ScopeMemberId),
 
 	BitCast,
 
@@ -758,11 +754,7 @@ impl AstTyper {
 
 					Node::new(
 						node,
-						NodeKind::Identifier {
-							source: id,
-							const_members: smallvec::SmallVec::new(),
-							is_type,
-						},
+						NodeKind::Identifier(id),
 						final_type,
 					)
 				}
