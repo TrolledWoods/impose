@@ -108,7 +108,7 @@ pub fn compile_expression(
 					ScopeMemberKind::UndefinedDependency(_) => panic!("Cannot run code_gen on undefined dependencies(they have to have been caught in the typer)"),
 					ScopeMemberKind::Indirect(_) => unreachable!("the member function on Scopes should handle indirects and shouldn't return one of them"),
 					ScopeMemberKind::LocalVariable => {
-						let to = locals.allocate(types.handle(member.type_.unwrap()));
+						let to = locals.allocate(types.handle(node.type_));
 						let from = match scopes.member(member_id).storage_loc {
 							Some(value) => value,
 							None => panic!("Invalid thing, \nScopes: {:?}, \nInstructions: {:?}", scopes, instructions),

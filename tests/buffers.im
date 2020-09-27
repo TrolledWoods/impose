@@ -1,31 +1,24 @@
-// to_u8 :: |val: U64| bit_cast { val: U8, _: U32 }(val).val;
-// 
-// // Test that buffers work at all
+to_u8 :: |val: U64| bit_cast { val: U8, _: U32 }(val).val;
+
+// Test that buffers work at all
 HELLO_WORLD :: "Hello, World!\n";
-// 
-// assert(*HELLO_WORLD.pointer == to_u8(72 )); // H
-// assert(*(HELLO_WORLD.pointer + 1) == to_u8(101)); // e
-// assert(HELLO_WORLD.length == 14);
-// 
-// // Up the complexity
-// assert((*MORE_CONSTANT).length == 5);
-// assert(*((*MORE_CONSTANT).pointer + 0) == 42);
-// assert(*((*MORE_CONSTANT).pointer + 1) == 69);
-// assert(*((*MORE_CONSTANT).pointer + 2) == 102);
-// assert(*((*MORE_CONSTANT).pointer + 3) == 999);
-// assert(*((*MORE_CONSTANT).pointer + 4) == 1024);
-// 
-// MORE_CONSTANT :: {
-// 	my_struct := struct { a: 42, b: 69, c: 102, d: 999, e: 1000 + 24 };
-// 
-// 	buffer := bit_cast &- U64 (struct { pointer: &my_struct, length: 5 });
-// 
-// 	&buffer
-// };
-// 
 
-*HELLO_WORLD.pointer;
+assert(*HELLO_WORLD.pointer == to_u8(72 )); // H
+assert(*(HELLO_WORLD.pointer + 1) == to_u8(101)); // e
+assert(HELLO_WORLD.length == 14);
 
-my_thing := 50;
+// Up the complexity
+assert((*MORE_CONSTANT).length == 5);
+assert(*((*MORE_CONSTANT).pointer + 0) == 42);
+assert(*((*MORE_CONSTANT).pointer + 1) == 69);
+assert(*((*MORE_CONSTANT).pointer + 2) == 102);
+assert(*((*MORE_CONSTANT).pointer + 3) == 999);
+assert(*((*MORE_CONSTANT).pointer + 4) == 1024);
 
-my_thing = 20;
+MORE_CONSTANT :: {
+	my_struct := struct { a: 42, b: 69, c: 102, d: 999, e: 1000 + 24 };
+
+	buffer := bit_cast &- U64 (struct { pointer: &my_struct, length: 5 });
+
+	&buffer
+};
