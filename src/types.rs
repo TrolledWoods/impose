@@ -445,6 +445,7 @@ pub enum NodeKind {
 pub struct TypeStackElement {
 	type_: TypeId,
 	loc: CodeLoc,
+	node_id: usize,
 }
 
 pub struct AstTyper {
@@ -595,12 +596,13 @@ impl AstTyper {
 						*self.ast.locals.labels.get(break_label),
 					)
 				}
-				parser::NodeKind::If { condition, body: _, end_label } => {
-					let condition_type = self.ast.nodes[condition as usize].type_;
-					if condition_type != BOOL_TYPE_ID {
-						return error!(node,
+				parser::NodeKind::If { condition: _, body: _, end_label } => {
+					let _body = self.type_stack.pop().unwrap();
+					let condition = self.type_stack.pop().unwrap();
+					if condition.type_ != BOOL_TYPE_ID {
+						return error!(condition.loc,
 							"If condition has to be Bool, got {}",
-							types.type_to_string(condition_type));
+							types.type_to_string(condition.type_));
 					}
 
 					// If on its own never returns a type
@@ -814,8 +816,6 @@ impl AstTyper {
 							left.type_,
 						)
 					} else {
-						// Generate an intrinsic for the combination of types.
-						// TODO: Move this to a separate file at least, to hide the mess a bit.
 						let (intrinsic, return_type) =
 							match get_binary_operator_intrinsic(operator, types, left.type_, right.type_)
 						{
@@ -823,11 +823,29 @@ impl AstTyper {
 							None => return error!(node, "This combination of operator and types does not exist"),
 						};
 
-						Node::new(
-							node,
-							NodeKind::IntrinsicTwo(intrinsic),
-							return_type,
-						)
+						match (&self.ast.nodes[left.node_id].kind, &self.ast.nodes[right.node_id].kind) {
+							// Constant folding
+							(NodeKind::Constant(ref left), NodeKind::Constant(ref right)) => {
+								let mut buffer = 0;
+								run_intrinsic_two(intrinsic, &mut buffer, left, right);
+
+								self.ast.nodes.pop();
+								self.ast.nodes.pop();
+
+								Node::new(
+									node,
+									NodeKind::Constant(buffer.to_le_bytes().as_slice().into()),
+									return_type,
+								)
+							}
+							_ => {
+								Node::new(
+									node,
+									NodeKind::IntrinsicTwo(intrinsic),
+									return_type,
+								)
+							}
+						}
 					}
 				},
 				parser::NodeKind::UnaryOperator { operand: _, operator } => {
@@ -964,6 +982,7 @@ impl AstTyper {
 			self.type_stack.push(TypeStackElement {
 				type_: new_node.type_,
 				loc: new_node.loc,
+				node_id: self.ast.nodes.len(),
 			});
 			self.ast.nodes.push(new_node);
 
