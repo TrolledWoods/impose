@@ -28,6 +28,7 @@ pub mod run;
 pub mod resource;
 pub mod stack_frame;
 pub mod align;
+pub mod backend;
 
 mod command_line;
 

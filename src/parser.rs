@@ -730,12 +730,32 @@ fn parse_expression(
 	}
 }
 
+fn make_lvalue(mut context: Context, node_id: AstNodeId) -> Result<(), ()> {
+	let l_node = &mut context.ast.nodes[node_id as usize];
+	match l_node.kind {
+		NodeKind::Identifier { .. } => {
+			l_node.is_lvalue = true;
+		}
+		NodeKind::MemberAccess(member_id, _) => {
+			l_node.is_lvalue = true;
+			make_lvalue(context.borrow(), member_id)?;
+		}
+		NodeKind::UnaryOperator { operator: Operator::MulOrDeref, .. } => {
+			l_node.is_lvalue = true;
+		}
+		_ => {
+			return error!(l_node, "This is not a valid lvalue");
+		}
+	}
+
+	Ok(())
+}
+
 /// Parse an expression recursively
 fn parse_expression_rec(
 	mut context: Context,
 	min_priority: u32, 
 ) -> Result<AstNodeId, ()> {
-	let lvalue_starting_node = context.ast.nodes.len();
 	let mut a = parse_value(context.borrow())?;
 	
 	while let Some(&Token { kind: TokenKind::Operator(operator), ref loc }) = context.tokens.peek() {
@@ -745,15 +765,12 @@ fn parse_expression_rec(
 			|| error_value!(loc, "Operator is used as a binary operator, but it's not a binary operator")
 		)?;
 
-		if operator == Operator::Assign {
-			// The left side of the assignment is an lvalue
-			for node in &mut context.ast.nodes[lvalue_starting_node..] {
-				node.is_lvalue = true;
-			}
-		}
-
 		if (priority + if left_to_right { 0 } else { 1 }) > min_priority {
 			context.tokens.next();
+
+			if operator == Operator::Assign {
+				make_lvalue(context.borrow(), a)?;
+			}
 
 			// Do '.' member access. We have to write special code here, because this does not
 			// become an Operator node, it because a MemberAccess node.
