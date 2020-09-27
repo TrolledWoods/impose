@@ -399,9 +399,7 @@ pub enum NodeKind {
 
 	Loop(LabelId, LabelId),
 
-	Struct {
-		members: Vec<(ustr::Ustr, AstNodeId)>,
-	},
+	Struct,
 
 	DeclareFunctionArgument(ScopeMemberId),
 	Declaration { variable_name: ScopeMemberId, },
@@ -465,7 +463,7 @@ impl AstTyper {
 					self.type_stack.truncate(stack_len);
 					Node::new(
 						node,
-						NodeKind::Struct { members: members.clone() },
+						NodeKind::Struct,
 						type_,
 					)
 				}

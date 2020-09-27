@@ -251,7 +251,7 @@ pub fn compile_expression(
 
 				Value::Local(label_loc)
 			}
-			NodeKind::Struct { .. } => {
+			NodeKind::Struct => {
 				let id = node.type_;
 				let handle = types.handle(id);
 				let type_kind = &types.get(id).kind;
