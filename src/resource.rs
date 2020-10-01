@@ -601,6 +601,8 @@ pub enum ResourceKind {
 	/// It is a little unfortunate that we may have to do an almost full deep copy whenever loading
 	/// a constant as a pointer, but that might be necessary. Not sure how to reliably make it work
 	/// in any other way.
+	// TODO: Make the value stored in a vector, so that it's always heap allocated, to make sure
+	// that it doesn't move and wreck havoc.
 	Done(crate::stack_frame::ConstBuffer, Vec<(usize, ResourceId, TypeHandle)>),
 	
 	Poison,

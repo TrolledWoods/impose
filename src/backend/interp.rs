@@ -47,7 +47,7 @@ impl Stack {
 
 		unsafe {
 			self.head = self.head.sub(to_aligned(size, STACK_ALIGN));
-			(self.head, self.member_sizes.pop().unwrap())
+			(self.head, size)
 		}
 	}
 }
@@ -63,7 +63,7 @@ impl Drop for Stack {
 const STACK_SIZE:  usize = 2048;
 const STACK_ALIGN: usize = 16;
 
-pub fn interpret(_resources: &Resources, types: &Types, ast: &Ast) -> Value {
+pub fn interpret(resources: &Resources, types: &Types, ast: &Ast) -> Value {
 	// Allocate some buffers
 	let mut stack = Stack::new();
 
@@ -161,7 +161,36 @@ pub fn interpret(_resources: &Resources, types: &Types, ast: &Ast) -> Value {
 				}
 			},
 
-			NodeKind::Resource(_) => todo!(),
+			NodeKind::Resource(id) => {
+				let resource = resources.resource(id);
+				match resource.kind {
+					ResourceKind::Done(ref value, ref pointers) => {
+						let mut value_copy = value.clone();
+
+						for &(sub_offset, sub_id, _) in pointers {
+							match resources.resource(sub_id).kind {
+								ResourceKind::Done(ref sub_value, ref sub_pointers) => {
+									if sub_pointers.len() > 0 {
+										panic!("Cannot copy a resource with recursive subpointers");
+									}
+
+									value_copy[sub_offset..sub_offset + 8].copy_from_slice(
+										&(sub_value.as_ptr() as usize).to_le_bytes()
+									);
+								}
+								_ => {
+									todo!("We can't currently deal with non-finished resources");
+								}
+							}
+						}
+
+						stack.push(value_copy.as_ptr(), value_copy.len());
+					},
+					_ => {
+						todo!("We can't currently deal with non-finished resources");
+					}
+				}
+			},
 			NodeKind::FunctionCall(_) => todo!(),
 
 			NodeKind::Dereference => {
