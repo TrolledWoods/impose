@@ -220,6 +220,10 @@ impl Resources {
 					self.compute_queue.push_back(member_id);
 				}
 				ResourceKind::Value(ResourceValue::Typed(mut ast)) => {
+					let other_result = crate::backend::interp::interpret(self, types, &ast);
+					println!("\n--- NEW RUNNERS RESULT ---");
+					println!("{:?}\n", other_result);
+
 					let program = match compile_expression(&mut ast, scopes, self, types) {
 						Ok(value) => value,
 						Err(dependency) => {
