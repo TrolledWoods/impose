@@ -1,104 +1,110 @@
 use std::fmt;
 
-use crate::DEBUG;
-use crate::intrinsic::*;
-use crate::types::*;
-use crate::parser::MarkerKind;
-use crate::scopes::*;
-use crate::resource::*;
-use crate::stack_frame::*;
 use crate::code_loc::*;
+use crate::intrinsic::*;
+use crate::parser::MarkerKind;
+use crate::resource::*;
+use crate::scopes::*;
+use crate::stack_frame::*;
+use crate::types::*;
+use crate::DEBUG;
 
 pub enum Instruction {
-	DebugLocation(CodeLoc),
+    DebugLocation(CodeLoc),
 
-	IntrinsicTwoArgs(IntrinsicKindTwo, LocalHandle, Value, Value),
+    IntrinsicTwoArgs(IntrinsicKindTwo, LocalHandle, Value, Value),
 
-	SetAddressOf(LocalHandle, LocalHandle),
-	GetAddressOfResource(LocalHandle, ResourceId),
+    SetAddressOf(LocalHandle, LocalHandle),
+    GetAddressOfResource(LocalHandle, ResourceId),
 
-	Dereference(LocalHandle, Value),
+    Dereference(LocalHandle, Value),
 
-	/// Moves to the pointer at LocalHandle.
-	IndirectMove(LocalHandle, Value),
-	Move(LocalHandle, Value),
+    /// Moves to the pointer at LocalHandle.
+    IndirectMove(LocalHandle, Value),
+    Move(LocalHandle, Value),
 
-	JumpRel(LabelId),
-	JumpRelIfZero(Value, LabelId),
-	Call {
-		calling: Value, 
-		returns: LocalHandle, 
-		args: Vec<(usize, Value, usize)>,
-	},
+    JumpRel(LabelId),
+    JumpRelIfZero(Value, LabelId),
+    Call {
+        calling: Value,
+        returns: LocalHandle,
+        args: Vec<(usize, Value, usize)>,
+    },
 }
 
 impl fmt::Debug for Instruction {
-	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		match self {
-			Instruction::DebugLocation(loc)
-				=> write!(f, " -- {:?} -- ", loc),
-			Instruction::IntrinsicTwoArgs(intrinsic, result, a, b)
-				=> write!(f, "{:?} = {:?} {:?}, {:?}", result, intrinsic, a, b),
-			Instruction::GetAddressOfResource(to, id) =>
-				write!(f, "{:?} = resource({:?})", to, id),
-			Instruction::SetAddressOf(to, from) =>
-				write!(f, "{:?} = &{:?}", to, from),
-			Instruction::IndirectMove(into, from) => write!(f, "*{:?} = {:?}", into, from),
-			Instruction::Move(a, b) => write!(f, "{:?} = {:?}", a, b),
-			Instruction::JumpRel(a) => write!(f, "jump {:?}", a),
-			Instruction::JumpRelIfZero(value, a) => write!(f, "jump {:?} if {:?} == 0", a, value),
-			Instruction::Dereference(to, from) => write!(f, "{:?} = *{:?}", to, from),
-			Instruction::Call { calling, returns, ref args } => {
-				write!(f, "call {:?} with ", calling)?;
-				for arg in args.iter() {
-					write!(f, ", {:?}", arg.1)?;
-				}
-				write!(f, ", return into ({:?})", returns)?;
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Instruction::DebugLocation(loc) => write!(f, " -- {:?} -- ", loc),
+            Instruction::IntrinsicTwoArgs(intrinsic, result, a, b) => {
+                write!(f, "{:?} = {:?} {:?}, {:?}", result, intrinsic, a, b)
+            }
+            Instruction::GetAddressOfResource(to, id) => write!(f, "{:?} = resource({:?})", to, id),
+            Instruction::SetAddressOf(to, from) => write!(f, "{:?} = &{:?}", to, from),
+            Instruction::IndirectMove(into, from) => write!(f, "*{:?} = {:?}", into, from),
+            Instruction::Move(a, b) => write!(f, "{:?} = {:?}", a, b),
+            Instruction::JumpRel(a) => write!(f, "jump {:?}", a),
+            Instruction::JumpRelIfZero(value, a) => write!(f, "jump {:?} if {:?} == 0", a, value),
+            Instruction::Dereference(to, from) => write!(f, "{:?} = *{:?}", to, from),
+            Instruction::Call {
+                calling,
+                returns,
+                ref args,
+            } => {
+                write!(f, "call {:?} with ", calling)?;
+                for arg in args.iter() {
+                    write!(f, ", {:?}", arg.1)?;
+                }
+                write!(f, ", return into ({:?})", returns)?;
 
-				Ok(())
-			}
-		}
-	}
+                Ok(())
+            }
+        }
+    }
 }
 
 pub struct Program {
-	pub layout: std::sync::Arc<StackFrameLayout>,
-	pub instructions: Vec<Instruction>,
-	pub labels: Vec<usize>,
-	pub value: Value,
+    pub layout: std::sync::Arc<StackFrameLayout>,
+    pub instructions: Vec<Instruction>,
+    pub labels: Vec<usize>,
+    pub value: Value,
 }
 
 // TODO: Add a struct with data about compiling an expression, so that we can keep going
 // at the same point that we stopped if there is an undefined dependency.
 pub fn compile_expression(
-	ast: &Ast, 
-	scopes: &mut Scopes,
-	resources: &Resources,
-	types: &Types,
+    ast: &Ast,
+    scopes: &mut Scopes,
+    resources: &Resources,
+    types: &Types,
 ) -> Result<Program, Dependency> {
-	let mut locals = Locals::new();
-	let mut node_values: Vec<Value> = Vec::new();
-	let mut instructions = Vec::new();
-	let mut labels = vec![None; ast.locals.labels.len()];
+    let mut locals = Locals::new();
+    let mut node_values: Vec<Value> = Vec::new();
+    let mut instructions = Vec::new();
+    let mut labels = vec![None; ast.locals.labels.len()];
 
-	// Allocate locals for all the things to reside within
-	let mut label_locals = Vec::new();
+    // Allocate locals for all the things to reside within
+    let mut label_locals = Vec::new();
 
-	for node in ast.nodes.iter() {
-		if node.is_meta_data { 
-			continue; 
-		}
+    for node in ast.nodes.iter() {
+        if node.is_meta_data {
+            continue;
+        }
 
-		// TODO: Get rid of this
-		if label_locals.len() == 0 && !matches!(node.kind, NodeKind::DeclareFunctionArgument { .. }) {
-			label_locals = ast.locals.labels.iter()
-				.map(|&v| locals.allocate(types.handle(v)))
-				.collect::<Vec<_>>();
-		}
+        // TODO: Get rid of this
+        if label_locals.len() == 0 && !matches!(node.kind, NodeKind::DeclareFunctionArgument { .. })
+        {
+            label_locals = ast
+                .locals
+                .labels
+                .iter()
+                .map(|&v| locals.allocate(types.handle(v)))
+                .collect::<Vec<_>>();
+        }
 
-		// instructions.push(Instruction::DebugLocation(node.loc));
+        // instructions.push(Instruction::DebugLocation(node.loc));
 
-		let evaluation_value = match node.kind {
+        let evaluation_value = match node.kind {
 			NodeKind::BitCast => {
 				node_values.pop().unwrap()
 			}
@@ -353,53 +359,53 @@ pub fn compile_expression(
 			}
 		};
 
-		node_values.push(evaluation_value);
-	}
+        node_values.push(evaluation_value);
+    }
 
-	if DEBUG {
-		println!("\n---Instructions generated ---");
-		for (i, instruction) in instructions.iter().enumerate() {
-			for (label, val) in labels.iter().enumerate() {
-				if *val == Some(i) {
-					println!(" -- label {}:", label);
-				}
-			}
-			if let Instruction::DebugLocation(_) = *instruction {
-				// print_location(resources.code_cache.get(&loc.file).unwrap(), &loc, "");
-			} else {
-				println!("{:?}", instruction);
-			}
-		}
+    if DEBUG {
+        println!("\n---Instructions generated ---");
+        for (i, instruction) in instructions.iter().enumerate() {
+            for (label, val) in labels.iter().enumerate() {
+                if *val == Some(i) {
+                    println!(" -- label {}:", label);
+                }
+            }
+            if let Instruction::DebugLocation(_) = *instruction {
+                // print_location(resources.code_cache.get(&loc.file).unwrap(), &loc, "");
+            } else {
+                println!("{:?}", instruction);
+            }
+        }
 
-		for (label, val) in labels.iter().enumerate() {
-			if *val == Some(instructions.len()) {
-				println!(" -- label {}:", label);
-			}
-		}
-	}
+        for (label, val) in labels.iter().enumerate() {
+            if *val == Some(instructions.len()) {
+                println!(" -- label {}:", label);
+            }
+        }
+    }
 
-	Ok(Program {
-		layout: std::sync::Arc::new(locals.layout()),
-		instructions,
-		labels: labels.into_iter().map(|v| v.unwrap()).collect(),
-		value: node_values.pop().unwrap(),
-	})
+    Ok(Program {
+        layout: std::sync::Arc::new(locals.layout()),
+        instructions,
+        labels: labels.into_iter().map(|v| v.unwrap()).collect(),
+        value: node_values.pop().unwrap(),
+    })
 }
 
 fn push_move_indirect(instructions: &mut Vec<Instruction>, into: LocalHandle, from: Value) {
-	if from.size() > 0 {
-		assert_eq!(into.size, 8);
+    if from.size() > 0 {
+        assert_eq!(into.size, 8);
 
-		instructions.push(Instruction::IndirectMove(into, from));
-	}
+        instructions.push(Instruction::IndirectMove(into, from));
+    }
 }
 
 fn push_move(instructions: &mut Vec<Instruction>, into: LocalHandle, from: Value) {
-	if from.size() > 0 {
-		assert_eq!(into.size, from.size());
+    if from.size() > 0 {
+        assert_eq!(into.size, from.size());
 
-		instructions.push(Instruction::Move(into, from));
-	}
+        instructions.push(Instruction::Move(into, from));
+    }
 }
 
 /// Returns a pointer to a resource, either by copying the resource onto the stack and taking a
@@ -407,87 +413,101 @@ fn push_move(instructions: &mut Vec<Instruction>, into: LocalHandle, from: Value
 /// in a local, because it cannot possibly be a constant(because pointers to resources change
 /// when compiling etc).
 fn get_resource_pointer(
-	types: &Types,
-	instructions: &mut Vec<Instruction>,
-	locals: &mut Locals,
-	loc: &CodeLoc,
-	resources: &Resources,
-	id: ResourceId,
-	local: LocalHandle,
-	sub_type_handle: TypeHandle,
+    types: &Types,
+    instructions: &mut Vec<Instruction>,
+    locals: &mut Locals,
+    loc: &CodeLoc,
+    resources: &Resources,
+    id: ResourceId,
+    local: LocalHandle,
+    sub_type_handle: TypeHandle,
 ) -> Result<(), Dependency> {
-	// TODO: Also optimize direct pointers to constants.
-	let resource = resources.resource(id);
-	match resource.kind {
-		ResourceKind::Done(_, ref pointer_members) 
-			if pointer_members.len() == 0 => 
-		{
-			// There is an instruction for this!
-			instructions.push(Instruction::GetAddressOfResource(local, id));
-			Ok(())
-		}
-		_ => {
-			// This is just a random pointer
-			let (n_values, value) =
-				get_resource_constant(types, instructions, locals, loc, resources, id)?;
+    // TODO: Also optimize direct pointers to constants.
+    let resource = resources.resource(id);
+    match resource.kind {
+        ResourceKind::Done(_, ref pointer_members) if pointer_members.len() == 0 => {
+            // There is an instruction for this!
+            instructions.push(Instruction::GetAddressOfResource(local, id));
+            Ok(())
+        }
+        _ => {
+            // This is just a random pointer
+            let (n_values, value) =
+                get_resource_constant(types, instructions, locals, loc, resources, id)?;
 
-			let value_local = match value {
-				Value::Local(local) => local,
-				_ => {
-					let value_local = locals.allocate_several(sub_type_handle, n_values);
-					instructions.push(Instruction::Move(value_local, value));
-					value_local
-				}
-			};
+            let value_local = match value {
+                Value::Local(local) => local,
+                _ => {
+                    let value_local = locals.allocate_several(sub_type_handle, n_values);
+                    instructions.push(Instruction::Move(value_local, value));
+                    value_local
+                }
+            };
 
-			instructions.push(Instruction::SetAddressOf(local, value_local));
-			Ok(())
-		}
-	}
+            instructions.push(Instruction::SetAddressOf(local, value_local));
+            Ok(())
+        }
+    }
 }
 
 fn get_resource_constant(
-	types: &Types,
-	instructions: &mut Vec<Instruction>,
-	locals: &mut Locals,
-	loc: &CodeLoc,
-	resources: &Resources,
-	id: ResourceId,
+    types: &Types,
+    instructions: &mut Vec<Instruction>,
+    locals: &mut Locals,
+    loc: &CodeLoc,
+    resources: &Resources,
+    id: ResourceId,
 ) -> Result<(usize, Value), Dependency> {
-	let resource = resources.resource(id);
-	match resource.kind {
-		ResourceKind::Poison => panic!("Used poison. TODO: Return"),
-		ResourceKind::Function { .. } =>
-			Ok((1, id.into_index().into())),
-		ResourceKind::Done(ref value, ref pointer_members) => {
-			let type_handle = types.handle(resource.type_.unwrap());
+    let resource = resources.resource(id);
+    match resource.kind {
+        ResourceKind::Poison => panic!("Used poison. TODO: Return"),
+        ResourceKind::Function { .. } => Ok((1, id.into_index().into())),
+        ResourceKind::Done(ref value, ref pointer_members) => {
+            let type_handle = types.handle(resource.type_.unwrap());
 
-			if pointer_members.len() > 0 {
-				// TODO: Deal with pointers in pointer buffers.
+            if pointer_members.len() > 0 {
+                // TODO: Deal with pointers in pointer buffers.
 
-				let local = locals.allocate(type_handle);
+                let local = locals.allocate(type_handle);
 
-				push_move(instructions, local, Value::Constant(value.clone()));
+                push_move(instructions, local, Value::Constant(value.clone()));
 
-				for &(offset, sub_resource_id, sub_type_handle) in pointer_members {
-					// Put the resource pointer into the right local.
-					get_resource_pointer(types, instructions, locals, loc, resources, sub_resource_id, local.sub_local(offset, 8, 8), sub_type_handle)?;
-				}
+                for &(offset, sub_resource_id, sub_type_handle) in pointer_members {
+                    // Put the resource pointer into the right local.
+                    get_resource_pointer(
+                        types,
+                        instructions,
+                        locals,
+                        loc,
+                        resources,
+                        sub_resource_id,
+                        local.sub_local(offset, 8, 8),
+                        sub_type_handle,
+                    )?;
+                }
 
-				Ok((value.len().checked_div(type_handle.size).unwrap_or(1), Value::Local(local)))
-			} else {
-				match types.get(resource.type_.unwrap()).kind {
-					TypeKind::FunctionPointer { .. } => {
-						use std::convert::TryInto;
-						Ok((8, Value::Function(usize::from_le_bytes(value.as_slice().try_into().unwrap()))))
-					}
-					_ => {
-						Ok((value.len().checked_div(type_handle.size).unwrap_or(1), Value::Constant(value.clone())))
-					}
-				}
-			}
-		}
-		ResourceKind::Value(_) =>
-			Err(Dependency::Value(*loc, id)),
-	}
+                Ok((
+                    value.len().checked_div(type_handle.size).unwrap_or(1),
+                    Value::Local(local),
+                ))
+            } else {
+                match types.get(resource.type_.unwrap()).kind {
+                    TypeKind::FunctionPointer { .. } => {
+                        use std::convert::TryInto;
+                        Ok((
+                            8,
+                            Value::Function(usize::from_le_bytes(
+                                value.as_slice().try_into().unwrap(),
+                            )),
+                        ))
+                    }
+                    _ => Ok((
+                        value.len().checked_div(type_handle.size).unwrap_or(1),
+                        Value::Constant(value.clone()),
+                    )),
+                }
+            }
+        }
+        ResourceKind::Value(_) => Err(Dependency::Value(*loc, id)),
+    }
 }

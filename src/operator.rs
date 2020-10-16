@@ -12,7 +12,7 @@ macro_rules! create_operators {
 				match self {
 					$(
 						Operator::$name => (
-							if $priority == 0 { None } else { Some($priority) }, 
+							if $priority == 0 { None } else { Some($priority) },
 							if $unary_priority == 0 { None } else { Some($unary_priority) },
 							$left_to_right
 						)
@@ -27,41 +27,41 @@ macro_rules! create_operators {
 // engaged in the parsing stage and not here, but that might be fine? Not sure....
 // Name; Token, LeftToRight, Binary Priority(0 if not binary), Unary Priority(0 if not unary)
 create_operators! {
-	// Boolean comparisons
-	Equ ;       "==",  true,   5, 0,
-	NEqu;       "!=",  true,   5, 0,
-	LessEqu;    "<=" , true,   5, 0,
-	GreaterEqu; ">=" , true,   5, 0,
-	Less;       "<" ,  true,   5, 0,
-	Greater;    ">" ,  true,   5, 0,
-	Not;        "!" ,  true,   0, u32::MAX,
+    // Boolean comparisons
+    Equ ;       "==",  true,   5, 0,
+    NEqu;       "!=",  true,   5, 0,
+    LessEqu;    "<=" , true,   5, 0,
+    GreaterEqu; ">=" , true,   5, 0,
+    Less;       "<" ,  true,   5, 0,
+    Greater;    ">" ,  true,   5, 0,
+    Not;        "!" ,  true,   0, u32::MAX,
 
-	// Assignment and declaration
-	Declare;    ":=",  false,  0, 0,
-	ConstDecl;  "::",  false,  0, 0,
-	Function;   "->",  false,  2, 0,
-	Assign;     "=",   false,  3, 0,
+    // Assignment and declaration
+    Declare;    ":=",  false,  0, 0,
+    ConstDecl;  "::",  false,  0, 0,
+    Function;   "->",  false,  2, 0,
+    Assign;     "=",   false,  3, 0,
 
-	// Boolean operators 
-	// TODO: Make these different priorities, people are probably used to and having a lower priority
-	And;        "&&",  true,   4, 0,
-	Or ;        "||",  true,   4, 0,
-	Xor;        "^^",  true,   4, 0,
+    // Boolean operators
+    // TODO: Make these different priorities, people are probably used to and having a lower priority
+    And;        "&&",  true,   4, 0,
+    Or ;        "||",  true,   4, 0,
+    Xor;        "^^",  true,   4, 0,
 
-	// Bitwise operators
-	BitwiseOrOrLambda; "|",  true,  5, 0,
-	BufferPointer;     "&-", true,  0, 8,
-	BitAndOrPointer;   "&",  true,  5, 8,
-	BitXor; "^", true, 0, 8,
+    // Bitwise operators
+    BitwiseOrOrLambda; "|",  true,  5, 0,
+    BufferPointer;     "&-", true,  0, 8,
+    BitAndOrPointer;   "&",  true,  5, 8,
+    BitXor; "^", true, 0, 8,
 
-	// Standard math operators
-	Add;        "+",   true,   6, 0,
-	Sub;        "-",   true,   6, 0,
+    // Standard math operators
+    Add;        "+",   true,   6, 0,
+    Sub;        "-",   true,   6, 0,
 
-	MulOrDeref; "*",   true,   7, 8,
-	Div;        "/",   true,   7, 0,
-	Mod;        "%",   true,   7, 0,
+    MulOrDeref; "*",   true,   7, 8,
+    Div;        "/",   true,   7, 0,
+    Mod;        "%",   true,   7, 0,
 
-	// Special operators that are cool
-	Member;     ".",   true,   9, 0,
+    // Special operators that are cool
+    Member;     ".",   true,   9, 0,
 }

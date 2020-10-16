@@ -7,8 +7,11 @@
 #[inline]
 pub fn is_aligned(align: usize, value: usize) -> bool {
     debug_assert_ne!(align, 0, "Alignment cannot be 0");
-    debug_assert!(align.is_power_of_two(), "Alignment has to be a power of two");
-    
+    debug_assert!(
+        align.is_power_of_two(),
+        "Alignment has to be a power of two"
+    );
+
     value & (align - 1) == 0
 }
 
@@ -21,8 +24,11 @@ pub fn is_aligned(align: usize, value: usize) -> bool {
 #[inline]
 pub fn to_aligned(align: usize, value: usize) -> usize {
     debug_assert_ne!(align, 0, "Alignment cannot be 0");
-    debug_assert!(align.is_power_of_two(), "Alignment has to be a power of two");
-    
+    debug_assert!(
+        align.is_power_of_two(),
+        "Alignment has to be a power of two"
+    );
+
     (align + value - 1) & !(align - 1)
 }
 
@@ -39,12 +45,12 @@ fn test_is_aligned() {
 
 #[test]
 fn test_to_aligned() {
-    assert_eq!(8,  to_aligned(4, 8));
+    assert_eq!(8, to_aligned(4, 8));
     assert_eq!(16, to_aligned(4, 16));
-    assert_eq!(0,  to_aligned(4, 0));
-    assert_eq!(4,  to_aligned(4, 3));
-    assert_eq!(8,  to_aligned(8, 7));
+    assert_eq!(0, to_aligned(4, 0));
+    assert_eq!(4, to_aligned(4, 3));
+    assert_eq!(8, to_aligned(8, 7));
     assert_eq!(64, to_aligned(8, 64));
     assert_eq!(64, to_aligned(8, 59));
-    assert_eq!(2,  to_aligned(1, 2));
+    assert_eq!(2, to_aligned(1, 2));
 }

@@ -1,8 +1,8 @@
 pub trait Id {
-	fn new() -> Self;
-	fn create(value: u32) -> Self;
-	fn get(&self) -> u32;
-	fn count_next(&mut self) -> Self;
+    fn new() -> Self;
+    fn create(value: u32) -> Self;
+    fn get(&self) -> u32;
+    fn count_next(&mut self) -> Self;
 }
 
 macro_rules! create_id {
@@ -67,66 +67,88 @@ macro_rules! create_id {
 }
 
 #[derive(Debug)]
-pub struct IdVec<T, I> where I: Id {
-	contents: Vec<T>,
-	_phantom: std::marker::PhantomData<I>,
+pub struct IdVec<T, I>
+where
+    I: Id,
+{
+    contents: Vec<T>,
+    _phantom: std::marker::PhantomData<I>,
 }
 
-impl<T, I> Clone for IdVec<T, I> where T: Clone, I: Id {
-	fn clone(&self) -> Self {
-		Self { 
-			contents: self.contents.clone(),
-			_phantom: std::marker::PhantomData,
-		}
-	}
+impl<T, I> Clone for IdVec<T, I>
+where
+    T: Clone,
+    I: Id,
+{
+    fn clone(&self) -> Self {
+        Self {
+            contents: self.contents.clone(),
+            _phantom: std::marker::PhantomData,
+        }
+    }
 }
 
-impl<T, I> Default for IdVec<T, I> where I: Id {
-	fn default() -> Self {
-		Self {
-			contents: Vec::new(),
-			_phantom: std::marker::PhantomData,
-		}
-	}
+impl<T, I> Default for IdVec<T, I>
+where
+    I: Id,
+{
+    fn default() -> Self {
+        Self {
+            contents: Vec::new(),
+            _phantom: std::marker::PhantomData,
+        }
+    }
 }
 
-impl<T, I> IdVec<T, I> where I: Id {
-	pub fn new() -> Self {
-		Self { 
-			contents: Vec::new(),
-			_phantom: std::marker::PhantomData,
-		}
-	}
+impl<T, I> IdVec<T, I>
+where
+    I: Id,
+{
+    pub fn new() -> Self {
+        Self {
+            contents: Vec::new(),
+            _phantom: std::marker::PhantomData,
+        }
+    }
 
-	pub fn iter_ids(&self) -> impl Iterator<Item = (I, &T)> {
-		self.contents.iter().enumerate().map(|(i, v)| (I::create(i as u32), v))
-	}
+    pub fn iter_ids(&self) -> impl Iterator<Item = (I, &T)> {
+        self.contents
+            .iter()
+            .enumerate()
+            .map(|(i, v)| (I::create(i as u32), v))
+    }
 
-	pub fn get(&self, index: I) -> &T {
-		&self.contents[index.get() as usize]
-	}
+    pub fn get(&self, index: I) -> &T {
+        &self.contents[index.get() as usize]
+    }
 
-	pub fn get_mut(&mut self, index: I) -> &mut T {
-		&mut self.contents[index.get() as usize]
-	}
+    pub fn get_mut(&mut self, index: I) -> &mut T {
+        &mut self.contents[index.get() as usize]
+    }
 
-	pub fn push(&mut self, item: T) -> I {
-		let id = self.contents.len() as u32;
-		self.contents.push(item);
-		I::create(id)
-	}
+    pub fn push(&mut self, item: T) -> I {
+        let id = self.contents.len() as u32;
+        self.contents.push(item);
+        I::create(id)
+    }
 }
 
-impl<T, I> std::ops::Deref for IdVec<T, I> where I: Id {
-	type Target = [T];
+impl<T, I> std::ops::Deref for IdVec<T, I>
+where
+    I: Id,
+{
+    type Target = [T];
 
-	fn deref(&self) -> &Self::Target {
-		&*self.contents
-	}
+    fn deref(&self) -> &Self::Target {
+        &*self.contents
+    }
 }
 
-impl<T, I> std::ops::DerefMut for IdVec<T, I> where I: Id {
-	fn deref_mut(&mut self) -> &mut Self::Target {
-		&mut *self.contents
-	}
+impl<T, I> std::ops::DerefMut for IdVec<T, I>
+where
+    I: Id,
+{
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut *self.contents
+    }
 }
