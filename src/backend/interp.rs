@@ -62,9 +62,25 @@ impl Stack {
             "Stack overflow"
         );
 
+        let pos = self.head;
+
         unsafe {
-            self.head = self.head.add(to_aligned(size, STACK_ALIGN));
+            self.head = self.head.add(to_aligned(STACK_ALIGN, size));
         }
+
+        pos
+    }
+
+    /// Makes sure there is enough space for size elements, and returns the head of the
+    /// stack.
+    ///
+    /// SAFETY: Make sure to not use the storage after any writes have happened to the stack,
+    /// such as push. push_uninit(as long as you don't write it yourself) and pop are fine though.
+    fn temp_storage(&mut self, size: usize) -> *mut u8 {
+        assert!(
+            self.head as usize + size < self.buffer_max as usize,
+            "Stack overflow"
+        );
 
         self.head
     }
@@ -76,7 +92,7 @@ impl Stack {
         }
 
         unsafe {
-            self.head = self.head.sub(to_aligned(size, STACK_ALIGN));
+            self.head = self.head.sub(to_aligned(STACK_ALIGN, size));
             (self.head, size)
         }
     }
@@ -194,7 +210,6 @@ pub fn interpret(resources: &Resources, types: &Types, scopes: &Scopes, ast: &As
                     types.handle(node.type_).size,
                 );
             }
-
             NodeKind::ScopeMemberReference(member_id) => match scopes.member(member_id).kind {
                 ScopeMemberKind::LocalVariable => {
                     let &(pos, _size) = locals.get(&member_id).unwrap();
@@ -211,9 +226,7 @@ pub fn interpret(resources: &Resources, types: &Types, scopes: &Scopes, ast: &As
                 }
                 ref kind => panic!("Unhandled identifier kind {:?}", kind),
             },
-
             NodeKind::BitCast => {}
-
             NodeKind::Assign => {
                 let (value, value_len) = stack.pop();
                 let (pointer, pointer_len) = stack.pop();
@@ -228,7 +241,6 @@ pub fn interpret(resources: &Resources, types: &Types, scopes: &Scopes, ast: &As
                     stack.push(value, value_len);
                 }
             }
-
             NodeKind::Resource(id) => {
                 let resource = resources.resource(id);
                 match resource.kind {
@@ -260,7 +272,6 @@ pub fn interpret(resources: &Resources, types: &Types, scopes: &Scopes, ast: &As
                 }
             }
             NodeKind::FunctionCall(_) => todo!(),
-
             NodeKind::Dereference => {
                 let (pointer, pointer_len) = stack.pop();
                 assert_eq!(pointer_len, 8);
@@ -272,19 +283,25 @@ pub fn interpret(resources: &Resources, types: &Types, scopes: &Scopes, ast: &As
             }
             NodeKind::If(_) => {}
             NodeKind::IfWithElse { end_label: _ } => {}
-
             NodeKind::Loop(head, _) => node_id = *label_map.get(&head).unwrap(),
-
             NodeKind::Struct => match types.get(node.type_).kind {
-                TypeKind::Struct { members: _ } => {
-                    todo!();
-                    // let node_type_handle = types.handle(node.type_);
-                    // for &(ref name, offset, member_type) in members {
-                    // }
+                TypeKind::Struct { ref members } => {
+                    let handle = types.handle(node.type_);
+                    let temp = stack.temp_storage(handle.size);
+
+                    for &(_, offset, member_type_handle) in members.iter().rev() {
+                        let (value_buffer, value_size) = stack.pop();
+                        assert_eq!(value_size, member_type_handle.size);
+
+                        unsafe {
+                            std::ptr::copy(value_buffer, temp.add(offset), member_type_handle.size);
+                        }
+                    }
+
+                    stack.push(temp, handle.size);
                 }
                 _ => unreachable!("A Struct node has to have to type of struct"),
             },
-
             NodeKind::DeclareFunctionArgument(_) => todo!(),
             NodeKind::Declaration { variable_name } => {
                 let &(pos, size) = locals.get(&variable_name).unwrap();
