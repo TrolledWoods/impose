@@ -3,7 +3,7 @@
 #![feature(array_methods)]
 #![deny(warnings)]
 
-pub const DEBUG: bool = true;
+pub const DEBUG: bool = false;
 
 #[macro_use]
 extern crate lazy_static;

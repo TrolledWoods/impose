@@ -95,11 +95,6 @@ impl Stack {
         unsafe {
             self.head = self.head.sub(to_aligned(STACK_ALIGN, size));
 
-            print!("Bytes: ");
-            for off in 0..size {
-                print!("{} ", *self.head.add(off));
-            }
-
             (self.head, size)
         }
     }
@@ -392,14 +387,13 @@ impl<'a> Interpreter<'a> {
         for (i, &local_var_id) in ast.locals.all_locals.iter().enumerate() {
             let member = scopes.member(local_var_id);
             let type_handle = types.handle(member.type_.unwrap());
-            let local = self.locals_stack.push_uninit(type_handle.size);
 
+            let local = self.locals_stack.push_uninit(type_handle.size);
             if let Some(arg) = arguments.get(i) {
                 unsafe {
                     std::ptr::copy(*arg, local, type_handle.size);
                 }
             }
-
             self.locals.push((local_var_id, local));
         }
 

@@ -145,20 +145,11 @@ impl Resources {
                         None => EMPTY_TYPE_ID,
                     };
 
-                    member.kind = ResourceKind::Function(ResourceFunction::TypedArgs {
-                        ast,
-                        args: arg_types,
-                        returns: return_type,
-                    });
-                    self.return_resource(member_id, member);
-                    self.compute_queue.push_back(member_id);
-                }
-                ResourceKind::Function(ResourceFunction::TypedArgs { ast, args, returns }) => {
                     member.kind = ResourceKind::Function(ResourceFunction::Typing {
                         typer: AstTyper::new(ast.locals.clone()),
                         ast,
-                        args,
-                        returns,
+                        args: arg_types,
+                        returns: return_type,
                     });
                     self.return_resource(member_id, member);
                     self.compute_queue.push_back(member_id);
@@ -653,11 +644,6 @@ pub enum ResourceFunction {
         ast: crate::parser::Ast,
         args: Vec<(ScopeMemberId, ResourceId)>,
         returns: Option<ResourceId>,
-    },
-    TypedArgs {
-        ast: crate::parser::Ast,
-        args: Vec<TypeId>,
-        returns: TypeId,
     },
     Typing {
         ast: crate::parser::Ast,
