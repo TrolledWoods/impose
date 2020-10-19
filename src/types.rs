@@ -9,7 +9,7 @@ use crate::operator::*;
 use crate::parser;
 use crate::resource::*;
 use crate::scopes::*;
-use crate::stack_frame::*;
+use crate::ConstBuffer;
 
 pub const TYPE_TYPE_ID: TypeId = TypeId::create_raw(0);
 pub const U64_TYPE_ID: TypeId = TypeId::create_raw(1);
@@ -823,10 +823,11 @@ impl AstTyper {
                         ) {
                             Some(value) => value,
                             None => {
+                                // TODO: Make this error message less strange
                                 return error!(
                                     node,
                                     "This combination of operator and types does not exist"
-                                )
+                                );
                             }
                         };
 

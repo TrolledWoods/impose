@@ -17,16 +17,15 @@ pub mod error;
 
 pub mod align;
 pub mod backend;
-pub mod code_gen;
 pub mod code_loc;
 pub mod intrinsic;
 pub mod operator;
 pub mod parser;
 pub mod resource;
-pub mod run;
 pub mod scopes;
-pub mod stack_frame;
 pub mod types;
+
+pub type ConstBuffer = smallvec::SmallVec<[u8; 8]>;
 
 mod command_line;
 
@@ -39,7 +38,7 @@ lazy_static! {
 }
 
 /// Compiles a file with a unique set of constants. Prints errors.
-fn compile_file_separate(file: &std::path::Path) -> Result<stack_frame::ConstBuffer, ()> {
+fn compile_file_separate(file: &std::path::Path) -> Result<ConstBuffer, ()> {
     assert!(file.is_file());
 
     let (mut scopes, mut resources, mut types) = setup_constants();
@@ -253,51 +252,6 @@ fn setup_constants() -> (Scopes, Resources, Types) {
                 &mut resources,
                 ustr::ustr("alloc"),
                 types.insert_function(vec![U64_TYPE_ID, U64_TYPE_ID], pointer_u8),
-                function_kind,
-            )
-            .unwrap();
-    }
-
-    {
-        use std::convert::TryInto;
-        let input_function = types.insert_function(vec![], EMPTY_TYPE_ID);
-        let function_kind = resources.create_function(FunctionKind::ExternalFunction {
-            func: Box::new(|resources, args, _| {
-                let function = usize::from_le_bytes(args.try_into().unwrap());
-
-                match resources.functions.get(function) {
-                    Some(FunctionKind::Function(program)) => {
-                        println!("--- INSTRUCTIONS ---");
-                        for (i, instruction) in program.instructions.iter().enumerate() {
-                            for (label, val) in program.labels.iter().enumerate() {
-                                if *val == i {
-                                    println!(" -- label {}:", label);
-                                }
-                            }
-
-                            println!("{:?}", instruction);
-                        }
-
-                        for (label, val) in program.labels.iter().enumerate() {
-                            if *val == program.instructions.len() {
-                                println!(" -- label {}:", label);
-                            }
-                        }
-                    }
-                    Some(FunctionKind::ExternalFunction { .. }) => {
-                        println!("Cannot print instructions of external function")
-                    }
-                    None => println!("Cannot print instructions if function does not exist"),
-                }
-            }),
-            n_arg_bytes: 8,
-            n_return_bytes: 0,
-        });
-        scopes
-            .insert_root_resource(
-                &mut resources,
-                ustr::ustr("dump_code"),
-                types.insert_function(vec![input_function], EMPTY_TYPE_ID),
                 function_kind,
             )
             .unwrap();

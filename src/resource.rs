@@ -1,12 +1,10 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 
-use crate::code_gen::*;
 use crate::code_loc::*;
 use crate::error::*;
 use crate::id::*;
 use crate::parser::*;
-use crate::run::*;
 use crate::scopes::*;
 use crate::types::*;
 use crate::DEBUG;
@@ -203,22 +201,7 @@ impl Resources {
                     self.return_resource(member_id, member);
                     self.compute_queue.push_back(member_id);
                 }
-                ResourceKind::Function(ResourceFunction::Typed(mut ast)) => {
-                    let program = match compile_expression(&mut ast, scopes, self, types) {
-                        Ok(value) => value,
-                        Err(dependency) => {
-                            member.kind = ResourceKind::Function(ResourceFunction::Typed(ast));
-                            member.depending_on = Some(dependency);
-                            self.return_resource(member_id, member);
-                            self.add_dependency(member_id, dependency, scopes);
-                            return Ok(true);
-                        }
-                    };
-
-                    if let Some(mut waiting_on_value) = member.waiting_on_value.take() {
-                        self.resolve_dependencies(&mut waiting_on_value);
-                    }
-
+                ResourceKind::Function(ResourceFunction::Typed(ast)) => {
                     if DEBUG {
                         println!(
                             "\n\n--- Resource {} (function) has finished computing! ---",
@@ -226,15 +209,14 @@ impl Resources {
                         );
                         print!("Type: ");
                         types.print(resource_type.unwrap());
-                        println!();
-                        println!("Instructions: ");
-                        for instruction in &program.instructions {
-                            println!("{:?}", instruction);
-                        }
                     }
 
-                    let id = self.insert_function(FunctionKind::Function(program));
+                    let id = self.insert_function(FunctionKind::Function(ast));
                     member.kind = ResourceKind::Done((&id.to_le_bytes() as &[u8]).into(), vec![]);
+
+                    if let Some(mut waiting_on_value) = member.waiting_on_value.take() {
+                        self.resolve_dependencies(&mut waiting_on_value);
+                    }
 
                     self.uncomputed_resources.remove(&member_id);
                     self.return_resource(member_id, member);
@@ -311,31 +293,12 @@ impl Resources {
                     self.return_resource(member_id, member);
                     self.compute_queue.push_back(member_id);
                 }
-                ResourceKind::Value(ResourceValue::Typed(mut ast)) => {
+                ResourceKind::Value(ResourceValue::Typed(ast)) => {
                     use crate::backend::interp;
                     let mut interpreter = interp::Interpreter::new();
-                    let other_result = interpreter.interpret(self, types, scopes, &ast).unwrap();
-                    println!("\n--- NEW RUNNERS RESULT ---");
-                    println!("{:?}\n", other_result);
-
-                    let program = match compile_expression(&mut ast, scopes, self, types) {
-                        Ok(value) => value,
-                        Err(dependency) => {
-                            member.depending_on = Some(dependency);
-                            member.kind = ResourceKind::Value(ResourceValue::Typed(ast));
-                            self.return_resource(member_id, member);
-                            self.add_dependency(member_id, dependency, scopes);
-                            return Ok(true);
-                        }
-                    };
-
-                    // TODO: Go through the type, and change any pointers into resource pointers.
-                    let mut instance = program.layout.create_instance();
-                    let value = run_instructions(self, &mut instance, &program);
-
-                    if let Some(mut waiting_on_value) = member.waiting_on_value.take() {
-                        self.resolve_dependencies(&mut waiting_on_value);
-                    }
+                    let value = interpreter
+                        .interpret(self, types, scopes, &ast, &[])
+                        .unwrap();
 
                     if DEBUG {
                         println!(
@@ -346,20 +309,12 @@ impl Resources {
                             print!("Type: ");
                             types.print(*resource_type);
                         }
-                        println!("Instructions: ");
-                        for instruction in &program.instructions {
-                            println!("{:?}", instruction);
-                        }
 
-                        println!("Value: {:?}", value);
+                        println!("\nValue: {:?}", value);
                     }
 
                     member.kind =
                         self.turn_value_into_resource(types, member.type_.unwrap(), &value);
-
-                    // We free the instance here so that we can turn the value into a resource
-                    // first!
-                    drop(instance);
 
                     self.return_resource(member_id, member);
                     self.uncomputed_resources.remove(&member_id);
@@ -721,7 +676,7 @@ pub enum FunctionKind {
         n_arg_bytes: usize,
         n_return_bytes: usize,
     },
-    Function(Program),
+    Function(crate::types::Ast),
 }
 
 pub enum ResourceKind {
@@ -736,10 +691,7 @@ pub enum ResourceKind {
     /// in any other way.
     // TODO: Make the value stored in a vector, so that it's always heap allocated, to make sure
     // that it doesn't move and wreck havoc.
-    Done(
-        crate::stack_frame::ConstBuffer,
-        Vec<(usize, ResourceId, TypeHandle)>,
-    ),
+    Done(crate::ConstBuffer, Vec<(usize, ResourceId, TypeHandle)>),
 
     Poison,
 }

@@ -2,7 +2,6 @@ use crate::code_loc::*;
 use crate::error::*;
 use crate::id::*;
 use crate::resource::*;
-use crate::stack_frame::*;
 use crate::types::*;
 use ustr::Ustr;
 
@@ -189,7 +188,6 @@ impl Scopes {
             name,
             kind,
             type_: None,
-            storage_loc: None,
         });
 
         // TODO: If I get around to multithreading, we have to change this completely, because
@@ -294,7 +292,6 @@ impl LocalVariables {
             kind: ScopeMemberKind::LocalVariable,
             declaration_location: Some(loc),
             type_: None,
-            storage_loc: None,
         });
         self.variables.push((name, member_id));
         self.all_locals.push(member_id);
@@ -387,8 +384,6 @@ pub struct ScopeMember {
     pub kind: ScopeMemberKind,
     pub declaration_location: Option<CodeLoc>,
     pub type_: Option<TypeId>,
-    // TODO: Remove this
-    pub storage_loc: Option<LocalHandle>,
 }
 
 create_id!(LabelId);

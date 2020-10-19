@@ -53,8 +53,6 @@ impl Stack {
     ///
     /// Returns a dangling pointer with STACK_ALIGN alignment if the size is zero
     fn push_uninit(&mut self, size: usize) -> *mut u8 {
-        println!("+ {} bytes", size);
-
         self.member_sizes.push(size);
         if size == 0 {
             return STACK_ALIGN as *mut u8;
@@ -90,13 +88,18 @@ impl Stack {
 
     fn pop(&mut self) -> (*const u8, usize) {
         let size = self.member_sizes.pop().unwrap();
-        println!("- {} bytes", size);
         if size == 0 {
             return (std::ptr::NonNull::dangling().as_ptr(), 0);
         }
 
         unsafe {
             self.head = self.head.sub(to_aligned(STACK_ALIGN, size));
+
+            print!("Bytes: ");
+            for off in 0..size {
+                print!("{} ", *self.head.add(off));
+            }
+
             (self.head, size)
         }
     }
@@ -147,7 +150,7 @@ impl<'a> Interpreter<'a> {
 
     pub fn resume(
         &mut self,
-        resources: &Resources,
+        resources: &'a Resources,
         types: &Types,
         scopes: &Scopes,
     ) -> Result<Value, Dependency> {
@@ -263,7 +266,43 @@ impl<'a> Interpreter<'a> {
                         }
                     }
                 }
-                NodeKind::FunctionCall(_) => todo!(),
+                NodeKind::FunctionCall(type_id) => {
+                    let mut args = Vec::new();
+                    let type_ = types.get(type_id);
+                    let return_type = match type_.kind {
+                        TypeKind::FunctionPointer {
+                            args: ref arg_types,
+                            returns,
+                        } => {
+                            for &arg_type in arg_types.iter().rev() {
+                                let (arg, size) = self.stack.pop();
+                                let arg_type_handle = types.handle(arg_type);
+                                assert_eq!(size, arg_type_handle.size);
+                                args.push(arg);
+                            }
+                            returns
+                        }
+                        _ => unreachable!(),
+                    };
+
+                    let (func_id, id_len) = self.stack.pop();
+                    assert_eq!(id_len, 8);
+                    let func_id = unsafe { *(func_id as *mut usize) };
+
+                    match resources.functions.get(func_id) {
+                        Some(FunctionKind::ExternalFunction {
+                            func: _,
+                            n_arg_bytes: _,
+                            n_return_bytes: _,
+                        }) => todo!(),
+                        Some(FunctionKind::Function(ast)) => {
+                            let returns = self.interpret(resources, types, scopes, ast, &args)?;
+                            assert_eq!(returns.len(), types.handle(return_type).size);
+                            self.stack.push(returns.as_ptr(), returns.len());
+                        }
+                        None => panic!("Not a valid function"),
+                    }
+                }
                 NodeKind::Dereference => {
                     let (pointer, pointer_len) = self.stack.pop();
                     assert_eq!(pointer_len, 8);
@@ -330,6 +369,7 @@ impl<'a> Interpreter<'a> {
         }
 
         for _ in ast.locals.all_locals.iter() {
+            self.locals.pop();
             self.locals_stack.pop();
         }
 
@@ -341,17 +381,26 @@ impl<'a> Interpreter<'a> {
 
     pub fn interpret(
         &mut self,
-        resources: &Resources,
+        resources: &'a Resources,
         types: &Types,
         scopes: &Scopes,
         ast: &'a Ast,
+        arguments: &[*const u8],
     ) -> Result<Value, Dependency> {
         self.code.push((ast, 0));
 
-        for &local_var_id in ast.locals.all_locals.iter() {
+        for (i, &local_var_id) in ast.locals.all_locals.iter().enumerate() {
             let member = scopes.member(local_var_id);
             let type_handle = types.handle(member.type_.unwrap());
-            self.locals_stack.push_uninit(type_handle.size);
+            let local = self.locals_stack.push_uninit(type_handle.size);
+
+            if let Some(arg) = arguments.get(i) {
+                unsafe {
+                    std::ptr::copy(*arg, local, type_handle.size);
+                }
+            }
+
+            self.locals.push((local_var_id, local));
         }
 
         self.resume(resources, types, scopes)
