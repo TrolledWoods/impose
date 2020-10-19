@@ -312,7 +312,9 @@ impl Resources {
                     self.compute_queue.push_back(member_id);
                 }
                 ResourceKind::Value(ResourceValue::Typed(mut ast)) => {
-                    let other_result = crate::backend::interp::interpret(self, types, scopes, &ast);
+                    use crate::backend::interp;
+                    let mut interpreter = interp::Interpreter::new();
+                    let other_result = interpreter.interpret(self, types, scopes, &ast).unwrap();
                     println!("\n--- NEW RUNNERS RESULT ---");
                     println!("{:?}\n", other_result);
 
