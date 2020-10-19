@@ -302,7 +302,6 @@ pub fn interpret(resources: &Resources, types: &Types, scopes: &Scopes, ast: &As
                 }
                 _ => unreachable!("A Struct node has to have to type of struct"),
             },
-            NodeKind::DeclareFunctionArgument(_) => todo!(),
             NodeKind::Declaration { variable_name } => {
                 let &(pos, size) = locals.get(&variable_name).unwrap();
                 let (pointer, pointer_size) = stack.pop();

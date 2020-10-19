@@ -73,23 +73,108 @@ impl Resources {
                 ResourceKind::Poison => {
                     self.return_resource(member_id, member);
                 }
-                ResourceKind::Function(ResourceFunction::Defined(ast, arguments)) => {
-                    // TODO: Maybe we should get rid of this state?
-                    let locals = ast.locals.clone();
-                    member.kind = ResourceKind::Function(ResourceFunction::Typing(
+                ResourceKind::Function(ResourceFunction::Defined { ast, args, returns }) => {
+                    let mut arg_types = Vec::new();
+                    for &(scope_member_id, depending_on) in args.iter() {
+                        match self.resource(depending_on) {
+                            Resource {
+                                type_: Some(TYPE_TYPE_ID),
+                                kind: ResourceKind::Done(data, _),
+                                ..
+                            } => {
+                                use std::convert::TryInto;
+                                let type_ = TypeId::create(u64::from_le_bytes(
+                                    data.as_slice().try_into().unwrap(),
+                                )
+                                    as u32);
+                                arg_types.push(type_);
+                                scopes.member_mut(scope_member_id).type_ = Some(type_);
+                            }
+                            Resource {
+                                type_: Some(_),
+                                kind: ResourceKind::Done(_, _),
+                                ..
+                            } => unreachable!(),
+                            _ => {
+                                member.kind = ResourceKind::Function(ResourceFunction::Defined {
+                                    ast,
+                                    args,
+                                    returns,
+                                });
+                                self.add_dependency(
+                                    member_id,
+                                    Dependency::Type(member.loc, depending_on),
+                                    scopes,
+                                );
+                                self.return_resource(member_id, member);
+                                return Ok(true);
+                            }
+                        }
+                    }
+
+                    let return_type = match returns {
+                        Some(resource_id) => match self.resource(resource_id) {
+                            Resource {
+                                type_: Some(TYPE_TYPE_ID),
+                                kind: ResourceKind::Done(data, _),
+                                ..
+                            } => {
+                                use std::convert::TryInto;
+                                TypeId::create(u64::from_le_bytes(
+                                    data.as_slice().try_into().unwrap(),
+                                ) as u32)
+                            }
+                            Resource { type_: Some(_), .. } => unreachable!(),
+                            _ => {
+                                member.kind = ResourceKind::Function(ResourceFunction::Defined {
+                                    ast,
+                                    args,
+                                    returns,
+                                });
+                                self.add_dependency(
+                                    member_id,
+                                    Dependency::Type(member.loc, resource_id),
+                                    scopes,
+                                );
+                                self.return_resource(member_id, member);
+                                return Ok(true);
+                            }
+                        },
+                        None => EMPTY_TYPE_ID,
+                    };
+
+                    member.kind = ResourceKind::Function(ResourceFunction::TypedArgs {
                         ast,
-                        AstTyper::new(locals),
-                        arguments,
-                    ));
+                        args: arg_types,
+                        returns: return_type,
+                    });
                     self.return_resource(member_id, member);
                     self.compute_queue.push_back(member_id);
                 }
-                ResourceKind::Function(ResourceFunction::Typing(mut ast, mut typer, arguments)) => {
+                ResourceKind::Function(ResourceFunction::TypedArgs { ast, args, returns }) => {
+                    member.kind = ResourceKind::Function(ResourceFunction::Typing {
+                        typer: AstTyper::new(ast.locals.clone()),
+                        ast,
+                        args,
+                        returns,
+                    });
+                    self.return_resource(member_id, member);
+                    self.compute_queue.push_back(member_id);
+                }
+                ResourceKind::Function(ResourceFunction::Typing {
+                    mut ast,
+                    mut typer,
+                    args,
+                    returns,
+                }) => {
                     match typer.try_type_ast(types, &mut ast, scopes, self) {
                         Ok(Some(dependency)) => {
-                            member.kind = ResourceKind::Function(ResourceFunction::Typing(
-                                ast, typer, arguments,
-                            ));
+                            member.kind = ResourceKind::Function(ResourceFunction::Typing {
+                                ast,
+                                typer,
+                                args,
+                                returns,
+                            });
                             member.depending_on = Some(dependency);
                             self.return_resource(member_id, member);
                             self.add_dependency(member_id, dependency, scopes);
@@ -104,13 +189,8 @@ impl Resources {
                         }
                     }
 
-                    let arg_types = arguments
-                        .iter()
-                        .map(|&arg| scopes.member(arg).type_.unwrap())
-                        .collect();
-
                     member.type_ = Some(types.insert(Type::new(TypeKind::FunctionPointer {
-                        args: arg_types,
+                        args,
                         returns: typer.ast.nodes.last().unwrap().type_,
                     })));
 
@@ -608,8 +688,22 @@ pub enum ResourceValue {
 }
 
 pub enum ResourceFunction {
-    Defined(crate::parser::Ast, Vec<ScopeMemberId>),
-    Typing(crate::parser::Ast, AstTyper, Vec<ScopeMemberId>),
+    Defined {
+        ast: crate::parser::Ast,
+        args: Vec<(ScopeMemberId, ResourceId)>,
+        returns: Option<ResourceId>,
+    },
+    TypedArgs {
+        ast: crate::parser::Ast,
+        args: Vec<TypeId>,
+        returns: TypeId,
+    },
+    Typing {
+        ast: crate::parser::Ast,
+        typer: AstTyper,
+        args: Vec<TypeId>,
+        returns: TypeId,
+    },
     Typed(crate::types::Ast),
     // TODO: When code generation can pause, add a state for that.
 }

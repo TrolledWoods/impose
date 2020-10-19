@@ -410,7 +410,6 @@ pub enum NodeKind {
 
     Struct,
 
-    DeclareFunctionArgument(ScopeMemberId),
     Declaration {
         variable_name: ScopeMemberId,
     },
@@ -511,16 +510,6 @@ impl AstTyper {
                     NodeKind::Constant(number.to_bits().to_le_bytes().as_slice().into()),
                     F64_TYPE_ID,
                 ),
-                parser::NodeKind::DeclareFunctionArgument { variable_name, .. } => {
-                    scopes.member_mut(variable_name).type_ =
-                        Some(get_type(types, &self.ast, self.type_stack.pop().unwrap())?);
-
-                    Node::new(
-                        node,
-                        NodeKind::DeclareFunctionArgument(variable_name),
-                        EMPTY_TYPE_ID,
-                    )
-                }
                 parser::NodeKind::MemberAccess(_, sub_name) => {
                     let type_id = self.type_stack.pop().unwrap();
                     let type_kind = &types.get(type_id.type_).kind;

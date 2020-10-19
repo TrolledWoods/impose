@@ -85,279 +85,259 @@ pub fn compile_expression(
 
     // Allocate locals for all the things to reside within
     let mut label_locals = Vec::new();
+    for &type_id in ast.locals.labels.iter() {
+        label_locals.push(locals.allocate(types.handle(type_id)));
+    }
 
     for node in ast.nodes.iter() {
         if node.is_meta_data {
             continue;
         }
 
-        // TODO: Get rid of this
-        if label_locals.len() == 0 && !matches!(node.kind, NodeKind::DeclareFunctionArgument { .. })
-        {
-            label_locals = ast
-                .locals
-                .labels
-                .iter()
-                .map(|&v| locals.allocate(types.handle(v)))
-                .collect::<Vec<_>>();
-        }
-
-        // instructions.push(Instruction::DebugLocation(node.loc));
-
         let evaluation_value = match node.kind {
-			NodeKind::BitCast => {
-				node_values.pop().unwrap()
-			}
-			NodeKind::ScopeMemberReference(member_id) => {
-				let member = scopes.member(member_id);
-				match member.kind {
-					ScopeMemberKind::UndefinedDependency(_) => panic!("Cannot run code_gen on undefined dependencies(they have to have been caught in the typer)"),
-					ScopeMemberKind::Indirect(_) => unreachable!("the member function on Scopes should handle indirects and shouldn't return one of them"),
-					ScopeMemberKind::LocalVariable => {
-						let to = locals.allocate(types.handle(node.type_));
-						let from = match scopes.member(member_id).storage_loc {
-							Some(value) => value,
-							None => panic!("Invalid thing, \nScopes: {:?}, \nInstructions: {:?}", scopes, instructions),
-						};
+            NodeKind::BitCast => {
+                node_values.pop().unwrap()
+            }
+            NodeKind::ScopeMemberReference(member_id) => {
+                let member = scopes.member(member_id);
+                match member.kind {
+                    ScopeMemberKind::UndefinedDependency(_) => panic!("Cannot run code_gen on undefined dependencies(they have to have been caught in the typer)"),
+                    ScopeMemberKind::Indirect(_) => unreachable!("the member function on Scopes should handle indirects and shouldn't return one of them"),
+                    ScopeMemberKind::LocalVariable => {
+                        let to = locals.allocate(types.handle(node.type_));
+                        let from = match scopes.member(member_id).storage_loc {
+                            Some(value) => value,
+                            None => panic!("Invalid thing, \nScopes: {:?}, \nInstructions: {:?}", scopes, instructions),
+                        };
 
-						instructions.push(Instruction::SetAddressOf(to, from));
-						
-						Value::Local(to)
-					}
-					ScopeMemberKind::Constant(id) => {
-						let to = locals.allocate(types.handle(member.type_.unwrap()));
-						get_resource_pointer(types, &mut instructions, &mut locals, &node.loc, resources, id, to, types.handle(member.type_.unwrap()))?;
-						Value::Local(to)
-					}
-					ScopeMemberKind::Label => panic!("Cannot do labels"),
-				}
-			}
-			NodeKind::Identifier(member_id) => {
-				match scopes.member(member_id).kind {
-					ScopeMemberKind::UndefinedDependency(_) => panic!("Cannot run code_gen on undefined dependencies(they have to have been caught in the typer)"),
-					ScopeMemberKind::Indirect(_) => unreachable!("the member function on Scopes should handle indirects and shouldn't return one of them"),
-					ScopeMemberKind::LocalVariable => {
-						let member = match scopes.member(member_id).storage_loc {
-							Some(value) => value,
-							None => panic!("Invalid thing, \nScopes: {:?}, \nInstructions: {:?}", scopes, instructions),
-						};
-						
-						Value::Local(member)
-					}
-					ScopeMemberKind::Constant(id) => {
-						let (_, value) = get_resource_constant(types, &mut instructions, &mut locals, &node.loc, resources, id)?;
-						value
-					}
-					ScopeMemberKind::Label => panic!("Cannot do labels"),
-				}
-			}
-			NodeKind::Assign => {
-				let right = node_values.pop().unwrap();
-				let left = node_values.pop().unwrap();
+                        instructions.push(Instruction::SetAddressOf(to, from));
+                        Value::Local(to)
+                    }
+                    ScopeMemberKind::Constant(id) => {
+                        let to = locals.allocate(types.handle(member.type_.unwrap()));
+                        get_resource_pointer(types, &mut instructions, &mut locals, &node.loc, resources, id, to, types.handle(member.type_.unwrap()))?;
+                        Value::Local(to)
+                    }
+                    ScopeMemberKind::Label => panic!("Cannot do labels"),
+                }
+            }
+            NodeKind::Identifier(member_id) => {
+                match scopes.member(member_id).kind {
+                    ScopeMemberKind::UndefinedDependency(_) => panic!("Cannot run code_gen on undefined dependencies(they have to have been caught in the typer)"),
+                    ScopeMemberKind::Indirect(_) => unreachable!("the member function on Scopes should handle indirects and shouldn't return one of them"),
+                    ScopeMemberKind::LocalVariable => {
+                        let member = match scopes.member(member_id).storage_loc {
+                            Some(value) => value,
+                            None => panic!("Invalid thing, \nScopes: {:?}, \nInstructions: {:?}", scopes, instructions),
+                        };
+                        Value::Local(member)
+                    }
+                    ScopeMemberKind::Constant(id) => {
+                        let (_, value) = get_resource_constant(types, &mut instructions, &mut locals, &node.loc, resources, id)?;
+                        value
+                    }
+                    ScopeMemberKind::Label => panic!("Cannot do labels"),
+                }
+            }
+            NodeKind::Assign => {
+                let right = node_values.pop().unwrap();
+                let left = node_values.pop().unwrap();
 
-				match left {
-					Value::Local(handle) => {
-						push_move_indirect(
-							&mut instructions,
-							handle,
-							right.clone(),
-						);
-					},
-					Value::Function(_) => {
-						panic!("Cannot assign to a function");
-					}
-					Value::Constant(_) => {
-						panic!("Cannot assign to a constant");
-					}
-				};
+                match left {
+                    Value::Local(handle) => {
+                        push_move_indirect(
+                            &mut instructions,
+                            handle,
+                            right.clone(),
+                        );
+                    },
+                    Value::Function(_) => {
+                        panic!("Cannot assign to a function");
+                    }
+                    Value::Constant(_) => {
+                        panic!("Cannot assign to a constant");
+                    }
+                };
 
-				right
-			}
-			NodeKind::IntrinsicTwo(kind) => {
-				let right = node_values.pop().unwrap();
-				let left  = node_values.pop().unwrap();
+                right
+            }
+            NodeKind::IntrinsicTwo(kind) => {
+                let right = node_values.pop().unwrap();
+                let left  = node_values.pop().unwrap();
 
-				let result = locals.allocate(types.handle(node.type_));
-				instructions.push(Instruction::IntrinsicTwoArgs(kind, result, left, right));
-				Value::Local(result)
-			},
-			NodeKind::DeclareFunctionArgument(variable_name) => {
-				let scope_member = scopes.member_mut(variable_name);
+                let result = locals.allocate(types.handle(node.type_));
+                instructions.push(Instruction::IntrinsicTwoArgs(kind, result, left, right));
+                Value::Local(result)
+            },
+            NodeKind::Declaration { variable_name } => {
+                let input = node_values.pop().unwrap();
+                let location = locals.allocate_raw(input.size(), 1);
+                scopes.member_mut(variable_name).storage_loc = Some(location);
+                push_move(&mut instructions, location, input);
 
-				let location = locals.allocate(types.handle(scope_member.type_.unwrap()));
-				scope_member.storage_loc = Some(location);
+                Value::Local(EMPTY_LOCAL)
+            }
+            NodeKind::Marker(MarkerKind::LoopHead(label)) => {
+                assert_eq!(labels[label.into_index()], None);
+                labels[label.into_index()] = Some(instructions.len());
+                Value::Local(EMPTY_LOCAL)
+            }
+            NodeKind::Marker(MarkerKind::IfCondition(_, label)) => {
+                let value = node_values.pop().unwrap();
+                instructions.push(Instruction::JumpRelIfZero(value, label));
+                Value::Local(EMPTY_LOCAL)
+            }
+            NodeKind::Marker(
+                MarkerKind::IfElseTrueBody { contains, true_body_label, false_body_label }
+            ) => {
+                // Instruction to move the value into a new local, so that the else can
+                // also use that same local
+                let local = locals.allocate(
+                    types.handle(ast.nodes[contains as usize].type_)
+                );
+                push_move(&mut instructions, local, node_values.pop().unwrap());
 
-				continue;
-			}
-			NodeKind::Declaration { variable_name } => {
-				let input = node_values.pop().unwrap();
-				let location = locals.allocate_raw(input.size(), 1);
-				scopes.member_mut(variable_name).storage_loc = Some(location);
-				push_move(&mut instructions, location, input);
+                // Jump instruction to skip else
+                instructions.push(Instruction::JumpRel(false_body_label));
 
-				Value::Local(EMPTY_LOCAL)
-			}
-			NodeKind::Marker(MarkerKind::LoopHead(label)) => {
-				assert_eq!(labels[label.into_index()], None);
-				labels[label.into_index()] = Some(instructions.len());
-				Value::Local(EMPTY_LOCAL)
-			}
-			NodeKind::Marker(MarkerKind::IfCondition(_, label)) => {
-				let value = node_values.pop().unwrap();
-				instructions.push(Instruction::JumpRelIfZero(value, label));
-				Value::Local(EMPTY_LOCAL)
-			}
-			NodeKind::Marker(
-				MarkerKind::IfElseTrueBody { contains, true_body_label, false_body_label }
-			) => {
-				// Instruction to move the value into a new local, so that the else can
-				// also use that same local
-				let local = locals.allocate(
-					types.handle(ast.nodes[contains as usize].type_)
-				);
-				push_move(&mut instructions, local, node_values.pop().unwrap());
+                labels[true_body_label.into_index()] = Some(instructions.len());
 
-				// Jump instruction to skip else
-				instructions.push(Instruction::JumpRel(false_body_label));
+                Value::Local(local)
+            }
+            NodeKind::Loop(label, break_label) => {
+                node_values.pop().unwrap(); // Loop body
+                node_values.pop().unwrap(); // Loop head marker
 
-				labels[true_body_label.into_index()] = Some(instructions.len());
+                instructions.push(Instruction::JumpRel(label));
 
-				Value::Local(local)
-			}
-			NodeKind::Loop(label, break_label) => {
-				node_values.pop().unwrap(); // Loop body
-				node_values.pop().unwrap(); // Loop head marker
+                labels[break_label.into_index()] = Some(instructions.len());
 
-				instructions.push(Instruction::JumpRel(label));
+                Value::Local(label_locals[break_label.into_index()])
+            }
+            NodeKind::If(end_label) => {
+                let _true_body = node_values.pop().unwrap();
+                let _condition = node_values.pop().unwrap();
 
-				labels[break_label.into_index()] = Some(instructions.len());
+                labels[end_label.into_index()] = Some(instructions.len());
 
-				Value::Local(label_locals[break_label.into_index()])
-			}
-			NodeKind::If(end_label) => {
-				let _true_body = node_values.pop().unwrap();
-				let _condition = node_values.pop().unwrap();
+                Value::Local(EMPTY_LOCAL)
+            }
+            NodeKind::IfWithElse { end_label, .. } => {
+                // TODO: Do more sophisticated stuff with never types.
 
-				labels[end_label.into_index()] = Some(instructions.len());
+                let false_body = node_values.pop().unwrap();
+                let true_body = node_values.pop().unwrap();
+                let _condition = node_values.pop().unwrap();
 
-				Value::Local(EMPTY_LOCAL)
-			}
-			NodeKind::IfWithElse { end_label, .. } => {
-				// TODO: Do more sophisticated stuff with never types.
+                let return_value = match (true_body.size(), false_body.size()) {
+                    (0, 0) => Value::Local(EMPTY_LOCAL),
+                    (_, 0) => true_body,
+                    (0, _) => false_body,
+                    (_, _) => {
+                        let handle = if let Value::Local(handle) = true_body { handle }
+                        else { panic!() };
 
-				let false_body = node_values.pop().unwrap();
-				let true_body = node_values.pop().unwrap();
-				let _condition = node_values.pop().unwrap();
+                        push_move(&mut instructions, handle, false_body);
 
-				let return_value = match (true_body.size(), false_body.size()) {
-					(0, 0) => Value::Local(EMPTY_LOCAL),
-					(_, 0) => true_body,
-					(0, _) => false_body,
-					(_, _) => {
-						let handle = if let Value::Local(handle) = true_body { handle }
-							else { panic!() };
+                        true_body
+                    }
+                };
 
-						push_move(&mut instructions, handle, false_body);
+                labels[end_label.into_index()] = Some(instructions.len());
 
-						true_body
-					}
-				};
+                return_value
+            }
+            NodeKind::Skip { label, .. } => {
+                let value = node_values.pop().unwrap();
+                push_move(&mut instructions, label_locals[label.into_index()], value);
 
-				labels[end_label.into_index()] = Some(instructions.len());
+                instructions.push(Instruction::JumpRel(label));
 
-				return_value
-			}
-			NodeKind::Skip { label, .. } => {
-				let value = node_values.pop().unwrap();
-				push_move(&mut instructions, label_locals[label.into_index()], value);
+                Value::Local(EMPTY_LOCAL)
+            }
+            NodeKind::Block { ref contents, label } => {
+                let result = node_values.pop().unwrap();
+                node_values.truncate(node_values.len() + 1 - contents.len());
 
-				instructions.push(Instruction::JumpRel(label));
+                let label_loc = label_locals[label.into_index()];
+                push_move(&mut instructions, label_loc, result);
 
-				Value::Local(EMPTY_LOCAL)
-			}
-			NodeKind::Block { ref contents, label } => {
-				let result = node_values.pop().unwrap();
-				node_values.truncate(node_values.len() + 1 - contents.len());
+                labels[label.into_index()] = Some(instructions.len());
 
-				let label_loc = label_locals[label.into_index()];
-				push_move(&mut instructions, label_loc, result);
+                Value::Local(label_loc)
+            }
+            NodeKind::Struct => {
+                let id = node.type_;
+                let handle = types.handle(id);
+                let type_kind = &types.get(id).kind;
 
-				labels[label.into_index()] = Some(instructions.len());
+                let local = locals.allocate(handle);
+                match type_kind {
+                    TypeKind::Struct { members: ref type_members } => {
+                        for (_, offset, type_handle) in type_members.iter().rev() {
+                            let sub_local =
+                                local.sub_local(*offset, type_handle.size, type_handle.align);
+                            push_move(&mut instructions, sub_local, node_values.pop().unwrap());
+                        }
+                    }
+                    _ => unreachable!(),
+                }
 
-				Value::Local(label_loc)
-			}
-			NodeKind::Struct => {
-				let id = node.type_;
-				let handle = types.handle(id);
-				let type_kind = &types.get(id).kind;
+                Value::Local(local)
+            }
+            NodeKind::MemberAccess { offset, size } => {
+                let value = node_values.pop().unwrap();
+                value.get_sub_value(offset, size, types.handle(node.type_).align)
+            }
+            NodeKind::Constant(ref value) => {
+                Value::Constant(value.clone())
+            }
+            NodeKind::FunctionCall(type_) => {
+                // Get the type of the function
+                let (arg_types, return_type) = match types.get(type_).kind {
+                    TypeKind::FunctionPointer { ref args, returns } => (args, returns),
+                    _ => unreachable!("´The function pointer wasn't of type function pointer!?"),
+                };
 
-				let local = locals.allocate(handle);
-				match type_kind {
-					TypeKind::Struct { members: ref type_members } => {
-						for (_, offset, type_handle) in type_members.iter().rev() {
-							let sub_local = 
-								local.sub_local(*offset, type_handle.size, type_handle.align);
-							push_move(&mut instructions, sub_local, node_values.pop().unwrap());
-						}
-					}
-					_ => unreachable!(),
-				}
+                // TODO: Use the argument types?
 
-				Value::Local(local)
-			}
-			NodeKind::MemberAccess { offset, size } => {
-				let value = node_values.pop().unwrap();
-				value.get_sub_value(offset, size, types.handle(node.type_).align)
-			}
-			NodeKind::Constant(ref value) => {
-				Value::Constant(value.clone())
-			}
-			NodeKind::FunctionCall(type_) => {
-				// Get the type of the function
-				let (arg_types, return_type) = match types.get(type_).kind {
-					TypeKind::FunctionPointer { ref args, returns } => (args, returns),
-					_ => unreachable!("´The function pointer wasn't of type function pointer!?"),
-				};
+                let returns = locals.allocate(types.handle(return_type));
 
-				// TODO: Use the argument types?
+                let arg_list = &node_values[node_values.len() - arg_types.len() ..];
 
-				let returns = locals.allocate(types.handle(return_type));
+                // TODO: If I have zst:s, this won't handle them properly.
+                let mut offset_ctr = 0;
+                let args = arg_list.iter().zip(arg_types)
+                    .map(|(arg, type_)| {
+                        let type_handle = types.handle(*type_);
+                        let offset = crate::align::to_aligned(type_handle.align, offset_ctr);
+                        offset_ctr = offset + type_handle.size;
+                        (offset, arg.clone(), type_handle.size)
+                    })
+                .collect();
 
-				let arg_list = &node_values[node_values.len() - arg_types.len() ..];
+                let len = node_values.len() - arg_list.len();
+                node_values.truncate(len);
 
-				// TODO: If I have zst:s, this won't handle them properly.
-				let mut offset_ctr = 0;
-				let args = arg_list.iter().zip(arg_types)
-					.map(|(arg, type_)| {
-						let type_handle = types.handle(*type_);
-						let offset = crate::align::to_aligned(type_handle.align, offset_ctr);
-						offset_ctr = offset + type_handle.size;
-						(offset, arg.clone(), type_handle.size)
-					})
-					.collect();
+                let calling = node_values.pop().unwrap();
 
-				let len = node_values.len() - arg_list.len();
-				node_values.truncate(len);
+                instructions.push(Instruction::Call { calling, returns, args });
 
-				let calling = node_values.pop().unwrap();
+                Value::Local(returns)
+            }
+            NodeKind::Resource(id) => {
+                let (_, value) = get_resource_constant(types, &mut instructions, &mut locals, &node.loc, resources, id)?;
+                value
+            }
+            NodeKind::Dereference => {
+                let from = node_values.pop().unwrap();
+                let to = locals.allocate(types.handle(node.type_));
+                instructions.push(Instruction::Dereference(to, from));
 
-				instructions.push(Instruction::Call { calling, returns, args });
-
-				Value::Local(returns)
-			}
-			NodeKind::Resource(id) => {
-				let (_, value) = get_resource_constant(types, &mut instructions, &mut locals, &node.loc, resources, id)?;
-				value
-			}
-			NodeKind::Dereference => {
-				let from = node_values.pop().unwrap();
-				let to = locals.allocate(types.handle(node.type_));
-				instructions.push(Instruction::Dereference(to, from));
-
-				// Make a pointer value.
-				Value::Local(to)
-			}
-		};
+                // Make a pointer value.
+                Value::Local(to)
+            }
+        };
 
         node_values.push(evaluation_value);
     }

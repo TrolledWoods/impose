@@ -211,16 +211,9 @@ pub enum NodeKind {
         false_body: AstNodeId,
         end_label: LabelId,
     },
-
     Loop(AstNodeId, LabelId, LabelId),
-
     Struct {
         members: Vec<(ustr::Ustr, AstNodeId)>,
-    },
-
-    DeclareFunctionArgument {
-        variable_name: ScopeMemberId,
-        type_node: AstNodeId,
     },
     Declaration {
         variable_name: ScopeMemberId,
@@ -752,32 +745,35 @@ fn parse_function(mut parent_context: Context) -> Result<ResourceId, ()> {
                         .ast
                         .locals
                         .add_member(context.scopes, *loc, ustr::ustr(name));
-                    args.push(arg);
-
                     let colon = context.tokens.next();
-                    if matches!(
+
+                    let resource = if matches!(
                         colon,
                         Some(Token {
                             kind: TokenKind::Colon,
                             ..
                         })
                     ) {
-                        let type_node = parse_type_expr_value(context.borrow_meta())?;
+                        let mut ast = Ast::new();
+                        let mut sub_context = context.borrow_meta();
+                        sub_context.ast = &mut ast;
+                        let loc = sub_context.tokens.get_location();
+                        parse_type_expr_value(sub_context)?;
 
-                        context.ast.insert_node(Node::new(
-                            &context,
+                        context.resources.insert(Resource::new(
                             loc,
-                            sub_scope,
-                            NodeKind::DeclareFunctionArgument {
-                                variable_name: arg,
-                                type_node,
-                            },
-                        ));
-
-                        Ok(())
+                            ResourceKind::Value(ResourceValue::Defined(ast)),
+                        ))
                     } else {
-                        error!(value, "Expected ':' for function argument type")?
-                    }
+                        return Err(error_value!(
+                            value,
+                            "Expected ':' for function argument type"
+                        ));
+                    };
+
+                    args.push((arg, resource));
+
+                    Ok(())
                 } else {
                     error!(value, "Expected function argument name")?
                 }
@@ -792,12 +788,28 @@ fn parse_function(mut parent_context: Context) -> Result<ResourceId, ()> {
         );
     }
 
+    let returns = if let Some(TokenKind::Operator(Operator::Function)) = context.tokens.peek_kind()
+    {
+        let mut ast = Ast::new();
+        let mut sub_context = context.borrow_meta();
+        sub_context.ast = &mut ast;
+        let loc = sub_context.tokens.get_location();
+        parse_type_expr_value(sub_context)?;
+
+        Some(context.resources.insert(Resource::new(
+            loc,
+            ResourceKind::Value(ResourceValue::Defined(ast)),
+        )))
+    } else {
+        None
+    };
+
     // Parse the function body.
     parse_expression(context.borrow())?;
 
     let id = parent_context.resources.insert(Resource::new(
         token.get_location(),
-        ResourceKind::Function(ResourceFunction::Defined(ast, args)),
+        ResourceKind::Function(ResourceFunction::Defined { ast, args, returns }),
     ));
 
     Ok(id)
