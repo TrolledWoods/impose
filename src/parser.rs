@@ -790,6 +790,7 @@ fn parse_function(mut parent_context: Context) -> Result<ResourceId, ()> {
 
     let returns = if let Some(TokenKind::Operator(Operator::Function)) = context.tokens.peek_kind()
     {
+        context.tokens.next();
         let mut ast = Ast::new();
         let mut sub_context = context.borrow_meta();
         sub_context.ast = &mut ast;

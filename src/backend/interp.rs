@@ -32,10 +32,10 @@ impl Stack {
     }
 
     fn push_zero(&mut self) {
-        self.member_sizes.push(0);
+        self.push_uninit(0);
     }
 
-    fn push(&mut self, value: *const u8, size: usize) {
+    fn push(&mut self, value: *const u8, size: usize) -> *mut u8 {
         let buffer = self.push_uninit(size);
 
         // SAFETY: This is safe even if the size is zero, because push_uninit will always
@@ -44,6 +44,8 @@ impl Stack {
         unsafe {
             std::ptr::copy(value, buffer, size);
         }
+
+        buffer
     }
 
     /// Allocates a value of size bytes and returns the pointer to it.
@@ -52,6 +54,8 @@ impl Stack {
     ///
     /// Returns a dangling pointer with STACK_ALIGN alignment if the size is zero
     fn push_uninit(&mut self, size: usize) -> *mut u8 {
+        println!("+ {} bytes", size);
+
         self.member_sizes.push(size);
         if size == 0 {
             return STACK_ALIGN as *mut u8;
@@ -87,6 +91,7 @@ impl Stack {
 
     fn pop(&mut self) -> (*const u8, usize) {
         let size = self.member_sizes.pop().unwrap();
+        println!("- {} bytes", size);
         if size == 0 {
             return (std::ptr::NonNull::dangling().as_ptr(), 0);
         }
@@ -112,6 +117,80 @@ impl Drop for Stack {
 const STACK_SIZE: usize = 2048;
 const STACK_ALIGN: usize = 16;
 
+struct Interpreter<'a> {
+    stack: Stack,
+    locals_stack: Stack,
+    // TODO: Make the locals represented by their idex in the locals array so that this can be done
+    // more efficiently.
+    #[allow(unused)]
+    locals: Vec<(ScopeMemberId, *mut u8)>,
+    code: Vec<(&'a Ast, usize)>,
+}
+
+impl<'a> Interpreter<'a> {
+    #[allow(unused)]
+    pub fn new() -> Self {
+        Interpreter {
+            stack: Stack::new(),
+            locals_stack: Stack::new(),
+            locals: Vec::new(),
+            code: Vec::new(),
+        }
+    }
+
+    #[allow(unused)]
+    fn get_local(&self, local_id: ScopeMemberId) -> *mut u8 {
+        let &(_, ptr) = self
+            .locals
+            .iter()
+            .rev()
+            .find(|&&(id, _)| id == local_id)
+            .unwrap();
+        ptr
+    }
+
+    pub fn resume(
+        &mut self,
+        _resources: &Resources,
+        _types: &Types,
+        _scopes: &Scopes,
+    ) -> Result<Value, Dependency> {
+        let (ast, member_index) = self.code.pop().expect("Nothing to resume");
+
+        while let Some(_) = ast.nodes.get(member_index) {
+            // match member {}
+        }
+
+        for _ in ast.locals.all_locals.iter() {
+            self.locals_stack.pop();
+        }
+
+        let (buffer_raw_ptr, buffer_raw_len) = self.stack.pop();
+        let buffer = unsafe { std::slice::from_raw_parts(buffer_raw_ptr, buffer_raw_len).into() };
+
+        Ok(buffer)
+    }
+
+    #[allow(unused)]
+    pub fn interpret(
+        &mut self,
+        resources: &Resources,
+        types: &Types,
+        scopes: &Scopes,
+        ast: &'a Ast,
+    ) -> Result<Value, Dependency> {
+        self.code.push((ast, 0));
+
+        for &local_var_id in ast.locals.all_locals.iter() {
+            let member = scopes.member(local_var_id);
+            let type_handle = types.handle(member.type_.unwrap());
+            self.locals_stack.push_uninit(type_handle.size);
+        }
+
+        self.resume(resources, types, scopes)
+    }
+}
+
 pub fn interpret(resources: &Resources, types: &Types, scopes: &Scopes, ast: &Ast) -> Value {
     let mut stack = Stack::new();
 
@@ -129,44 +208,10 @@ pub fn interpret(resources: &Resources, types: &Types, scopes: &Scopes, ast: &As
     // TODO: Initializing this is unnecessary.
     let mut local_data = vec![0u8; to_aligned(STACK_ALIGN, local_size)];
 
-    // Find the marker locations.
-    // TODO: Move this out somewhere else to not do it for every function call.
-    let mut label_map = HashMap::new();
-    for (node_id, node) in ast.nodes.iter().enumerate() {
-        match node.kind {
-            NodeKind::Marker(MarkerKind::IfElseTrueBody {
-                contains: _,
-                true_body_label,
-                false_body_label: _,
-            }) => {
-                label_map.insert(true_body_label, node_id + 1);
-            }
-            NodeKind::Marker(MarkerKind::LoopHead(label_id)) => {
-                label_map.insert(label_id, node_id);
-            }
-            NodeKind::Block { label, .. } => {
-                label_map.insert(label, node_id);
-            }
-            NodeKind::If(label) => {
-                label_map.insert(label, node_id);
-            }
-            NodeKind::IfWithElse { end_label } => {
-                label_map.insert(end_label, node_id);
-            }
-            NodeKind::Loop(_, body) => {
-                label_map.insert(body, node_id + 1);
-            }
-            _ => (),
-        }
-    }
-
     // Run the program
     let mut node_id = 0;
     while let Some(node) = ast.nodes.get(node_id) {
         node_id += 1;
-        if node.is_meta_data {
-            continue;
-        }
 
         // TODO: Include enough information in the Ast to not have to rely on the runtime
         // to keep track of the size of values.
@@ -177,7 +222,7 @@ pub fn interpret(resources: &Resources, types: &Types, scopes: &Scopes, ast: &As
                 assert_eq!(size, 1);
 
                 if unsafe { *condition } == 0 {
-                    node_id = *label_map.get(&label_id).unwrap();
+                    node_id = *ast.label_map.get(&label_id).unwrap();
                 }
             }
             NodeKind::Marker(MarkerKind::IfElseTrueBody {
@@ -185,7 +230,7 @@ pub fn interpret(resources: &Resources, types: &Types, scopes: &Scopes, ast: &As
                 true_body_label: _,
                 false_body_label,
             }) => {
-                node_id = *label_map.get(&false_body_label).unwrap();
+                node_id = *ast.label_map.get(&false_body_label).unwrap();
             }
             NodeKind::Marker(MarkerKind::LoopHead(_)) => {}
             NodeKind::MemberAccess { offset, size } => {
@@ -193,7 +238,9 @@ pub fn interpret(resources: &Resources, types: &Types, scopes: &Scopes, ast: &As
                 assert!(offset + size <= length);
                 stack.push(unsafe { value.add(offset) }, size);
             }
-            NodeKind::Constant(ref buffer) => stack.push(buffer.as_ptr(), buffer.len()),
+            NodeKind::Constant(ref buffer) => {
+                stack.push(buffer.as_ptr(), buffer.len());
+            }
             NodeKind::IntrinsicTwo(intrinsic_kind) => {
                 let (right, right_len) = stack.pop();
                 let (left, left_len) = stack.pop();
@@ -283,7 +330,7 @@ pub fn interpret(resources: &Resources, types: &Types, scopes: &Scopes, ast: &As
             }
             NodeKind::If(_) => {}
             NodeKind::IfWithElse { end_label: _ } => {}
-            NodeKind::Loop(head, _) => node_id = *label_map.get(&head).unwrap(),
+            NodeKind::Loop(head, _) => node_id = *ast.label_map.get(&head).unwrap(),
             NodeKind::Struct => match types.get(node.type_).kind {
                 TypeKind::Struct { ref members } => {
                     let handle = types.handle(node.type_);
@@ -325,7 +372,7 @@ pub fn interpret(resources: &Resources, types: &Types, scopes: &Scopes, ast: &As
                 stack.push(return_value, return_value_length);
             }
             NodeKind::Skip { label } => {
-                node_id = *label_map.get(&label).unwrap();
+                node_id = *ast.label_map.get(&label).unwrap();
             }
         }
     }

@@ -90,10 +90,6 @@ pub fn compile_expression(
     }
 
     for node in ast.nodes.iter() {
-        if node.is_meta_data {
-            continue;
-        }
-
         let evaluation_value = match node.kind {
             NodeKind::BitCast => {
                 node_values.pop().unwrap()

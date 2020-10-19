@@ -124,7 +124,11 @@ impl Resources {
                                     data.as_slice().try_into().unwrap(),
                                 ) as u32)
                             }
-                            Resource { type_: Some(_), .. } => unreachable!(),
+                            Resource {
+                                type_: Some(_),
+                                kind: ResourceKind::Done(_, _),
+                                ..
+                            } => unreachable!(),
                             _ => {
                                 member.kind = ResourceKind::Function(ResourceFunction::Defined {
                                     ast,

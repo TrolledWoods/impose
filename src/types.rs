@@ -1,4 +1,5 @@
 use crate::intrinsic::*;
+use std::collections::HashMap;
 // We can't import the parser directly because of name clasing
 use crate::align::*;
 use crate::code_loc::*;
@@ -324,6 +325,7 @@ pub enum TypeKind {
 pub struct Ast {
     pub nodes: Vec<Node>,
     pub locals: LocalVariables,
+    pub label_map: HashMap<LabelId, usize>,
 }
 
 impl Ast {
@@ -331,6 +333,7 @@ impl Ast {
         Ast {
             nodes: Vec::new(),
             locals,
+            label_map: HashMap::new(),
         }
     }
 }
@@ -346,9 +349,6 @@ pub struct Node {
     pub kind: NodeKind,
     pub type_: TypeId,
     pub is_lvalue: bool,
-    /// Meta data is for typing and other things to use, and shouldn't be included
-    /// in the actual code output.
-    pub is_meta_data: bool,
 }
 
 impl Node {
@@ -358,7 +358,6 @@ impl Node {
             kind: new_kind,
             scope: old_node.scope,
             is_lvalue: old_node.is_lvalue,
-            is_meta_data: old_node.is_meta_data,
             // TODO: Remove the option here
             type_,
         }
@@ -1025,6 +1024,34 @@ impl AstTyper {
         // for node in &self.ast.nodes {
         // 	println!("{}: {:?}", types.type_to_string(node.type_), node.kind);
         // }
+
+        for (node_id, node) in self.ast.nodes.iter().enumerate() {
+            match node.kind {
+                NodeKind::Marker(parser::MarkerKind::IfElseTrueBody {
+                    contains: _,
+                    true_body_label,
+                    false_body_label: _,
+                }) => {
+                    self.ast.label_map.insert(true_body_label, node_id + 1);
+                }
+                NodeKind::Marker(parser::MarkerKind::LoopHead(label_id)) => {
+                    self.ast.label_map.insert(label_id, node_id);
+                }
+                NodeKind::Block { label, .. } => {
+                    self.ast.label_map.insert(label, node_id);
+                }
+                NodeKind::If(label) => {
+                    self.ast.label_map.insert(label, node_id);
+                }
+                NodeKind::IfWithElse { end_label } => {
+                    self.ast.label_map.insert(end_label, node_id);
+                }
+                NodeKind::Loop(_, body) => {
+                    self.ast.label_map.insert(body, node_id + 1);
+                }
+                _ => (),
+            }
+        }
 
         Ok(None)
     }
