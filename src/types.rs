@@ -1116,6 +1116,7 @@ impl AstTyper {
                 // --- Type expressions ---
                 parser::NodeKind::GetType(_) => {
                     let type_ = get_type(types, &self.ast, self.type_stack.pop().unwrap())?;
+                    self.ast.nodes.pop();
                     self.stack_len += 0;
                     Node::new(node, type_to_const(type_), TYPE_TYPE_ID, self.stack_len)
                 }
