@@ -322,10 +322,16 @@ pub enum TypeKind {
 }
 
 #[derive(Debug)]
+pub struct LabelMapValue {
+    pub node_id: usize,
+    pub stack_len: usize,
+}
+
+#[derive(Debug)]
 pub struct Ast {
     pub nodes: Vec<Node>,
     pub locals: LocalVariables,
-    pub label_map: HashMap<LabelId, usize>,
+    pub label_map: HashMap<LabelId, LabelMapValue>,
 }
 
 impl Ast {
@@ -489,13 +495,26 @@ impl AstTyper {
                 parser::NodeKind::StackClone(_) => {
                     todo!("Stack clone");
                 }
-                parser::NodeKind::Marker(
-                    marker_kind @ parser::MarkerKind::IfElseTrueBody { .. },
-                ) => {
+                parser::NodeKind::Marker(parser::MarkerKind::IfElseTrueBody {
+                    contains,
+                    true_body_label,
+                    false_body_label,
+                }) => {
                     self.stack_len -= 1;
+                    self.ast.label_map.insert(
+                        true_body_label,
+                        LabelMapValue {
+                            node_id: self.node_id + 1,
+                            stack_len: self.stack_len,
+                        },
+                    );
                     Node::new(
                         node,
-                        NodeKind::Marker(marker_kind),
+                        NodeKind::Marker(parser::MarkerKind::IfElseTrueBody {
+                            contains,
+                            true_body_label,
+                            false_body_label,
+                        }),
                         self.type_stack.pop().unwrap().type_,
                         self.stack_len + 1,
                     )
@@ -509,9 +528,21 @@ impl AstTyper {
                         self.stack_len,
                     )
                 }
-                parser::NodeKind::Marker(kind) => {
+                parser::NodeKind::Marker(parser::MarkerKind::LoopHead(label)) => {
                     self.stack_len += 0;
-                    Node::new(node, NodeKind::Marker(kind), EMPTY_TYPE_ID, self.stack_len)
+                    self.ast.label_map.insert(
+                        label,
+                        LabelMapValue {
+                            node_id: self.node_id + 1,
+                            stack_len: self.stack_len,
+                        },
+                    );
+                    Node::new(
+                        node,
+                        NodeKind::Marker(parser::MarkerKind::LoopHead(label)),
+                        EMPTY_TYPE_ID,
+                        self.stack_len,
+                    )
                 }
                 parser::NodeKind::Number(number) => {
                     self.stack_len += 1;
@@ -605,13 +636,27 @@ impl AstTyper {
                         )
                     }
                 }
-                parser::NodeKind::Loop(_, b, break_label) => {
+                parser::NodeKind::Loop(_, body, break_label) => {
                     let _ = self.type_stack.pop().unwrap();
+                    // This is 0 and not -1 because the loop pretends to return a value.
+                    // This is useful because in some cases it DOES return a value, and if
+                    // it doesn't return a value, well, what it says it returns doesn't
+                    // actually matter, so it's handy to make it consistant.
+                    self.stack_len += 0;
+                    self.ast.label_map.insert(
+                        break_label,
+                        LabelMapValue {
+                            node_id: self.node_id + 1,
+                            stack_len: self.stack_len,
+                        },
+                    );
                     Node::new(
                         node,
-                        NodeKind::Loop(b, break_label),
+                        NodeKind::Loop(body, break_label),
                         *self.ast.locals.labels.get(break_label),
-                        self.stack_len,
+                        // Since the loop jumps, this is not the stack length at the end of the
+                        // loop, but rather the length at the beginning.
+                        self.stack_len - 1,
                     )
                 }
                 parser::NodeKind::If {
@@ -630,6 +675,13 @@ impl AstTyper {
                     }
 
                     self.stack_len -= 0;
+                    self.ast.label_map.insert(
+                        end_label,
+                        LabelMapValue {
+                            node_id: self.node_id,
+                            stack_len: self.stack_len,
+                        },
+                    );
                     // If on its own never returns a type
                     Node::new(node, NodeKind::If(end_label), EMPTY_TYPE_ID, self.stack_len)
                 }
@@ -650,6 +702,13 @@ impl AstTyper {
                         combine_types(node, types, true_body.type_, false_body.type_)?;
 
                     self.stack_len -= 0;
+                    self.ast.label_map.insert(
+                        end_label,
+                        LabelMapValue {
+                            node_id: self.node_id,
+                            stack_len: self.stack_len,
+                        },
+                    );
                     Node::new(
                         node,
                         NodeKind::IfWithElse { end_label },
@@ -997,14 +1056,14 @@ impl AstTyper {
                         .find(|v| v.type_ == NEVER_TYPE_ID)
                         .is_some();
 
-                    if is_never_type
-                        && !matches!(content_types.last().unwrap().type_, EMPTY_TYPE_ID)
-                    {
-                        return error!(
-                            content_types.last().unwrap().loc,
-                            "Cannot use dead code as return expression"
-                        );
-                    }
+                    // if is_never_type
+                    //     && !matches!(content_types.last().unwrap().type_, EMPTY_TYPE_ID)
+                    // {
+                    //     return error!(
+                    //         content_types.last().unwrap().loc,
+                    //         "Cannot use dead code as return expression"
+                    //     );
+                    // }
 
                     let type_ = if is_never_type {
                         NEVER_TYPE_ID
@@ -1019,6 +1078,14 @@ impl AstTyper {
 
                     self.stack_len -= contents.len();
                     self.stack_len += 1;
+
+                    self.ast.label_map.insert(
+                        label,
+                        LabelMapValue {
+                            node_id: self.node_id,
+                            stack_len: self.stack_len,
+                        },
+                    );
                     Node::new(
                         node,
                         NodeKind::Block {
@@ -1035,13 +1102,8 @@ impl AstTyper {
                     let label_val = self.ast.locals.labels.get_mut(label);
                     *label_val = combine_types(node, types, *label_val, type_)?;
 
-                    self.stack_len -= 1;
-                    Node::new(
-                        node,
-                        NodeKind::Skip { label },
-                        NEVER_TYPE_ID,
-                        self.stack_len,
-                    )
+                    self.stack_len += 0;
+                    Node::new(node, NodeKind::Skip { label }, NEVER_TYPE_ID, 0)
                 }
 
                 // --- Type expressions ---
@@ -1137,34 +1199,6 @@ impl AstTyper {
         // for node in &self.ast.nodes {
         // 	println!("{}: {:?}", types.type_to_string(node.type_), node.kind);
         // }
-
-        for (node_id, node) in self.ast.nodes.iter().enumerate() {
-            match node.kind {
-                NodeKind::Marker(parser::MarkerKind::IfElseTrueBody {
-                    contains: _,
-                    true_body_label,
-                    false_body_label: _,
-                }) => {
-                    self.ast.label_map.insert(true_body_label, node_id + 1);
-                }
-                NodeKind::Marker(parser::MarkerKind::LoopHead(label_id)) => {
-                    self.ast.label_map.insert(label_id, node_id);
-                }
-                NodeKind::Block { label, .. } => {
-                    self.ast.label_map.insert(label, node_id);
-                }
-                NodeKind::If(label) => {
-                    self.ast.label_map.insert(label, node_id);
-                }
-                NodeKind::IfWithElse { end_label } => {
-                    self.ast.label_map.insert(end_label, node_id);
-                }
-                NodeKind::Loop(_, body) => {
-                    self.ast.label_map.insert(body, node_id + 1);
-                }
-                _ => (),
-            }
-        }
 
         Ok(None)
     }

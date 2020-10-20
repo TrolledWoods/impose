@@ -190,7 +190,7 @@ impl<'a> Interpreter<'a> {
                     assert_eq!(size, 1);
 
                     if unsafe { *condition } == 0 {
-                        node_id = *ast.label_map.get(&label_id).unwrap();
+                        node_id = ast.label_map.get(&label_id).unwrap().node_id;
                     }
                 }
                 NodeKind::Marker(MarkerKind::IfElseTrueBody {
@@ -198,7 +198,7 @@ impl<'a> Interpreter<'a> {
                     true_body_label: _,
                     false_body_label,
                 }) => {
-                    node_id = *ast.label_map.get(&false_body_label).unwrap();
+                    node_id = ast.label_map.get(&false_body_label).unwrap().node_id;
                 }
                 NodeKind::Marker(MarkerKind::LoopHead(_)) => {}
                 NodeKind::MemberAccess { offset, size } => {
@@ -359,7 +359,7 @@ impl<'a> Interpreter<'a> {
                 NodeKind::IfWithElse { end_label: _ } => {}
                 NodeKind::Loop(head, _) => {
                     let _return_value = self.stack.pop();
-                    node_id = *ast.label_map.get(&head).unwrap();
+                    node_id = ast.label_map.get(&head).unwrap().node_id;
                 }
                 NodeKind::Struct(_) => match types.get(node.type_).kind {
                     TypeKind::Struct { ref members } => {
@@ -409,11 +409,20 @@ impl<'a> Interpreter<'a> {
                     self.stack.push(return_value, return_value_length);
                 }
                 NodeKind::Skip { label } => {
-                    node_id = *ast.label_map.get(&label).unwrap();
+                    let current_size = self.stack.len();
+                    let (value, value_size) = self.stack.pop();
+                    let label_value = ast.label_map.get(&label).unwrap();
+                    for _ in label_value.stack_len..current_size {
+                        let _ = self.stack.pop();
+                    }
+                    self.stack.push(value, value_size);
+                    node_id = label_value.node_id;
                 }
             }
 
-            assert_eq!(node.stack_len, self.stack.len());
+            if !matches!(node.kind, NodeKind::Skip { .. }) {
+                assert_eq!(node.stack_len, self.stack.len());
+            }
         }
 
         for _ in ast.locals.all_locals.iter() {
