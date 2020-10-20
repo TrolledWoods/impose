@@ -7,6 +7,8 @@ use crate::types::*;
 
 use std::alloc::{alloc, dealloc, Layout};
 
+pub const DEBUG: bool = false;
+
 pub type Value = smallvec::SmallVec<[u8; 8]>;
 
 #[derive(Debug)]
@@ -39,6 +41,16 @@ impl Stack {
     fn push(&mut self, value: *const u8, size: usize) -> *mut u8 {
         let buffer = self.push_uninit(size);
 
+        if DEBUG {
+            print!(" - bytes ");
+            for n in 0..size {
+                unsafe {
+                    print!("{} ", *value.add(n));
+                }
+            }
+            println!();
+        }
+
         // SAFETY: This is safe even if the size is zero, because push_uninit will always
         // return a properly aligned, non-null pointer and that is all that is required for
         // copy to be safe when the size is 0.
@@ -69,6 +81,10 @@ impl Stack {
     fn push_uninit(&mut self, size: usize) -> *mut u8 {
         self.member_sizes.push(size);
         *self.stack_lengths.last_mut().unwrap() += 1;
+
+        if DEBUG {
+            println!("{} Pushing {} bytes", "*".repeat(self.len()), size);
+        }
         if size == 0 {
             return STACK_ALIGN as *mut u8;
         }
@@ -102,6 +118,9 @@ impl Stack {
     }
 
     fn pop(&mut self) -> (*const u8, usize) {
+        if DEBUG {
+            println!("{} Pop", "*".repeat(self.len()));
+        }
         let size = self.member_sizes.pop().unwrap();
         *self.stack_lengths.last_mut().unwrap() -= 1;
         if size == 0 {
@@ -170,6 +189,10 @@ impl<'a> Interpreter<'a> {
         while let Some(node) = ast.nodes.get(node_id) {
             node_id += 1;
             let old_node = node_id;
+
+            if DEBUG {
+                println!("{:?}", node);
+            }
 
             match node.kind {
                 NodeKind::Marker(MarkerKind::IfCondition(label_id)) => {
