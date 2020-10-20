@@ -182,6 +182,7 @@ impl<'a> Interpreter<'a> {
         while let Some(node) = ast.nodes.get(node_id) {
             println!("{:?}", node);
             node_id += 1;
+            let old_node = node_id;
 
             match node.kind {
                 NodeKind::Marker(MarkerKind::IfCondition(_, label_id)) => {
@@ -190,6 +191,9 @@ impl<'a> Interpreter<'a> {
                     assert_eq!(size, 1);
 
                     if unsafe { *condition } == 0 {
+                        // All if statements(not if else), return 'Empty'. However, this
+                        // skips the If node, hence we have to push a zero type.
+                        self.stack.push_zero();
                         node_id = ast.label_map.get(&label_id).unwrap().node_id;
                     }
                 }
@@ -355,7 +359,10 @@ impl<'a> Interpreter<'a> {
                         types.handle(node.type_).size,
                     );
                 }
-                NodeKind::If(_) => {}
+                NodeKind::If(_) => {
+                    let _ = self.stack.pop();
+                    self.stack.push_zero();
+                }
                 NodeKind::IfWithElse { end_label: _ } => {}
                 NodeKind::Loop(head, _) => {
                     let _return_value = self.stack.pop();
@@ -409,18 +416,20 @@ impl<'a> Interpreter<'a> {
                     self.stack.push(return_value, return_value_length);
                 }
                 NodeKind::Skip { label } => {
-                    let current_size = self.stack.len();
                     let (value, value_size) = self.stack.pop();
                     let label_value = ast.label_map.get(&label).unwrap();
-                    for _ in label_value.stack_len..current_size {
+                    for _ in label_value.stack_len..self.stack.len() {
                         let _ = self.stack.pop();
+                    }
+                    for _ in self.stack.len()..label_value.stack_len {
+                        self.stack.push_zero();
                     }
                     self.stack.push(value, value_size);
                     node_id = label_value.node_id;
                 }
             }
 
-            if !matches!(node.kind, NodeKind::Skip { .. }) {
+            if old_node == node_id {
                 assert_eq!(node.stack_len, self.stack.len());
             }
         }

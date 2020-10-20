@@ -504,7 +504,7 @@ impl AstTyper {
                     self.ast.label_map.insert(
                         true_body_label,
                         LabelMapValue {
-                            node_id: self.node_id + 1,
+                            node_id: self.ast.nodes.len() + 1,
                             stack_len: self.stack_len,
                         },
                     );
@@ -533,7 +533,7 @@ impl AstTyper {
                     self.ast.label_map.insert(
                         label,
                         LabelMapValue {
-                            node_id: self.node_id + 1,
+                            node_id: self.ast.nodes.len() + 1,
                             stack_len: self.stack_len,
                         },
                     );
@@ -646,7 +646,7 @@ impl AstTyper {
                     self.ast.label_map.insert(
                         break_label,
                         LabelMapValue {
-                            node_id: self.node_id + 1,
+                            node_id: self.ast.nodes.len() + 1,
                             stack_len: self.stack_len,
                         },
                     );
@@ -674,11 +674,11 @@ impl AstTyper {
                         );
                     }
 
-                    self.stack_len -= 0;
+                    self.stack_len += 0;
                     self.ast.label_map.insert(
                         end_label,
                         LabelMapValue {
-                            node_id: self.node_id,
+                            node_id: self.ast.nodes.len() + 1,
                             stack_len: self.stack_len,
                         },
                     );
@@ -705,7 +705,7 @@ impl AstTyper {
                     self.ast.label_map.insert(
                         end_label,
                         LabelMapValue {
-                            node_id: self.node_id,
+                            node_id: self.ast.nodes.len(),
                             stack_len: self.stack_len,
                         },
                     );
@@ -1082,7 +1082,7 @@ impl AstTyper {
                     self.ast.label_map.insert(
                         label,
                         LabelMapValue {
-                            node_id: self.node_id,
+                            node_id: self.ast.nodes.len(),
                             stack_len: self.stack_len,
                         },
                     );
