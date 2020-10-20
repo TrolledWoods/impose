@@ -495,14 +495,13 @@ impl AstTyper {
                 parser::NodeKind::StackClone(_) => {
                     todo!("Stack clone");
                 }
-                parser::NodeKind::Marker(parser::MarkerKind::IfElseTrueBody {
-                    contains,
-                    true_body_label,
-                    false_body_label,
+                parser::NodeKind::Marker(parser::MarkerKind::IfElseMiddle {
+                    middle_label,
+                    end_label,
                 }) => {
                     self.stack_len -= 1;
                     self.ast.label_map.insert(
-                        true_body_label,
+                        middle_label,
                         LabelMapValue {
                             node_id: self.ast.nodes.len() + 1,
                             stack_len: self.stack_len,
@@ -510,16 +509,24 @@ impl AstTyper {
                     );
                     Node::new(
                         node,
-                        NodeKind::Marker(parser::MarkerKind::IfElseTrueBody {
-                            contains,
-                            true_body_label,
-                            false_body_label,
+                        NodeKind::Marker(parser::MarkerKind::IfElseMiddle {
+                            middle_label,
+                            end_label,
                         }),
                         self.type_stack.pop().unwrap().type_,
                         self.stack_len + 1,
                     )
                 }
-                parser::NodeKind::Marker(marker_kind @ parser::MarkerKind::IfCondition(_, _)) => {
+                parser::NodeKind::Marker(marker_kind @ parser::MarkerKind::IfElseCondition(_)) => {
+                    self.stack_len -= 1;
+                    Node::new(
+                        node,
+                        NodeKind::Marker(marker_kind),
+                        self.type_stack.pop().unwrap().type_,
+                        self.stack_len,
+                    )
+                }
+                parser::NodeKind::Marker(marker_kind @ parser::MarkerKind::IfCondition(_)) => {
                     self.stack_len -= 1;
                     Node::new(
                         node,

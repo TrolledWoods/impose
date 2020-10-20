@@ -147,11 +147,11 @@ impl Location for Node {
 
 #[derive(Debug, Clone, Copy)]
 pub enum MarkerKind {
-    IfCondition(AstNodeId, LabelId),
-    IfElseTrueBody {
-        contains: AstNodeId,
-        true_body_label: LabelId,
-        false_body_label: LabelId,
+    IfCondition(LabelId),
+    IfElseCondition(LabelId),
+    IfElseMiddle {
+        middle_label: LabelId,
+        end_label: LabelId,
     },
     LoopHead(LabelId),
 }
@@ -1122,12 +1122,12 @@ fn parse_value(mut context: Context) -> Result<AstNodeId, ()> {
 
             let true_body_label = context.ast.locals.create_internal_label();
 
-            let condition = parse_expression(context.borrow())?;
+            parse_expression(context.borrow())?;
             let condition_marker = context.ast.insert_node(Node::new(
                 &context,
                 token,
                 context.scope,
-                NodeKind::Marker(MarkerKind::IfCondition(condition, true_body_label)),
+                NodeKind::Marker(MarkerKind::IfCondition(true_body_label)),
             ));
 
             let true_body = parse_expression(context.borrow())?;
@@ -1135,16 +1135,18 @@ fn parse_value(mut context: Context) -> Result<AstNodeId, ()> {
             if let Some(TokenKind::Keyword("else")) = context.tokens.peek_kind() {
                 context.tokens.next();
 
+                context.ast.nodes[condition_marker as usize].kind =
+                    NodeKind::Marker(MarkerKind::IfElseCondition(true_body_label));
+
                 let false_body_label = context.ast.locals.create_internal_label();
 
                 let true_body_marker = context.ast.insert_node(Node::new(
                     &context,
                     token,
                     context.scope,
-                    NodeKind::Marker(MarkerKind::IfElseTrueBody {
-                        contains: true_body,
-                        true_body_label,
-                        false_body_label,
+                    NodeKind::Marker(MarkerKind::IfElseMiddle {
+                        middle_label: true_body_label,
+                        end_label: false_body_label,
                     }),
                 ));
 

@@ -6,13 +6,15 @@ assert(vec.y < 6.1);
 
 vec :: {
 	VecF64 :: type { x: F64, y: F64 };
-	new :: |x: F64, y: F64| struct { x: x, y: y };
-	add :: |a: VecF64, b: VecF64| struct { x: a.x + b.x, y: a.y + b.y };
+	new :: |x: F64, y: F64| -> VecF64
+        struct { x: x, y: y };
+	add :: |a: VecF64, b: VecF64| -> VecF64
+        struct { x: a.x + b.x, y: a.y + b.y };
 };
 
-a :: || 6;
-b :: || c;
-c :: || a;
+a :: || -> U64              6;
+b :: || -> () -> () -> U64  c;
+c :: || -> () -> U64        a;
 
 assert(b()()() == 6);
 

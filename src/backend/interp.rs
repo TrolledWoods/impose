@@ -39,14 +39,6 @@ impl Stack {
     fn push(&mut self, value: *const u8, size: usize) -> *mut u8 {
         let buffer = self.push_uninit(size);
 
-        print!("-- ");
-        for n in 0..size {
-            unsafe {
-                print!("{:X}", *value.add(n));
-            }
-        }
-        println!();
-
         // SAFETY: This is safe even if the size is zero, because push_uninit will always
         // return a properly aligned, non-null pointer and that is all that is required for
         // copy to be safe when the size is 0.
@@ -75,7 +67,6 @@ impl Stack {
     ///
     /// Returns a dangling pointer with STACK_ALIGN alignment if the size is zero
     fn push_uninit(&mut self, size: usize) -> *mut u8 {
-        println!("{}Pushing", ".".repeat(self.len()));
         self.member_sizes.push(size);
         *self.stack_lengths.last_mut().unwrap() += 1;
         if size == 0 {
@@ -111,7 +102,6 @@ impl Stack {
     }
 
     fn pop(&mut self) -> (*const u8, usize) {
-        println!("{}Pop", ".".repeat(self.len()));
         let size = self.member_sizes.pop().unwrap();
         *self.stack_lengths.last_mut().unwrap() -= 1;
         if size == 0 {
@@ -177,15 +167,12 @@ impl<'a> Interpreter<'a> {
     ) -> Result<Value, Dependency> {
         let (ast, mut node_id) = self.code.pop().expect("Nothing to resume");
 
-        println!("\n\n-- Thing --");
-
         while let Some(node) = ast.nodes.get(node_id) {
-            println!("{:?}", node);
             node_id += 1;
             let old_node = node_id;
 
             match node.kind {
-                NodeKind::Marker(MarkerKind::IfCondition(_, label_id)) => {
+                NodeKind::Marker(MarkerKind::IfCondition(label_id)) => {
                     // The size of a boolean is 1.
                     let (condition, size) = self.stack.pop();
                     assert_eq!(size, 1);
@@ -197,12 +184,20 @@ impl<'a> Interpreter<'a> {
                         node_id = ast.label_map.get(&label_id).unwrap().node_id;
                     }
                 }
-                NodeKind::Marker(MarkerKind::IfElseTrueBody {
-                    contains: _,
-                    true_body_label: _,
-                    false_body_label,
+                NodeKind::Marker(MarkerKind::IfElseCondition(label_id)) => {
+                    // The size of a boolean is 1.
+                    let (condition, size) = self.stack.pop();
+                    assert_eq!(size, 1);
+
+                    if unsafe { *condition } == 0 {
+                        node_id = ast.label_map.get(&label_id).unwrap().node_id;
+                    }
+                }
+                NodeKind::Marker(MarkerKind::IfElseMiddle {
+                    middle_label: _,
+                    end_label,
                 }) => {
-                    node_id = ast.label_map.get(&false_body_label).unwrap().node_id;
+                    node_id = ast.label_map.get(&end_label).unwrap().node_id;
                 }
                 NodeKind::Marker(MarkerKind::LoopHead(_)) => {}
                 NodeKind::MemberAccess { offset, size } => {
@@ -328,7 +323,7 @@ impl<'a> Interpreter<'a> {
                             n_return_bytes,
                         }) => {
                             let mut arg_bytes = Vec::with_capacity(*n_return_bytes);
-                            for (arg, size) in args {
+                            for (arg, size) in args.into_iter().rev() {
                                 for n_byte in 0..size {
                                     arg_bytes.push(unsafe { *arg.add(n_byte) });
                                 }
@@ -341,11 +336,15 @@ impl<'a> Interpreter<'a> {
                             self.stack.push(return_bytes.as_ptr(), *n_return_bytes);
                         }
                         Some(FunctionKind::Function(ast)) => {
-                            println!("\\/ function call");
-                            let returns = self.interpret(resources, types, scopes, ast, &args)?;
+                            let returns = self.interpret(
+                                resources,
+                                types,
+                                scopes,
+                                ast,
+                                args.into_iter().rev(),
+                            )?;
                             assert_eq!(returns.len(), types.handle(return_type).size);
                             self.stack.push(returns.as_ptr(), returns.len());
-                            println!("\\/ returning from function call");
                         }
                         None => panic!("Not a valid function {}", func_id),
                     }
@@ -454,18 +453,18 @@ impl<'a> Interpreter<'a> {
         types: &Types,
         scopes: &Scopes,
         ast: &'a Ast,
-        arguments: &[(*const u8, usize)],
+        mut arguments: impl Iterator<Item = (*const u8, usize)>,
     ) -> Result<Value, Dependency> {
         self.code.push((ast, 0));
         self.stack.push_length_counter();
         self.locals_stack.push_length_counter();
 
-        for (i, &local_var_id) in ast.locals.all_locals.iter().enumerate() {
+        for &local_var_id in ast.locals.all_locals.iter() {
             let member = scopes.member(local_var_id);
             let type_handle = types.handle(member.type_.unwrap());
 
             let local = self.locals_stack.push_uninit(type_handle.size);
-            if let Some(&(arg, size)) = arguments.get(i) {
+            if let Some((arg, size)) = arguments.next() {
                 assert_eq!(size, type_handle.size);
                 unsafe {
                     std::ptr::copy(arg, local, type_handle.size);

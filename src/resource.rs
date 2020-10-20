@@ -301,7 +301,7 @@ impl Resources {
                     use crate::backend::interp;
                     let mut interpreter = interp::Interpreter::new();
                     let value = interpreter
-                        .interpret(self, types, scopes, &ast, &[])
+                        .interpret(self, types, scopes, &ast, None.into_iter())
                         .unwrap();
 
                     if DEBUG {
