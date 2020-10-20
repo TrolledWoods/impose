@@ -182,10 +182,23 @@ impl Resources {
                         }
                     }
 
-                    member.type_ = Some(types.insert(Type::new(TypeKind::FunctionPointer {
-                        args,
-                        returns: typer.ast.nodes.last().unwrap().type_,
-                    })));
+                    let returns = match combine_types(
+                        &member.loc,
+                        types,
+                        returns,
+                        typer.ast.nodes.last().unwrap().type_,
+                    ) {
+                        Ok(returns) => returns,
+                        Err(()) => {
+                            member.kind = ResourceKind::Poison;
+                            self.return_resource(member_id, member);
+                            self.make_resource_poison(member_id);
+                            return Ok(true);
+                        }
+                    };
+
+                    member.type_ =
+                        Some(types.insert(Type::new(TypeKind::FunctionPointer { args, returns })));
 
                     self.resolve_dependencies(&mut member.waiting_on_type);
                     member.kind = ResourceKind::Function(ResourceFunction::Typed(typer.ast));

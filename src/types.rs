@@ -349,10 +349,11 @@ pub struct Node {
     pub kind: NodeKind,
     pub type_: TypeId,
     pub is_lvalue: bool,
+    pub stack_len: usize,
 }
 
 impl Node {
-    fn new(old_node: &parser::Node, new_kind: NodeKind, type_: TypeId) -> Self {
+    fn new(old_node: &parser::Node, new_kind: NodeKind, type_: TypeId, stack_len: usize) -> Self {
         Node {
             loc: old_node.loc,
             kind: new_kind,
@@ -360,6 +361,7 @@ impl Node {
             is_lvalue: old_node.is_lvalue,
             // TODO: Remove the option here
             type_,
+            stack_len,
         }
     }
 }
@@ -407,7 +409,7 @@ pub enum NodeKind {
 
     Loop(LabelId, LabelId),
 
-    Struct,
+    Struct(usize),
 
     Declaration {
         variable_name: ScopeMemberId,
@@ -433,6 +435,7 @@ pub struct AstTyper {
     /// Once done, this list should be the same length as the ast.
     node_id: usize,
     type_stack: Vec<TypeStackElement>,
+    stack_len: usize,
 
     pub ast: Ast,
 }
@@ -443,6 +446,7 @@ impl AstTyper {
             node_id: 0,
             type_stack: Vec::new(),
             ast: Ast::new(local_variables),
+            stack_len: 0,
         }
     }
 
@@ -474,7 +478,10 @@ impl AstTyper {
                     )?;
                     let type_ = types.insert(type_);
                     self.type_stack.truncate(stack_len);
-                    Node::new(node, NodeKind::Struct, type_)
+
+                    self.stack_len -= members.len();
+                    self.stack_len += 1;
+                    Node::new(node, NodeKind::Struct(members.len()), type_, self.stack_len)
                 }
                 parser::NodeKind::HeapClone(_) => {
                     todo!("Heap clone");
@@ -484,31 +491,46 @@ impl AstTyper {
                 }
                 parser::NodeKind::Marker(
                     marker_kind @ parser::MarkerKind::IfElseTrueBody { .. },
-                ) => Node::new(
-                    node,
-                    NodeKind::Marker(marker_kind),
-                    self.type_stack.pop().unwrap().type_,
-                ),
-                parser::NodeKind::Marker(marker_kind @ parser::MarkerKind::IfCondition(_, _)) => {
+                ) => {
+                    self.stack_len -= 1;
                     Node::new(
                         node,
                         NodeKind::Marker(marker_kind),
                         self.type_stack.pop().unwrap().type_,
+                        self.stack_len + 1,
+                    )
+                }
+                parser::NodeKind::Marker(marker_kind @ parser::MarkerKind::IfCondition(_, _)) => {
+                    self.stack_len -= 1;
+                    Node::new(
+                        node,
+                        NodeKind::Marker(marker_kind),
+                        self.type_stack.pop().unwrap().type_,
+                        self.stack_len,
                     )
                 }
                 parser::NodeKind::Marker(kind) => {
-                    Node::new(node, NodeKind::Marker(kind), EMPTY_TYPE_ID)
+                    self.stack_len += 0;
+                    Node::new(node, NodeKind::Marker(kind), EMPTY_TYPE_ID, self.stack_len)
                 }
-                parser::NodeKind::Number(number) => Node::new(
-                    node,
-                    NodeKind::Constant((number as u64).to_le_bytes().as_slice().into()),
-                    U64_TYPE_ID,
-                ),
-                parser::NodeKind::Float(number) => Node::new(
-                    node,
-                    NodeKind::Constant(number.to_bits().to_le_bytes().as_slice().into()),
-                    F64_TYPE_ID,
-                ),
+                parser::NodeKind::Number(number) => {
+                    self.stack_len += 1;
+                    Node::new(
+                        node,
+                        NodeKind::Constant((number as u64).to_le_bytes().as_slice().into()),
+                        U64_TYPE_ID,
+                        self.stack_len,
+                    )
+                }
+                parser::NodeKind::Float(number) => {
+                    self.stack_len += 1;
+                    Node::new(
+                        node,
+                        NodeKind::Constant(number.to_bits().to_le_bytes().as_slice().into()),
+                        F64_TYPE_ID,
+                        self.stack_len,
+                    )
+                }
                 parser::NodeKind::MemberAccess(_, sub_name) => {
                     let type_id = self.type_stack.pop().unwrap();
                     let type_kind = &types.get(type_id.type_).kind;
@@ -566,14 +588,21 @@ impl AstTyper {
                             node,
                             NodeKind::Constant(offset.to_le_bytes().as_slice().into()),
                             U64_TYPE_ID,
+                            self.stack_len,
                         ));
                         Node::new(
                             node,
                             NodeKind::IntrinsicTwo(IntrinsicKindTwo::AddI),
                             types.insert(Type::new(TypeKind::Pointer(type_))),
+                            self.stack_len,
                         )
                     } else {
-                        Node::new(node, NodeKind::MemberAccess { offset, size }, type_)
+                        Node::new(
+                            node,
+                            NodeKind::MemberAccess { offset, size },
+                            type_,
+                            self.stack_len,
+                        )
                     }
                 }
                 parser::NodeKind::Loop(_, b, break_label) => {
@@ -582,6 +611,7 @@ impl AstTyper {
                         node,
                         NodeKind::Loop(b, break_label),
                         *self.ast.locals.labels.get(break_label),
+                        self.stack_len,
                     )
                 }
                 parser::NodeKind::If {
@@ -599,8 +629,9 @@ impl AstTyper {
                         );
                     }
 
+                    self.stack_len -= 0;
                     // If on its own never returns a type
-                    Node::new(node, NodeKind::If(end_label), EMPTY_TYPE_ID)
+                    Node::new(node, NodeKind::If(end_label), EMPTY_TYPE_ID, self.stack_len)
                 }
                 parser::NodeKind::IfWithElse { end_label, .. } => {
                     let false_body = self.type_stack.pop().unwrap();
@@ -618,18 +649,31 @@ impl AstTyper {
                     let return_type =
                         combine_types(node, types, true_body.type_, false_body.type_)?;
 
-                    Node::new(node, NodeKind::IfWithElse { end_label }, return_type)
+                    self.stack_len -= 0;
+                    Node::new(
+                        node,
+                        NodeKind::IfWithElse { end_label },
+                        return_type,
+                        self.stack_len,
+                    )
                 }
                 parser::NodeKind::Resource(id) => {
                     let resource = resources.resource(id);
                     if let Some(type_) = resource.type_ {
-                        Node::new(node, NodeKind::Resource(id), type_)
+                        self.stack_len += 1;
+                        Node::new(node, NodeKind::Resource(id), type_, self.stack_len)
                     } else {
                         return Ok(Some(Dependency::Type(node.loc, id)));
                     }
                 }
                 parser::NodeKind::EmptyLiteral => {
-                    Node::new(node, NodeKind::Constant(smallvec![]), EMPTY_TYPE_ID)
+                    self.stack_len += 1;
+                    Node::new(
+                        node,
+                        NodeKind::Constant(smallvec![]),
+                        EMPTY_TYPE_ID,
+                        self.stack_len,
+                    )
                 }
                 parser::NodeKind::BitCast {
                     into_type: _,
@@ -654,7 +698,8 @@ impl AstTyper {
                         return error!(node, "You can only bitcast types with the same size");
                     }
 
-                    Node::new(node, NodeKind::BitCast, into_type_handle.id)
+                    self.stack_len += 0;
+                    Node::new(node, NodeKind::BitCast, into_type_handle.id, self.stack_len)
                 }
                 parser::NodeKind::Identifier {
                     source: mut id,
@@ -689,12 +734,20 @@ impl AstTyper {
                             ScopeMemberKind::LocalVariable => {
                                 if let Some(type_) = member.type_ {
                                     if !node.is_lvalue {
-                                        Node::new(node, NodeKind::Identifier(id), type_)
+                                        self.stack_len += 1;
+                                        Node::new(
+                                            node,
+                                            NodeKind::Identifier(id),
+                                            type_,
+                                            self.stack_len,
+                                        )
                                     } else {
+                                        self.stack_len += 1;
                                         Node::new(
                                             node,
                                             NodeKind::ScopeMemberReference(id),
                                             types.insert(Type::new(TypeKind::Pointer(type_))),
+                                            self.stack_len,
                                         )
                                     }
                                 } else {
@@ -703,7 +756,13 @@ impl AstTyper {
                             }
                             ScopeMemberKind::Constant(resource_id) => {
                                 if let Some(type_) = resources.resource(resource_id).type_ {
-                                    Node::new(node, NodeKind::Resource(resource_id), type_)
+                                    self.stack_len += 1;
+                                    Node::new(
+                                        node,
+                                        NodeKind::Resource(resource_id),
+                                        type_,
+                                        self.stack_len,
+                                    )
                                 } else {
                                     return Ok(Some(Dependency::Type(node.loc, resource_id)));
                                 }
@@ -733,11 +792,15 @@ impl AstTyper {
                                 }
 
                                 match resources.resource(id).kind {
-                                    ResourceKind::Done(ref value, _) => Node::new(
-                                        node,
-                                        NodeKind::Constant(value.clone()),
-                                        TYPE_TYPE_ID,
-                                    ),
+                                    ResourceKind::Done(ref value, _) => {
+                                        self.stack_len += 1;
+                                        Node::new(
+                                            node,
+                                            NodeKind::Constant(value.clone()),
+                                            TYPE_TYPE_ID,
+                                            self.stack_len,
+                                        )
+                                    }
                                     ResourceKind::Value(_) => {
                                         return Ok(Some(Dependency::Value(node.loc, id)));
                                     }
@@ -758,6 +821,7 @@ impl AstTyper {
                 }
                 parser::NodeKind::FunctionCall { ref arg_list, .. } => {
                     let stack_loc = self.type_stack.len() - arg_list.len();
+                    let arg_list_len = arg_list.len();
                     let arg_list = &self.type_stack[stack_loc..];
 
                     // TODO: Check if the types in the arg_list are the same as the function
@@ -790,7 +854,14 @@ impl AstTyper {
 
                         self.type_stack.truncate(stack_loc - 1);
 
-                        Node::new(node, NodeKind::FunctionCall(func_type.type_), *returns)
+                        self.stack_len -= arg_list_len;
+                        self.stack_len += 1;
+                        Node::new(
+                            node,
+                            NodeKind::FunctionCall(func_type.type_),
+                            *returns,
+                            self.stack_len,
+                        )
                     } else {
                         return error!(node, "This is not a function pointer, yet a function call was attemted on it");
                     }
@@ -810,7 +881,8 @@ impl AstTyper {
                                 );
                             }
 
-                            Node::new(node, NodeKind::Assign, right.type_)
+                            self.stack_len -= 1;
+                            Node::new(node, NodeKind::Assign, right.type_, self.stack_len)
                         } else {
                             return error!(node, "Internal compiler error; Assign can only assign to lvalues(i.e pointers)");
                         }
@@ -843,13 +915,27 @@ impl AstTyper {
                                 self.ast.nodes.pop();
                                 self.ast.nodes.pop();
 
+                                self.stack_len -= 1;
                                 Node::new(
                                     node,
-                                    NodeKind::Constant(buffer.to_le_bytes().as_slice().into()),
+                                    NodeKind::Constant(
+                                        buffer.to_le_bytes().as_slice()
+                                            [..types.handle(return_type).size]
+                                            .into(),
+                                    ),
                                     return_type,
+                                    self.stack_len,
                                 )
                             }
-                            _ => Node::new(node, NodeKind::IntrinsicTwo(intrinsic), return_type),
+                            _ => {
+                                self.stack_len -= 1;
+                                Node::new(
+                                    node,
+                                    NodeKind::IntrinsicTwo(intrinsic),
+                                    return_type,
+                                    self.stack_len,
+                                )
+                            }
                         }
                     }
                 }
@@ -877,7 +963,8 @@ impl AstTyper {
                                     // normal stuff and an lvalue.
                                     self.ast.nodes.pop().unwrap()
                                 } else {
-                                    Node::new(node, NodeKind::Dereference, sub_type)
+                                    self.stack_len += 0;
+                                    Node::new(node, NodeKind::Dereference, sub_type, self.stack_len)
                                 }
                             } else {
                                 return error!(node, "Can only dereference pointers");
@@ -890,7 +977,13 @@ impl AstTyper {
                     scopes.member_mut(variable_name).type_ =
                         Some(self.type_stack.pop().unwrap().type_);
 
-                    Node::new(node, NodeKind::Declaration { variable_name }, EMPTY_TYPE_ID)
+                    self.stack_len += 0;
+                    Node::new(
+                        node,
+                        NodeKind::Declaration { variable_name },
+                        EMPTY_TYPE_ID,
+                        self.stack_len,
+                    )
                 }
                 parser::NodeKind::Block {
                     ref contents,
@@ -923,6 +1016,8 @@ impl AstTyper {
                     let label_val = self.ast.locals.labels.get_mut(label);
                     *label_val = combine_types(node, types, *label_val, type_)?;
 
+                    self.stack_len -= contents.len();
+                    self.stack_len += 1;
                     Node::new(
                         node,
                         NodeKind::Block {
@@ -930,6 +1025,7 @@ impl AstTyper {
                             label,
                         },
                         *self.ast.locals.labels.get(label),
+                        self.stack_len,
                     )
                 }
                 parser::NodeKind::Skip { label, value: _ } => {
@@ -938,13 +1034,20 @@ impl AstTyper {
                     let label_val = self.ast.locals.labels.get_mut(label);
                     *label_val = combine_types(node, types, *label_val, type_)?;
 
-                    Node::new(node, NodeKind::Skip { label }, NEVER_TYPE_ID)
+                    self.stack_len -= 1;
+                    Node::new(
+                        node,
+                        NodeKind::Skip { label },
+                        NEVER_TYPE_ID,
+                        self.stack_len,
+                    )
                 }
 
                 // --- Type expressions ---
                 parser::NodeKind::GetType(_) => {
                     let type_ = get_type(types, &self.ast, self.type_stack.pop().unwrap())?;
-                    Node::new(node, type_to_const(type_), TYPE_TYPE_ID)
+                    self.stack_len += 0;
+                    Node::new(node, type_to_const(type_), TYPE_TYPE_ID, self.stack_len)
                 }
                 parser::NodeKind::TypeFunctionPointer {
                     ref arg_list,
@@ -973,7 +1076,9 @@ impl AstTyper {
                     self.ast.nodes.truncate(new_len);
 
                     let type_ = types.insert(Type::new(kind));
-                    Node::new(node, type_to_const(type_), TYPE_TYPE_ID)
+                    self.stack_len -= arg_list.len();
+                    self.stack_len += 1;
+                    Node::new(node, type_to_const(type_), TYPE_TYPE_ID, self.stack_len)
                 }
                 parser::NodeKind::TypeStruct { ref args } => {
                     // Figure out the wanted offsets of the arguments.
@@ -986,21 +1091,27 @@ impl AstTyper {
                     let type_ = types.insert(type_);
                     self.ast.nodes.truncate(struct_args[0].node_id);
                     self.type_stack.truncate(stack_len);
-                    Node::new(node, type_to_const(type_), TYPE_TYPE_ID)
+                    self.stack_len -= args.len();
+                    self.stack_len += 1;
+                    Node::new(node, type_to_const(type_), TYPE_TYPE_ID, self.stack_len)
                 }
                 parser::NodeKind::TypePointer(_) => {
                     let pointing_to_type =
                         get_type(types, &self.ast, self.type_stack.pop().unwrap())?;
                     let type_ = types.insert(Type::new(TypeKind::Pointer(pointing_to_type)));
                     self.ast.nodes.pop();
-                    Node::new(node, type_to_const(type_), TYPE_TYPE_ID)
+
+                    self.stack_len += 0;
+                    Node::new(node, type_to_const(type_), TYPE_TYPE_ID, self.stack_len)
                 }
                 parser::NodeKind::TypeBufferPointer(_) => {
                     let pointing_to_type =
                         get_type(types, &self.ast, self.type_stack.pop().unwrap())?;
                     let type_ = types.insert(Type::new(TypeKind::BufferPointer(pointing_to_type)));
                     self.ast.nodes.pop();
-                    Node::new(node, type_to_const(type_), TYPE_TYPE_ID)
+
+                    self.stack_len += 0;
+                    Node::new(node, type_to_const(type_), TYPE_TYPE_ID, self.stack_len)
                 }
             };
 

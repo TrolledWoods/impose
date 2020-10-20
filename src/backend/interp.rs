@@ -37,6 +37,14 @@ impl Stack {
     fn push(&mut self, value: *const u8, size: usize) -> *mut u8 {
         let buffer = self.push_uninit(size);
 
+        print!("-- ");
+        for n in 0..size {
+            unsafe {
+                print!("{:X}", *value.add(n));
+            }
+        }
+        println!();
+
         // SAFETY: This is safe even if the size is zero, because push_uninit will always
         // return a properly aligned, non-null pointer and that is all that is required for
         // copy to be safe when the size is 0.
@@ -53,6 +61,7 @@ impl Stack {
     ///
     /// Returns a dangling pointer with STACK_ALIGN alignment if the size is zero
     fn push_uninit(&mut self, size: usize) -> *mut u8 {
+        println!("{}Pushing", ".".repeat(self.member_sizes.len()));
         self.member_sizes.push(size);
         if size == 0 {
             return STACK_ALIGN as *mut u8;
@@ -87,6 +96,7 @@ impl Stack {
     }
 
     fn pop(&mut self) -> (*const u8, usize) {
+        println!("{}Pop", ".".repeat(self.member_sizes.len()));
         let size = self.member_sizes.pop().unwrap();
         if size == 0 {
             return (std::ptr::NonNull::dangling().as_ptr(), 0);
@@ -151,14 +161,17 @@ impl<'a> Interpreter<'a> {
     ) -> Result<Value, Dependency> {
         let (ast, mut node_id) = self.code.pop().expect("Nothing to resume");
 
+        println!("\n\n-- Thing --");
+
         while let Some(node) = ast.nodes.get(node_id) {
+            println!("{:?}", node);
             node_id += 1;
 
             match node.kind {
                 NodeKind::Marker(MarkerKind::IfCondition(_, label_id)) => {
                     // The size of a boolean is 1.
-                    let (condition, _size) = self.stack.pop();
-                    // assert_eq!(size, 1);
+                    let (condition, size) = self.stack.pop();
+                    assert_eq!(size, 1);
 
                     if unsafe { *condition } == 0 {
                         node_id = *ast.label_map.get(&label_id).unwrap();
@@ -273,7 +286,7 @@ impl<'a> Interpreter<'a> {
                                 let (arg, size) = self.stack.pop();
                                 let arg_type_handle = types.handle(arg_type);
                                 assert_eq!(size, arg_type_handle.size);
-                                args.push(arg);
+                                args.push((arg, size));
                             }
                             returns
                         }
@@ -286,16 +299,31 @@ impl<'a> Interpreter<'a> {
 
                     match resources.functions.get(func_id) {
                         Some(FunctionKind::ExternalFunction {
-                            func: _,
-                            n_arg_bytes: _,
-                            n_return_bytes: _,
-                        }) => todo!(),
+                            func,
+                            n_arg_bytes,
+                            n_return_bytes,
+                        }) => {
+                            let mut arg_bytes = Vec::with_capacity(*n_return_bytes);
+                            for (arg, size) in args {
+                                for n_byte in 0..size {
+                                    arg_bytes.push(unsafe { *arg.add(n_byte) });
+                                }
+                            }
+                            debug_assert_eq!(arg_bytes.len(), *n_arg_bytes);
+                            debug_assert_eq!(types.handle(return_type).size, *n_return_bytes);
+                            let mut return_bytes = vec![0u8; *n_return_bytes];
+
+                            func(resources, &arg_bytes, &mut return_bytes);
+                            self.stack.push(return_bytes.as_ptr(), *n_return_bytes);
+                        }
                         Some(FunctionKind::Function(ast)) => {
+                            println!("\\/ function call");
                             let returns = self.interpret(resources, types, scopes, ast, &args)?;
                             assert_eq!(returns.len(), types.handle(return_type).size);
                             self.stack.push(returns.as_ptr(), returns.len());
+                            println!("\\/ returning from function call");
                         }
-                        None => panic!("Not a valid function"),
+                        None => panic!("Not a valid function {}", func_id),
                     }
                 }
                 NodeKind::Dereference => {
@@ -309,8 +337,11 @@ impl<'a> Interpreter<'a> {
                 }
                 NodeKind::If(_) => {}
                 NodeKind::IfWithElse { end_label: _ } => {}
-                NodeKind::Loop(head, _) => node_id = *ast.label_map.get(&head).unwrap(),
-                NodeKind::Struct => match types.get(node.type_).kind {
+                NodeKind::Loop(head, _) => {
+                    let _return_value = self.stack.pop();
+                    node_id = *ast.label_map.get(&head).unwrap();
+                }
+                NodeKind::Struct(_) => match types.get(node.type_).kind {
                     TypeKind::Struct { ref members } => {
                         let handle = types.handle(node.type_);
                         let temp = self.stack.temp_storage(handle.size);
@@ -333,15 +364,15 @@ impl<'a> Interpreter<'a> {
                     _ => unreachable!("A Struct node has to have to type of struct"),
                 },
                 NodeKind::Declaration { variable_name } => {
-                    let ptr = self.get_local(variable_name);
+                    let variable = self.get_local(variable_name);
                     let size = types
                         .handle(scopes.member(variable_name).type_.unwrap())
                         .size;
-                    let (pointer, pointer_size) = self.stack.pop();
-                    assert_eq!(size, pointer_size);
+                    let (value, value_size) = self.stack.pop();
+                    assert_eq!(value_size, size);
 
                     unsafe {
-                        std::ptr::copy(pointer, ptr, size);
+                        std::ptr::copy(value, variable, size);
                     }
 
                     self.stack.push_zero();
@@ -361,6 +392,8 @@ impl<'a> Interpreter<'a> {
                     node_id = *ast.label_map.get(&label).unwrap();
                 }
             }
+
+            assert_eq!(node.stack_len, self.stack.member_sizes.len());
         }
 
         for _ in ast.locals.all_locals.iter() {
@@ -380,7 +413,7 @@ impl<'a> Interpreter<'a> {
         types: &Types,
         scopes: &Scopes,
         ast: &'a Ast,
-        arguments: &[*const u8],
+        arguments: &[(*const u8, usize)],
     ) -> Result<Value, Dependency> {
         self.code.push((ast, 0));
 
@@ -389,9 +422,10 @@ impl<'a> Interpreter<'a> {
             let type_handle = types.handle(member.type_.unwrap());
 
             let local = self.locals_stack.push_uninit(type_handle.size);
-            if let Some(arg) = arguments.get(i) {
+            if let Some(&(arg, size)) = arguments.get(i) {
+                assert_eq!(size, type_handle.size);
                 unsafe {
-                    std::ptr::copy(*arg, local, type_handle.size);
+                    std::ptr::copy(arg, local, type_handle.size);
                 }
             }
             self.locals.push((local_var_id, local));

@@ -263,8 +263,8 @@ fn setup_constants() -> (Scopes, Resources, Types) {
         let function_kind = resources.create_function(FunctionKind::ExternalFunction {
             func: Box::new(|_, args, _| {
                 let pointer = usize::from_le_bytes(args[0..8].try_into().unwrap()) as *mut u8;
-                let size = usize::from_le_bytes(args[0..8].try_into().unwrap());
-                let align = usize::from_le_bytes(args[8..16].try_into().unwrap());
+                let size = usize::from_le_bytes(args[8..16].try_into().unwrap());
+                let align = usize::from_le_bytes(args[16..24].try_into().unwrap());
                 unsafe {
                     std::alloc::dealloc(
                         pointer,
