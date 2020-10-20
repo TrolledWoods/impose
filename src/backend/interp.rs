@@ -15,6 +15,7 @@ struct Stack {
     buffer_max: *mut u8,
     head: *mut u8,
     member_sizes: Vec<usize>,
+    stack_lengths: Vec<usize>,
 }
 
 impl Stack {
@@ -27,6 +28,7 @@ impl Stack {
             buffer_max: unsafe { stack_ptr.add(STACK_SIZE) },
             head: stack_ptr,
             member_sizes: Vec::new(),
+            stack_lengths: Vec::new(),
         }
     }
 
@@ -55,14 +57,27 @@ impl Stack {
         buffer
     }
 
+    fn push_length_counter(&mut self) {
+        self.stack_lengths.push(0);
+    }
+
+    fn pop_length_counter(&mut self) {
+        assert_eq!(self.stack_lengths.pop(), Some(0));
+    }
+
+    fn len(&self) -> usize {
+        *self.stack_lengths.last().unwrap()
+    }
+
     /// Allocates a value of size bytes and returns the pointer to it.
     /// Intended to be used when you want to initialize the data in the buffer
     /// later.
     ///
     /// Returns a dangling pointer with STACK_ALIGN alignment if the size is zero
     fn push_uninit(&mut self, size: usize) -> *mut u8 {
-        println!("{}Pushing", ".".repeat(self.member_sizes.len()));
+        println!("{}Pushing", ".".repeat(self.len()));
         self.member_sizes.push(size);
+        *self.stack_lengths.last_mut().unwrap() += 1;
         if size == 0 {
             return STACK_ALIGN as *mut u8;
         }
@@ -96,8 +111,9 @@ impl Stack {
     }
 
     fn pop(&mut self) -> (*const u8, usize) {
-        println!("{}Pop", ".".repeat(self.member_sizes.len()));
+        println!("{}Pop", ".".repeat(self.len()));
         let size = self.member_sizes.pop().unwrap();
+        *self.stack_lengths.last_mut().unwrap() -= 1;
         if size == 0 {
             return (std::ptr::NonNull::dangling().as_ptr(), 0);
         }
@@ -225,7 +241,11 @@ impl<'a> Interpreter<'a> {
                     }
                     ref kind => panic!("Unhandled identifier kind {:?}", kind),
                 },
-                NodeKind::BitCast => {}
+                NodeKind::BitCast => {
+                    let (value, size) = self.stack.pop();
+                    let _ = self.stack.pop();
+                    self.stack.push(value, size);
+                }
                 NodeKind::Assign => {
                     let (value, value_len) = self.stack.pop();
                     let (pointer, pointer_len) = self.stack.pop();
@@ -393,7 +413,7 @@ impl<'a> Interpreter<'a> {
                 }
             }
 
-            assert_eq!(node.stack_len, self.stack.member_sizes.len());
+            assert_eq!(node.stack_len, self.stack.len());
         }
 
         for _ in ast.locals.all_locals.iter() {
@@ -403,6 +423,9 @@ impl<'a> Interpreter<'a> {
 
         let (buffer_raw_ptr, buffer_raw_len) = self.stack.pop();
         let buffer = unsafe { std::slice::from_raw_parts(buffer_raw_ptr, buffer_raw_len).into() };
+
+        self.stack.pop_length_counter();
+        self.locals_stack.pop_length_counter();
 
         Ok(buffer)
     }
@@ -416,6 +439,8 @@ impl<'a> Interpreter<'a> {
         arguments: &[(*const u8, usize)],
     ) -> Result<Value, Dependency> {
         self.code.push((ast, 0));
+        self.stack.push_length_counter();
+        self.locals_stack.push_length_counter();
 
         for (i, &local_var_id) in ast.locals.all_locals.iter().enumerate() {
             let member = scopes.member(local_var_id);

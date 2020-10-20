@@ -698,7 +698,7 @@ impl AstTyper {
                         return error!(node, "You can only bitcast types with the same size");
                     }
 
-                    self.stack_len += 0;
+                    self.stack_len -= 1;
                     Node::new(node, NodeKind::BitCast, into_type_handle.id, self.stack_len)
                 }
                 parser::NodeKind::Identifier {
@@ -854,8 +854,9 @@ impl AstTyper {
 
                         self.type_stack.truncate(stack_loc - 1);
 
+                        // Removing the function pointer and pushing the return value
+                        // cancel out.
                         self.stack_len -= arg_list_len;
-                        self.stack_len += 1;
                         Node::new(
                             node,
                             NodeKind::FunctionCall(func_type.type_),
