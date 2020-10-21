@@ -994,18 +994,15 @@ fn parse_value(mut context: Context) -> Result<AstNodeId, ()> {
         TokenKind::StringLiteral(ref string) => {
             context.tokens.next();
 
-            // TODO: Find a way to get rid of the string cloning here!
-            // Possibly by making TokenStream own its data
-
             let string_bytes = string.as_bytes();
-            let n_bytes = string_bytes.len();
             let buffer_id = context.resources.insert_done(Resource::new_with_type(
                 token.loc.clone(),
-                ResourceKind::Done(string.as_bytes().into(), vec![]),
+                ResourceKind::Done(string_bytes.into(), vec![]),
                 U8_TYPE_ID,
             ));
 
-            let [a, b, c, d, e, f, g, h] = n_bytes.to_le_bytes();
+            let mut bytes = [0; 16];
+            bytes[8..16].copy_from_slice(&string_bytes.len().to_le_bytes() as &[u8]);
 
             let string_type = context
                 .types
@@ -1013,7 +1010,7 @@ fn parse_value(mut context: Context) -> Result<AstNodeId, ()> {
             let id = context.resources.insert_done(Resource::new_with_type(
                 token.loc.clone(),
                 ResourceKind::Done(
-                    smallvec![0, 0, 0, 0, 0, 0, 0, 0, a, b, c, d, e, f, g, h],
+                    (&bytes as &[u8]).into(),
                     vec![(0, buffer_id, context.types.handle(U8_TYPE_ID))],
                 ),
                 string_type,
