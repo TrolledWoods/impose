@@ -6,6 +6,4 @@ a := bit_cast &U64 (alloc(16, 8));
 assert(*a == 20);
 assert(*(a + 1) == 50);
 
-// Y := free;
-Z := type &U8;
 free(bit_cast &U8 (a), 16, 8);
