@@ -390,6 +390,28 @@ impl<'a> Interpreter<'a> {
                     let _return_value = self.stack.pop();
                     node_id = ast.label_map.get(&head).unwrap().node_id;
                 }
+                NodeKind::Tuple(_) => match types.get(node.type_).kind {
+                    TypeKind::Tuple(ref members) => {
+                        let handle = types.handle(node.type_);
+                        let temp = self.stack.temp_storage(handle.size);
+
+                        for &(offset, member_type_handle) in members.iter().rev() {
+                            let (value_buffer, value_size) = self.stack.pop();
+                            assert_eq!(value_size, member_type_handle.size);
+
+                            unsafe {
+                                std::ptr::copy(
+                                    value_buffer,
+                                    temp.add(offset),
+                                    member_type_handle.size,
+                                );
+                            }
+                        }
+
+                        self.stack.push(temp, handle.size);
+                    }
+                    _ => unreachable!("A Struct node has to have to type of struct"),
+                },
                 NodeKind::Struct(_) => match types.get(node.type_).kind {
                     TypeKind::Struct { ref members } => {
                         let handle = types.handle(node.type_);

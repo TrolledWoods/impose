@@ -215,6 +215,9 @@ pub enum NodeKind {
     Struct {
         members: Vec<(ustr::Ustr, AstNodeId)>,
     },
+    Tuple {
+        n_members: usize,
+    },
     Declaration {
         variable_name: ScopeMemberId,
         value: AstNodeId,
@@ -1189,18 +1192,45 @@ fn parse_value(mut context: Context) -> Result<AstNodeId, ()> {
         TokenKind::Bracket('(') => {
             context.tokens.next();
             let value = parse_expression(context.borrow())?;
+            let mut n_tuple_members = 1;
+            let mut is_tuple = false;
 
-            match context.tokens.next() {
-                Some(Token {
-                    kind: TokenKind::ClosingBracket(')'),
-                    ..
-                }) => (),
-                _ => {
-                    return error!(&token, "Parenthesis is not closed properly");
+            loop {
+                match context.tokens.next() {
+                    Some(Token {
+                        kind: TokenKind::ClosingBracket(')'),
+                        ..
+                    }) => break,
+                    Some(Token {
+                        kind: TokenKind::Comma,
+                        ..
+                    }) => {
+                        is_tuple = true;
+                        if let Some(TokenKind::ClosingBracket(')')) = context.tokens.peek_kind() {
+                            context.tokens.next();
+                            break;
+                        }
+                        n_tuple_members += 1;
+                        parse_expression(context.borrow())?;
+                    }
+                    _ => {
+                        return error!(&token, "Parenthesis is not closed properly");
+                    }
                 }
             }
 
-            value
+            if is_tuple {
+                context.ast.insert_node(Node::new(
+                    &context,
+                    token,
+                    context.scope,
+                    NodeKind::Tuple {
+                        n_members: n_tuple_members,
+                    },
+                ))
+            } else {
+                value
+            }
         }
         TokenKind::Keyword("import") => {
             context.tokens.next();
