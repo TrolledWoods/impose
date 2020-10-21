@@ -631,12 +631,14 @@ impl AstTyper {
                     };
 
                     if node.is_lvalue {
+                        self.stack_len += 1;
                         self.ast.nodes.push(Node::new(
                             node,
                             NodeKind::Constant(offset.to_le_bytes().as_slice().into()),
                             U64_TYPE_ID,
                             self.stack_len,
                         ));
+                        self.stack_len -= 1;
                         Node::new(
                             node,
                             NodeKind::IntrinsicTwo(IntrinsicKindTwo::AddI),
@@ -644,6 +646,7 @@ impl AstTyper {
                             self.stack_len,
                         )
                     } else {
+                        self.stack_len += 0;
                         Node::new(
                             node,
                             NodeKind::MemberAccess { offset, size },
@@ -663,7 +666,7 @@ impl AstTyper {
                         break_label,
                         LabelMapValue {
                             node_id: self.ast.nodes.len() + 1,
-                            stack_len: self.stack_len,
+                            stack_len: self.stack_len - 1,
                         },
                     );
                     Node::new(

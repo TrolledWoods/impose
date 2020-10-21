@@ -99,10 +99,12 @@ impl Resources {
                                     args,
                                     returns,
                                 });
+                                let loc = member.loc;
+                                member.depending_on = Some(Dependency::Value(loc, depending_on));
                                 self.return_resource(member_id, member);
                                 self.add_dependency(
                                     member_id,
-                                    Dependency::Type(member.loc, depending_on),
+                                    Dependency::Value(loc, depending_on),
                                     scopes,
                                 );
                                 return Ok(true);
@@ -133,12 +135,14 @@ impl Resources {
                                     args,
                                     returns,
                                 });
+                                let loc = member.loc;
+                                member.depending_on = Some(Dependency::Value(loc, resource_id));
+                                self.return_resource(member_id, member);
                                 self.add_dependency(
                                     member_id,
-                                    Dependency::Type(member.loc, resource_id),
+                                    Dependency::Value(loc, resource_id),
                                     scopes,
                                 );
-                                self.return_resource(member_id, member);
                                 return Ok(true);
                             }
                         },
@@ -320,7 +324,9 @@ impl Resources {
                     member.kind =
                         self.turn_value_into_resource(types, member.type_.unwrap(), &value);
 
+                    let mut waiting_on_value = member.waiting_on_value.take().unwrap();
                     self.return_resource(member_id, member);
+                    self.resolve_dependencies(&mut waiting_on_value);
                     self.uncomputed_resources.remove(&member_id);
                 }
                 ResourceKind::Done(_, _) => {
