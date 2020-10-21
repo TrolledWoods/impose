@@ -1101,8 +1101,8 @@ impl AstTyper {
                     self.ast.label_map.insert(
                         label,
                         LabelMapValue {
-                            node_id: self.ast.nodes.len(),
-                            stack_len: self.stack_len,
+                            node_id: self.ast.nodes.len() + 1,
+                            stack_len: self.stack_len - 1,
                         },
                     );
                     Node::new(
