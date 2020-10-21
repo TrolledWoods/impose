@@ -245,7 +245,7 @@ pub enum NodeKind {
     /// Exactly the same as an identifier but it is a type expression.
     TypeFunctionPointer {
         arg_list: Vec<AstNodeId>,
-        return_type: Option<AstNodeId>,
+        return_type: AstNodeId,
     },
     TypeStruct {
         args: Vec<(ustr::Ustr, AstNodeId)>,
@@ -699,9 +699,9 @@ fn parse_type_expr_function_ptr(mut context: Context) -> Result<AstNodeId, ()> {
     }) = context.tokens.peek()
     {
         context.tokens.next();
-        Some(parse_type_expr_value(context.borrow())?)
+        parse_type_expr_value(context.borrow())?
     } else {
-        None
+        return error!(context.tokens, "Function pointer needs to have a return type. Add ``-> Empty`` if you want to return nothing");
     };
 
     Ok(context.ast.insert_node(Node::new(

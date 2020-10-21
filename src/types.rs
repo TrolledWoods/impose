@@ -159,6 +159,7 @@ impl Types {
 
     pub fn print_types(&self) {
         for (id, _) in self.types.iter_ids() {
+            print!("{}: ", id.into_index());
             self.print(id);
             println!();
         }
@@ -223,6 +224,14 @@ impl Types {
             TypeKind::F32 => write!(buffer, "F32").unwrap(),
             TypeKind::F64 => write!(buffer, "F64").unwrap(),
             TypeKind::Bool => write!(buffer, "Bool").unwrap(),
+        }
+    }
+}
+
+impl Drop for Types {
+    fn drop(&mut self) {
+        if crate::DEBUG {
+            self.print_types();
         }
     }
 }
@@ -1122,32 +1131,25 @@ impl AstTyper {
                 }
                 parser::NodeKind::TypeFunctionPointer {
                     ref arg_list,
-                    return_type: returns,
+                    return_type: _,
                 } => {
-                    let return_type = match returns {
-                        Some(_) => {
-                            Some(get_type(types, &self.ast, self.type_stack.pop().unwrap())?)
-                        }
-                        None => None,
-                    };
+                    let returns = get_type(types, &self.ast, self.type_stack.pop().unwrap())?;
                     let kind = TypeKind::FunctionPointer {
                         args: arg_list
                             .iter()
                             .map(|_| get_type(types, &self.ast, self.type_stack.pop().unwrap()))
                             .rev()
                             .collect::<Result<_, ()>>()?,
-                        returns: match return_type {
-                            Some(return_type) => return_type,
-                            None => types.insert(Type::new(TypeKind::EmptyType)),
-                        },
+                        returns,
                     };
 
-                    let new_len =
-                        self.ast.nodes.len() - arg_list.len() - returns.is_some() as usize;
+                    let new_len = self.ast.nodes.len() - arg_list.len() - 1;
                     self.ast.nodes.truncate(new_len);
 
                     let type_ = types.insert(Type::new(kind));
-                    self.stack_len -= arg_list.len();
+
+                    // Remove the arguments and the return type
+                    self.stack_len -= arg_list.len() + 1;
                     self.stack_len += 1;
                     Node::new(node, type_to_const(type_), TYPE_TYPE_ID, self.stack_len)
                 }

@@ -99,12 +99,12 @@ impl Resources {
                                     args,
                                     returns,
                                 });
+                                self.return_resource(member_id, member);
                                 self.add_dependency(
                                     member_id,
                                     Dependency::Type(member.loc, depending_on),
                                     scopes,
                                 );
-                                self.return_resource(member_id, member);
                                 return Ok(true);
                             }
                         }
