@@ -1200,6 +1200,20 @@ impl AstTyper {
                     self.stack_len += 1;
                     Node::new(node, type_to_const(type_), TYPE_TYPE_ID, self.stack_len)
                 }
+                parser::NodeKind::TypeTuple(n_members) => {
+                    // Figure out the wanted offsets of the arguments.
+                    let stack_len = self.type_stack.len() - n_members;
+                    let args = &self.type_stack[stack_len..];
+                    let type_ = types.create_tuple(
+                        (0..n_members).map(|i| Ok(get_type(types, &self.ast, args[i])?)),
+                    )?;
+                    let type_ = types.insert(type_);
+                    self.ast.nodes.truncate(args[0].node_id);
+                    self.type_stack.truncate(stack_len);
+                    self.stack_len -= n_members;
+                    self.stack_len += 1;
+                    Node::new(node, type_to_const(type_), TYPE_TYPE_ID, self.stack_len)
+                }
                 parser::NodeKind::TypeStruct { ref args } => {
                     // Figure out the wanted offsets of the arguments.
                     let stack_len = self.type_stack.len() - args.len();

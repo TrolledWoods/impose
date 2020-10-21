@@ -250,6 +250,7 @@ pub enum NodeKind {
     TypeStruct {
         args: Vec<(ustr::Ustr, AstNodeId)>,
     },
+    TypeTuple(usize),
     TypePointer(AstNodeId),
     TypeBufferPointer(AstNodeId),
 }
@@ -681,6 +682,8 @@ fn parse_type_expr_struct(mut context: Context) -> Result<AstNodeId, ()> {
     )))
 }
 
+// TODO: Move this into the parse_type_expr_value thing because this doesn't
+// only parse functions now
 fn parse_type_expr_function_ptr(mut context: Context) -> Result<AstNodeId, ()> {
     // Parse the function arguments.
     let token = context.tokens.peek().unwrap();
@@ -693,26 +696,31 @@ fn parse_type_expr_function_ptr(mut context: Context) -> Result<AstNodeId, ()> {
     .ok_or_else(|| error_value!(token, "Expected parameter list"))?;
 
     // Do we have a return type?
-    let return_type = if let Some(Token {
+    if let Some(Token {
         loc: _,
         kind: TokenKind::Operator(Operator::Function),
     }) = context.tokens.peek()
     {
         context.tokens.next();
-        parse_type_expr_value(context.borrow())?
+        let return_type = parse_type_expr_value(context.borrow())?;
+        Ok(context.ast.insert_node(Node::new(
+            &context,
+            token,
+            context.scope,
+            NodeKind::TypeFunctionPointer {
+                arg_list: args,
+                return_type,
+            },
+        )))
     } else {
-        return error!(context.tokens, "Function pointer needs to have a return type. Add ``-> Empty`` if you want to return nothing");
-    };
-
-    Ok(context.ast.insert_node(Node::new(
-        &context,
-        token,
-        context.scope,
-        NodeKind::TypeFunctionPointer {
-            arg_list: args,
-            return_type,
-        },
-    )))
+        // This is actually a tuple
+        Ok(context.ast.insert_node(Node::new(
+            &context,
+            token,
+            context.scope,
+            NodeKind::TypeTuple(args.len()),
+        )))
+    }
 }
 
 fn parse_function(mut parent_context: Context) -> Result<ResourceId, ()> {
