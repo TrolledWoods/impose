@@ -650,6 +650,32 @@ impl AstTyper {
                                 return error!(node, "This member does not exist on BufferPointer");
                             }
                         }
+                        TypeKind::Tuple(ref members) => {
+                            if sub_name.starts_with("_") {
+                                if let Ok(index) = sub_name[1..].parse::<usize>() {
+                                    if let Some(&(offset, handle)) = members.get(index) {
+                                        (handle.id, offset, handle.size)
+                                    } else {
+                                        return error!(
+                                            node,
+                                            "The tuple {} only has {} members(tuple members start counting from 0)",
+                                            types.type_to_string(type_id.type_),
+                                            members.len()
+                                        );
+                                    }
+                                } else {
+                                    return error!(
+                                        node,
+                                        "Tuple members are called '_0', '_1', '_2', e.t.c"
+                                    );
+                                }
+                            } else {
+                                return error!(
+                                    node,
+                                    "Tuple members are called '_0', '_1', '_2', e.t.c"
+                                );
+                            }
+                        }
                         TypeKind::Struct { ref members } => {
                             let mut value = None;
                             for &(name, offset, handle) in members {
