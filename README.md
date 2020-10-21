@@ -22,5 +22,4 @@ print("Hello, World!\n");
 Check out the ``tests/`` directory for lots of tests which will show you how features work.
 
 ## Syntax
-Because the syntax changes so frequently, I am not going to write anything about it. Check out
-the examples.
+Syntax changes so often I'm not gonna write about it yet.
