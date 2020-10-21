@@ -231,9 +231,6 @@ pub enum NodeKind {
     /// Returns the type of a type expression as a value instead of a type.
     GetType(AstNodeId),
 
-    HeapClone(AstNodeId),
-    StackClone(AstNodeId),
-
     // Type expressions
     // Type expressions have all their data in their types, and are never turned into bytecode.
     // The 'type' that they have is not the type of the value, but the value itself. I.e.,
@@ -1021,30 +1018,6 @@ fn parse_value(mut context: Context) -> Result<AstNodeId, ()> {
                 token,
                 context.scope,
                 NodeKind::Resource(id),
-            ))
-        }
-        TokenKind::Keyword("heap_clone") => {
-            context.tokens.next();
-
-            let id = parse_value(context.borrow())?;
-
-            context.ast.insert_node(Node::new(
-                &context,
-                token,
-                context.scope,
-                NodeKind::HeapClone(id),
-            ))
-        }
-        TokenKind::Keyword("stack_clone") => {
-            context.tokens.next();
-
-            let id = parse_value(context.borrow())?;
-
-            context.ast.insert_node(Node::new(
-                &context,
-                token,
-                context.scope,
-                NodeKind::StackClone(id),
             ))
         }
         TokenKind::Keyword("struct") => {

@@ -3,17 +3,7 @@ use crate::error::*;
 use crate::operator::*;
 
 const KEYWORDS: &[&str] = &[
-    "if",
-    "else",
-    "loop",
-    "skip",
-    "bit_cast",
-    "type_of",
-    "type",
-    "struct",
-    "import",
-    "heap_clone",
-    "stack_clone",
+    "if", "else", "loop", "skip", "bit_cast", "type_of", "type", "struct", "import",
 ];
 
 #[derive(Debug, Clone)]

@@ -498,12 +498,6 @@ impl AstTyper {
                     self.stack_len += 1;
                     Node::new(node, NodeKind::Struct(members.len()), type_, self.stack_len)
                 }
-                parser::NodeKind::HeapClone(_) => {
-                    todo!("Heap clone");
-                }
-                parser::NodeKind::StackClone(_) => {
-                    todo!("Stack clone");
-                }
                 parser::NodeKind::Marker(parser::MarkerKind::IfElseMiddle {
                     middle_label,
                     end_label,
