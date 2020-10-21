@@ -146,7 +146,7 @@ impl Drop for Stack {
     }
 }
 
-const STACK_SIZE: usize = 2048;
+const STACK_SIZE: usize = 2 << 16;
 const STACK_ALIGN: usize = 16;
 
 pub struct Interpreter<'a> {
