@@ -188,6 +188,38 @@ fn setup_constants() -> (Scopes, Resources, Types) {
         use std::convert::TryInto;
         let buffer_pointer = types.insert(Type::new(TypeKind::BufferPointer(U8_TYPE_ID)));
         let function_kind = resources.create_function(FunctionKind::ExternalFunction {
+            func: Box::new(|_, args, returns| {
+                let string_pointer = usize::from_le_bytes(args[..8].try_into().unwrap()) as *mut u8;
+                let length = usize::from_le_bytes(args[8..16].try_into().unwrap());
+
+                let mut buffer = String::new();
+                std::io::stdin().read_line(&mut buffer).unwrap();
+                let input = buffer.trim();
+
+                unsafe {
+                    std::ptr::copy(input.as_ptr(), string_pointer, input.len().min(length));
+                }
+
+                returns[0..8].copy_from_slice(&(string_pointer as usize).to_le_bytes());
+                returns[8..16].copy_from_slice(&input.len().to_le_bytes());
+            }),
+            n_arg_bytes: 16,
+            n_return_bytes: 16,
+        });
+        scopes
+            .insert_root_resource(
+                &mut resources,
+                ustr::ustr("input"),
+                types.insert_function(vec![buffer_pointer], buffer_pointer),
+                function_kind,
+            )
+            .unwrap();
+    }
+
+    {
+        use std::convert::TryInto;
+        let buffer_pointer = types.insert(Type::new(TypeKind::BufferPointer(U8_TYPE_ID)));
+        let function_kind = resources.create_function(FunctionKind::ExternalFunction {
             func: Box::new(|_, args, _| {
                 let string_pointer =
                     usize::from_le_bytes(args[..8].try_into().unwrap()) as *const u8;

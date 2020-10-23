@@ -451,6 +451,9 @@ fn lex_string_literal(lexer: &mut Lexer) -> Result<(CodeLoc, String), ()> {
                 'n' => string.push('\n'),
                 'r' => string.push('\r'),
                 't' => string.push('\t'),
+                c if c.is_whitespace() => {
+                    skip_whitespace(lexer);
+                }
                 _ => {
                     return error!(lexer, "'{}' is not a valid escape character", c);
                 }

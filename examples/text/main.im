@@ -1,0 +1,192 @@
+main();
+main :: || {
+    viewport := struct { x: 10, y: 3, width: 50, height: 20 };
+
+    // Allocate a 512 byte buffer to store the input string in
+    buf := bit_cast &-U8 ((alloc(512, 1), 512));
+    loop {
+        viewport_print(MAP, viewport);
+
+        print("\n\n\
+               [l]right, [h]left, [k]up, [j]down or [q]uit?\n\
+               > ");
+
+        // Do the appropriate action based on the input string
+        in := input(buf);
+        old_pos := struct { x: viewport.x, y: viewport.y };
+        if string_equal(in, "l") {
+            print("Moving right\n");
+            viewport.x = viewport.x + 1;
+        } else if string_equal(in, "h") {
+            print("Moving left\n");
+            viewport.x = viewport.x - 1;
+        } else if string_equal(in, "k") {
+            print("Moving up\n");
+            viewport.y = viewport.y - 1;
+        } else if string_equal(in, "j") {
+            print("Moving down\n");
+            viewport.y = viewport.y + 1;
+        } else if string_equal(in, "q") {
+            skip loop;
+        } else {
+            print("Invalid input\n");
+        };
+
+        // Make sure you don't collide
+        if map_tile_collides(MAP, viewport.x, viewport.y) {
+            viewport.x = old_pos.x;
+            viewport.y = old_pos.y;
+        };
+    };
+
+    // Free the buffer.
+    free(buf.pointer, buf.length, 1);
+};
+
+
+
+
+
+
+
+
+
+
+//
+// ------------------------------
+//    FUNCTIONS and stuff
+// ------------------------------
+
+//
+
+string_equal :: |a: &- U8, b: &- U8| -> Bool {:function
+    if a.length != b.length  skip :function false;
+
+    i := 0;
+    loop {
+        if i >= a.length  skip :function true;
+        if *(a.pointer + i) != *(b.pointer + i)  skip :function false;
+        i = i + 1;
+    };
+};
+
+print_u64 :: |num: U64| {:function
+    mask := 1000_000_000_000_000;
+    has_started := false;
+    n_nums := 3 * 5;
+
+    if num >= mask {
+        print("Cannot print this big of a number yet\n");
+        skip :function;
+    };
+
+    loop {
+        if mask == 0  skip loop;
+        old_n_nums := n_nums;
+        n_nums = n_nums - 1;
+
+        masked := num / mask - (num / (mask * 10)) * 10;
+        mask = mask / 10;
+
+        if masked > 0  has_started = true;
+        if has_started {
+            put_char(*"0".pointer + bit_cast(U8, U32)(masked)._0);
+
+            if old_n_nums > 0  if old_n_nums / 3 * 3 == old_n_nums  print("_");
+        }
+    };
+};
+
+CHAR_0 :: *"0".pointer;
+CHAR_9 :: *"9".pointer;
+
+string_to_u64 :: |str: &-U8| -> (Bool, U64) {:function
+    index := 0;
+    num := 0;
+
+    loop {
+        if index >= str.length  skip loop (true, num);
+
+        digit := *(str.pointer + index);
+        if digit < CHAR_0  skip :function (false, 0);
+        if digit > CHAR_9  skip :function (false, 0);
+
+        // temporary hack to cast to U64
+        digit_u64 := 0;
+        *bit_cast &U8 (&digit_u64) = digit - CHAR_0;
+
+        num = num * 10 + digit_u64;
+        index = index + 1;
+    }
+};
+
+true  :: 0 < 1;
+false :: 1 < 0;
+
+Map :: type { width: U64, height: U64, map: &- U8 };
+
+MAP :: {
+    map := "##############################################################################\
+            #                                                                            #\
+            #                                                                            #\
+            #  /,    . /######D .      . /######D ######,                                #\
+            #  #^#   # ##/      #,    /# ##/      ##   `##                               #\
+            #  # #,  # ##       ##    ## ##       ##     #                               #\
+            #  # `#  # ####,    `#,  /#/ ####,    ##   .##                               #\
+            #  #  #, # ####/     ##  ##  ####/    ######/                                #\
+            #  #  `#V# ##        `#,/#/  ##       ##^#,                                  #\
+            #  #   ### ##         ####   ##       ## `##,                                #\
+            #  V   `## `######D   ``/    `######D ##   `#.                               #\
+            #                                                                            #\
+            #                                                                            #\
+            ##############################################################################";
+    width := 78;
+    height := map.length / width;
+
+    struct { width: width, height: height, map: map }
+};
+
+map_tile_collides :: |map: Map, x: U64, y: U64| -> Bool   get_map_tile(map, x, y) == *"#".pointer;
+
+map_check_bounds :: |map: Map, x: U64, y: U64| -> Bool {:function
+    if x >= 0 if x < map.width if y >= 0 if y < map.height  skip :function true;
+    false
+};
+
+get_map_tile :: |map: Map, x: U64, y: U64| -> U8 {:function
+    if map_check_bounds(map, x, y)  { *(map.map.pointer + (y * map.width + x)) }
+    else *"#".pointer
+};
+
+Viewport :: type {
+    x: U64,
+    y: U64,
+    width: U64,
+    height: U64,
+};
+
+viewport_print :: |map: Map, vp: Viewport| {
+    left := vp.x - vp.width  / 2;
+    top  := vp.y - vp.height / 2;
+
+    y := 0;
+    loop {
+        x := 0;
+        loop {
+            map_x := left + x;
+            map_y := top + y;
+            if bit_cast U8 (map_x == vp.x) + bit_cast U8 (map_y == vp.y) == bit_cast (U8, U32) (2)._0 {
+                print("@");
+            } else {
+                put_char(get_map_tile(map, map_x, map_y));
+            };
+
+            x = x + 1;
+            if x >= vp.width  skip loop;
+        };
+        y = y + 1;
+        print("\n");
+
+        if y >= vp.height  skip loop;
+    };
+};
