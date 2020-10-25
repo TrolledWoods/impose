@@ -36,7 +36,7 @@ pub enum TokenKind {
 
 impl Location for Token {
     fn get_location(&self) -> CodeLoc {
-        self.loc.clone()
+        self.loc
     }
 }
 
@@ -60,9 +60,9 @@ impl Lexer<'_> {
 
     fn skip_if_starts_with(&mut self, text: &str) -> Option<CodeLoc> {
         let string = self.chars.as_str();
-        if string.starts_with(text) {
-            self.chars = string[text.len()..].char_indices();
-            let old_loc = self.source_code_location.clone();
+        if let Some(stripped) = string.strip_prefix(text) {
+            self.chars = stripped.char_indices();
+            let old_loc = self.source_code_location;
             self.source_code_location.column += text.chars().count() as u32;
             Some(old_loc)
         } else {
@@ -73,7 +73,7 @@ impl Lexer<'_> {
 
 impl Location for Lexer<'_> {
     fn get_location(&self) -> CodeLoc {
-        self.source_code_location.clone()
+        self.source_code_location
     }
 }
 
@@ -103,7 +103,7 @@ pub fn lex_code(file: ustr::Ustr, code: &str) -> Result<(CodeLoc, Vec<Token>), (
         match c {
             '(' | '[' | '{' => {
                 tokens.push(Token::new(
-                    lexer.source_code_location.clone(),
+                    lexer.source_code_location,
                     TokenKind::Bracket(c),
                 ));
                 lexer.next();
@@ -111,31 +111,25 @@ pub fn lex_code(file: ustr::Ustr, code: &str) -> Result<(CodeLoc, Vec<Token>), (
             }
             ')' | ']' | '}' => {
                 tokens.push(Token::new(
-                    lexer.source_code_location.clone(),
+                    lexer.source_code_location,
                     TokenKind::ClosingBracket(c),
                 ));
                 lexer.next();
                 lexer.source_code_location.column += 1;
             }
             ';' => {
-                tokens.push(Token::new(
-                    lexer.source_code_location.clone(),
-                    TokenKind::Semicolon,
-                ));
+                tokens.push(Token::new(lexer.source_code_location, TokenKind::Semicolon));
                 lexer.next();
                 lexer.source_code_location.column += 1;
             }
             ',' => {
-                tokens.push(Token::new(
-                    lexer.source_code_location.clone(),
-                    TokenKind::Comma,
-                ));
+                tokens.push(Token::new(lexer.source_code_location, TokenKind::Comma));
                 lexer.source_code_location.column += 1;
                 lexer.next();
             }
             '\\' => {
                 tokens.push(Token::new(
-                    lexer.source_code_location.clone(),
+                    lexer.source_code_location,
                     TokenKind::ConstMember,
                 ));
                 lexer.source_code_location.column += 1;
@@ -147,7 +141,7 @@ pub fn lex_code(file: ustr::Ustr, code: &str) -> Result<(CodeLoc, Vec<Token>), (
                 let mut found_keyword = false;
                 for &keyword in KEYWORDS {
                     if identifier == keyword {
-                        tokens.push(Token::new(location.clone(), TokenKind::Keyword(keyword)));
+                        tokens.push(Token::new(location, TokenKind::Keyword(keyword)));
                         found_keyword = true;
                     }
                 }
@@ -186,10 +180,7 @@ pub fn lex_code(file: ustr::Ustr, code: &str) -> Result<(CodeLoc, Vec<Token>), (
                 }
 
                 if !found_operator && c == ':' {
-                    tokens.push(Token::new(
-                        lexer.source_code_location.clone(),
-                        TokenKind::Colon,
-                    ));
+                    tokens.push(Token::new(lexer.source_code_location, TokenKind::Colon));
                     lexer.source_code_location.column += 1;
                     lexer.next();
 
@@ -232,7 +223,7 @@ fn skip_whitespace(lexer: &mut Lexer) {
 }
 
 fn lex_numeric_literal(lexer: &mut Lexer) -> Result<(CodeLoc, Number), ()> {
-    let location = lexer.source_code_location.clone();
+    let location = lexer.source_code_location;
     let mut number: i128 = 0;
     let mut base = 10;
     let mut has_custom_base = false;
@@ -365,7 +356,7 @@ enum Number {
 }
 
 fn lex_string_literal(lexer: &mut Lexer) -> Result<(CodeLoc, String), ()> {
-    let location = lexer.source_code_location.clone();
+    let location = lexer.source_code_location;
 
     let mut quotes = 0;
     while lexer.peek() == Some('"') {
@@ -469,7 +460,7 @@ fn lex_string_literal(lexer: &mut Lexer) -> Result<(CodeLoc, String), ()> {
 }
 
 fn lex_identifier<'a>(lexer: &mut Lexer<'a>) -> (CodeLoc, &'a str) {
-    let location = lexer.source_code_location.clone();
+    let location = lexer.source_code_location;
     let start = lexer.chars.as_str();
 
     let mut char_indices = start.char_indices();

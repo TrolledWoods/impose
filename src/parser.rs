@@ -89,6 +89,12 @@ pub struct Ast {
     pub locals: LocalVariables,
 }
 
+impl Default for Ast {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Ast {
     pub fn new() -> Self {
         Ast {
@@ -271,7 +277,7 @@ impl Location for TokenStream<'_> {
 impl<'a> TokenStream<'a> {
     fn new(tokens: &'a [Token], last_location: CodeLoc) -> Self {
         TokenStream {
-            tokens: tokens,
+            tokens,
             index: 0,
             last_location,
         }
@@ -1140,7 +1146,7 @@ fn parse_value(mut context: Context) -> Result<AstNodeId, ()> {
                     NodeKind::IfWithElse {
                         condition: condition_marker,
                         true_body: true_body_marker,
-                        false_body: false_body,
+                        false_body,
                         end_label: false_body_label,
                     },
                 ));

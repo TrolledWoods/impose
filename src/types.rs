@@ -126,10 +126,10 @@ impl Types {
     /// Pushes to the pointer_inside buffer you passed in the pointers it found inside.
     ///
     /// The layout of the vec is like this: Vec<(
-    /// 	offset in bytes from type start,
-    /// 	id of type behind the pointer,
-    /// 	number of instances of the type behind the pointer(the number of bytes have to be
-    /// 	calculated by multiplying by the size of the type),
+    ///     offset in bytes from type start,
+    ///     id of type behind the pointer,
+    ///     number of instances of the type behind the pointer(the number of bytes have to be
+    ///     calculated by multiplying by the size of the type),
     /// )>
     pub fn get_pointers_in_type(
         &self,

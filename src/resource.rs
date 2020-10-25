@@ -505,13 +505,11 @@ impl Resources {
                 if let ResourceKind::Poison = depending_on.kind {
                     // It's depending on poison, so spread the poison! Muhahaha
                     self.resource_mut(dependant).kind = ResourceKind::Poison;
+                } else if depending_on.type_.is_none() {
+                    depending_on.waiting_on_type.push(dependant);
                 } else {
-                    if depending_on.type_.is_none() {
-                        depending_on.waiting_on_type.push(dependant);
-                    } else {
-                        self.compute_queue.push_back(dependant);
-                        return;
-                    }
+                    self.compute_queue.push_back(dependant);
+                    return;
                 }
             }
             Dependency::Value(_, resource_id) => {
@@ -519,13 +517,11 @@ impl Resources {
                 if let ResourceKind::Poison = depending_on.kind {
                     // It's depending on poison, so spread the poison! Muhahaha
                     self.resource_mut(dependant).kind = ResourceKind::Poison;
+                } else if let Some(ref mut waiting_on_value) = depending_on.waiting_on_value {
+                    waiting_on_value.push(dependant);
                 } else {
-                    if let Some(ref mut waiting_on_value) = depending_on.waiting_on_value {
-                        waiting_on_value.push(dependant);
-                    } else {
-                        self.compute_queue.push_back(dependant);
-                        return;
-                    }
+                    self.compute_queue.push_back(dependant);
+                    return;
                 }
             }
         }

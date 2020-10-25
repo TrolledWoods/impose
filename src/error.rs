@@ -15,7 +15,7 @@ lazy_static! {
 pub fn print_output(resources: &Resources) {
     let mut logger = LOGGER.lock().unwrap();
 
-    if logger.errors.len() > 0 {
+    if !logger.errors.is_empty() {
         print_message_list(
             "ERROR",
             resources,

@@ -2,11 +2,17 @@ use crate::operator::*;
 use crate::types::*;
 
 fn is_primitive_int(id: TypeId) -> bool {
-    match id {
-        U8_TYPE_ID | U16_TYPE_ID | U32_TYPE_ID | U64_TYPE_ID | S8_TYPE_ID | S16_TYPE_ID
-        | S32_TYPE_ID | S64_TYPE_ID => true,
-        _ => false,
-    }
+    matches!(
+        id,
+        U8_TYPE_ID
+            | U16_TYPE_ID
+            | U32_TYPE_ID
+            | U64_TYPE_ID
+            | S8_TYPE_ID
+            | S16_TYPE_ID
+            | S32_TYPE_ID
+            | S64_TYPE_ID
+    )
 }
 
 #[derive(Debug, Clone, Copy)]

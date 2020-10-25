@@ -158,6 +158,12 @@ pub struct Interpreter<'a> {
     code: Vec<(&'a Ast, usize)>,
 }
 
+impl Default for Interpreter<'_> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'a> Interpreter<'a> {
     pub fn new() -> Self {
         Interpreter {
@@ -291,7 +297,7 @@ impl<'a> Interpreter<'a> {
                             for &(sub_offset, sub_id, _) in pointers {
                                 match resources.resource(sub_id).kind {
                                     ResourceKind::Done(ref sub_value, ref sub_pointers) => {
-                                        if sub_pointers.len() > 0 {
+                                        if !sub_pointers.is_empty() {
                                             panic!(
                                                 "Cannot copy a resource with recursive subpointers"
                                             );

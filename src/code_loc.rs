@@ -7,7 +7,7 @@ pub struct CodeLoc {
 
 impl Location for CodeLoc {
     fn get_location(&self) -> CodeLoc {
-        self.clone()
+        *self
     }
 }
 
