@@ -21,6 +21,12 @@ pub struct Resources {
     pub code_cache: HashMap<ustr::Ustr, String>,
 }
 
+impl Default for Resources {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Resources {
     pub fn new() -> Self {
         Self {
@@ -428,7 +434,7 @@ impl Resources {
     }
 
     pub fn check_completion(&mut self) {
-        if self.uncomputed_resources.len() > 0 {
+        if !self.uncomputed_resources.is_empty() {
             let uncomputed_resources =
                 std::mem::replace(&mut self.uncomputed_resources, HashSet::new());
 
@@ -438,11 +444,8 @@ impl Resources {
             for uncomputed_resource_id in uncomputed_resources.iter() {
                 let resource = self.resource(*uncomputed_resource_id);
 
-                match resource.depending_on {
-                    Some(Dependency::Constant(_, _)) => {
-                        self.make_resource_poison(*uncomputed_resource_id);
-                    }
-                    _ => (),
+                if let Some(Dependency::Constant(_, _)) = resource.depending_on {
+                    self.make_resource_poison(*uncomputed_resource_id);
                 }
             }
 
@@ -497,7 +500,6 @@ impl Resources {
                     dependants.push(dependant);
                 } else {
                     self.compute_queue.push_back(dependant);
-                    return;
                 }
             }
             Dependency::Type(_, resource_id) => {
@@ -509,7 +511,6 @@ impl Resources {
                     depending_on.waiting_on_type.push(dependant);
                 } else {
                     self.compute_queue.push_back(dependant);
-                    return;
                 }
             }
             Dependency::Value(_, resource_id) => {
@@ -521,7 +522,6 @@ impl Resources {
                     waiting_on_value.push(dependant);
                 } else {
                     self.compute_queue.push_back(dependant);
-                    return;
                 }
             }
         }
@@ -599,7 +599,7 @@ pub struct Resource {
 
 impl Location for Resource {
     fn get_location(&self) -> CodeLoc {
-        self.loc.clone()
+        self.loc
     }
 }
 
@@ -641,6 +641,7 @@ impl Resource {
     }
 }
 
+#[allow(clippy::large_enum_variant)]
 pub enum ResourceValue {
     /// Lex a file, with a folder where sub modules go.
     File {
@@ -654,6 +655,7 @@ pub enum ResourceValue {
     // TODO: When evaluating can pause, add a state for that.
 }
 
+#[allow(clippy::large_enum_variant)]
 pub enum ResourceFunction {
     Defined {
         ast: crate::parser::Ast,
@@ -670,10 +672,12 @@ pub enum ResourceFunction {
     // TODO: When code generation can pause, add a state for that.
 }
 
+type ExternalFunction = dyn Fn(&Resources, &[u8], &mut [u8]);
+
 pub enum FunctionKind {
     ExternalFunction {
         // TODO: Make a more advanced interface to call external functions
-        func: Box<dyn Fn(&Resources, &[u8], &mut [u8])>,
+        func: Box<ExternalFunction>,
         n_arg_bytes: usize,
         n_return_bytes: usize,
     },

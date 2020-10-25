@@ -32,6 +32,12 @@ pub struct Types {
     types: IdVec<Type, TypeId>,
 }
 
+impl Default for Types {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Types {
     pub fn new() -> Self {
         let mut types = IdVec::new();
@@ -422,7 +428,7 @@ impl Node {
 
 impl Location for Node {
     fn get_location(&self) -> CodeLoc {
-        self.loc.clone()
+        self.loc
     }
 }
 
@@ -651,8 +657,8 @@ impl AstTyper {
                             }
                         }
                         TypeKind::Tuple(ref members) => {
-                            if sub_name.starts_with("_") {
-                                if let Ok(index) = sub_name[1..].parse::<usize>() {
+                            if let Some(stripped) = sub_name.strip_prefix("_") {
+                                if let Ok(index) = stripped.parse::<usize>() {
                                     if let Some(&(offset, handle)) = members.get(index) {
                                         (handle.id, offset, handle.size)
                                     } else {
@@ -1140,19 +1146,7 @@ impl AstTyper {
                 } => {
                     let stack_bottom = self.type_stack.len() - contents.len();
                     let content_types = &self.type_stack[stack_bottom..];
-                    let is_never_type = content_types
-                        .iter()
-                        .find(|v| v.type_ == NEVER_TYPE_ID)
-                        .is_some();
-
-                    // if is_never_type
-                    //     && !matches!(content_types.last().unwrap().type_, EMPTY_TYPE_ID)
-                    // {
-                    //     return error!(
-                    //         content_types.last().unwrap().loc,
-                    //         "Cannot use dead code as return expression"
-                    //     );
-                    // }
+                    let is_never_type = content_types.iter().any(|v| v.type_ == NEVER_TYPE_ID);
 
                     let type_ = if is_never_type {
                         NEVER_TYPE_ID
@@ -1345,9 +1339,7 @@ pub fn combine_types(
 ) -> Result<TypeId, ()> {
     if a == NEVER_TYPE_ID {
         Ok(b)
-    } else if b == NEVER_TYPE_ID {
-        Ok(a)
-    } else if a == b {
+    } else if b == NEVER_TYPE_ID || a == b {
         Ok(a)
     } else {
         error!(

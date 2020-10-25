@@ -14,6 +14,12 @@ pub struct Scopes {
     pub super_scope: ScopeId,
 }
 
+impl Default for Scopes {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Scopes {
     pub fn new() -> Self {
         let mut scopes = IdVec::new();
@@ -37,7 +43,7 @@ impl Scopes {
             line: 0,
             column: 0,
         };
-        let id = resources.insert_done(Resource::new_with_type(loc.clone(), kind, type_));
+        let id = resources.insert_done(Resource::new_with_type(loc, kind, type_));
 
         let scope = self.super_scope;
         self.declare_member(scope, name, None, ScopeMemberKind::Constant(id))?;
@@ -150,7 +156,7 @@ impl Scopes {
 
     pub fn find_or_create_temp(&mut self, scope: ScopeId, name: Ustr) -> Result<ScopeMemberId, ()> {
         if let Some(member_id) = self.find_member(scope, name) {
-            return Ok(member_id);
+            Ok(member_id)
         } else {
             let (mut dependants, id) = self.declare_member(
                 scope,
@@ -273,6 +279,12 @@ pub struct LocalVariables {
 
     label_names: Vec<((LabelKind, Option<Ustr>), LabelId)>,
     pub labels: IdVec<TypeId, LabelId>,
+}
+
+impl Default for LocalVariables {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl LocalVariables {

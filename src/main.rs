@@ -1,7 +1,7 @@
 #![feature(assoc_char_funcs)]
 #![feature(drain_filter)]
 #![feature(array_methods)]
-#![deny(warnings)]
+#![deny(clippy::all)]
 
 pub const DEBUG: bool = false;
 
@@ -324,7 +324,7 @@ fn setup_constants() -> (Scopes, Resources, Types) {
                 let arg = args[0];
                 std::io::stdout()
                     .lock()
-                    .write(&[arg])
+                    .write_all(&[arg])
                     .expect("Putchar write failed");
             }),
             n_arg_bytes: 1,

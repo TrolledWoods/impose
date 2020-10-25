@@ -147,7 +147,7 @@ impl Node {
 
 impl Location for Node {
     fn get_location(&self) -> CodeLoc {
-        self.loc.clone()
+        self.loc
     }
 }
 
@@ -269,8 +269,7 @@ struct TokenStream<'a> {
 
 impl Location for TokenStream<'_> {
     fn get_location(&self) -> CodeLoc {
-        self.peek()
-            .map_or(self.last_location.clone(), |t| t.loc.clone())
+        self.peek().map_or(self.last_location, |t| t.loc)
     }
 }
 
@@ -313,7 +312,7 @@ impl<'a> TokenStream<'a> {
         self.tokens.get(self.index - 1)
     }
 
-    fn expect_next<'b, D: std::fmt::Display>(
+    fn expect_next<D: std::fmt::Display>(
         &mut self,
         message: impl FnOnce() -> D,
     ) -> Result<&'a Token, ()> {
@@ -491,7 +490,7 @@ fn parse_block(
                 parse_expression(sub_context.borrow())?;
 
                 let resource_id = context.resources.insert(Resource::new_with_scope(
-                    ident_loc.clone(),
+                    *ident_loc,
                     sub_scope,
                     ResourceKind::Value(ResourceValue::Defined(ast)),
                 ));
@@ -779,10 +778,8 @@ fn parse_function(mut parent_context: Context) -> Result<ResourceId, ()> {
                             ResourceKind::Value(ResourceValue::Defined(ast)),
                         ))
                     } else {
-                        return Err(error_value!(
-                            value,
-                            "Expected ':' for function argument type"
-                        ));
+                        error_value!(value, "Expected ':' for function argument type");
+                        return Err(());
                     };
 
                     args.push((arg, resource));
@@ -1010,7 +1007,7 @@ fn parse_value(mut context: Context) -> Result<AstNodeId, ()> {
 
             let string_bytes = string.as_bytes();
             let buffer_id = context.resources.insert_done(Resource::new_with_type(
-                token.loc.clone(),
+                token.loc,
                 ResourceKind::Done(string_bytes.into(), vec![]),
                 U8_TYPE_ID,
             ));
@@ -1022,7 +1019,7 @@ fn parse_value(mut context: Context) -> Result<AstNodeId, ()> {
                 .types
                 .insert(Type::new(TypeKind::BufferPointer(U8_TYPE_ID)));
             let id = context.resources.insert_done(Resource::new_with_type(
-                token.loc.clone(),
+                token.loc,
                 ResourceKind::Done(
                     (&bytes as &[u8]).into(),
                     vec![(0, buffer_id, context.types.handle(U8_TYPE_ID))],
@@ -1139,7 +1136,7 @@ fn parse_value(mut context: Context) -> Result<AstNodeId, ()> {
 
                 let false_body = parse_expression(context.borrow())?;
 
-                let if_statement = context.ast.insert_node(Node::new(
+                context.ast.insert_node(Node::new(
                     &context,
                     token,
                     context.scope,
@@ -1149,11 +1146,9 @@ fn parse_value(mut context: Context) -> Result<AstNodeId, ()> {
                         false_body,
                         end_label: false_body_label,
                     },
-                ));
-
-                if_statement
+                ))
             } else {
-                let if_statement = context.ast.insert_node(Node::new(
+                context.ast.insert_node(Node::new(
                     &context,
                     token,
                     context.scope,
@@ -1162,9 +1157,7 @@ fn parse_value(mut context: Context) -> Result<AstNodeId, ()> {
                         body: true_body,
                         end_label: true_body_label,
                     },
-                ));
-
-                if_statement
+                ))
             }
         }
         TokenKind::Keyword("bit_cast") => {
@@ -1334,7 +1327,7 @@ fn try_parse_list<'t, V>(
     if Some(start_bracket) != context.tokens.peek_kind() {
         return Ok(None);
     }
-    let location = context.tokens.next().unwrap().loc.clone();
+    let location = context.tokens.next().unwrap().loc;
 
     let mut contents = Vec::new();
     loop {
@@ -1361,6 +1354,7 @@ fn try_parse_list<'t, V>(
     Ok(Some((location, contents)))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn parse_code(
     folder: &Path,
     file: &Path,
